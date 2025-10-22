@@ -12,7 +12,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from EZ_Block_Units.Bloom import BloomFilter, BloomFilterEncoder, bloom_decoder
+    from EZ_Units.Bloom import BloomFilter, BloomFilterEncoder, bloom_decoder
 except ImportError as e:
     print(f"Error importing Bloom: {e}")
     sys.exit(1)

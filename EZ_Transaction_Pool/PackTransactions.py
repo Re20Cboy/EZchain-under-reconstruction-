@@ -20,7 +20,7 @@ from EZ_Transaction_Pool.TransactionPool import TransactionPool
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Main_Chain.Block import Block
-from EZ_Block_Units.MerkleTree import MerkleTree
+from EZ_Units.MerkleTree import MerkleTree
 from EZ_Tool_Box.Hash import sha256_hash
 
 

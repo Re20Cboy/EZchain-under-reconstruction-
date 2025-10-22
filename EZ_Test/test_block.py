@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from EZ_Main_Chain.Block import Block
-    from EZ_Block_Units.Bloom import BloomFilter, BloomFilterEncoder
-    from EZ_Block_Units.MerkleTree import MerkleTree
+    from EZ_Units.Bloom import BloomFilter, BloomFilterEncoder
+    from EZ_Units.MerkleTree import MerkleTree
     from EZ_Tool_Box.temp_signature import temp_signature_system
 except ImportError as e:
     print(f"Error importing Block modules: {e}")

@@ -1,0 +1,162 @@
+[
+  {
+    "test_name": "交易注入功能",
+    "success": true,
+    "message": "注入了 20 个交易，成功 20 个，池中有 20 个交易",
+    "execution_time": 0.37821078300476074,
+    "data": {
+      "stats": {
+        "total_injected": 20,
+        "successfully_added": 20,
+        "failed_validation": 0,
+        "duplicates": 0,
+        "injection_errors": 0,
+        "start_time": 1761101098.6759667,
+        "end_time": 1761101099.000007
+      },
+      "pool_stats": {
+        "total_transactions": 20,
+        "unique_senders": 10,
+        "stats": {
+          "total_received": 20,
+          "valid_received": 20,
+          "invalid_received": 0,
+          "duplicates": 0
+        },
+        "pool_size_bytes": 27999
+      },
+      "injected_transactions": [
+        "f0d3e1d6c4eb17a58db4b88ec4d455b67a7badb760eb368e3d04c8711949af95",
+        "04a124d7bf92fce6d4556c0b7962c5f1e1eba46cac7ff8f921a35ccfa1bf892c",
+        "82181d60d2b2d2ef6f07f22a3b04fbae6cba438fc70b1b90193992ee4059085a",
+        "d20fdfd81918b85a4614be8e7e46ee25a0609ef5ef65fd81926cd131a0040bac",
+        "4eb02814af954add176385b3a1a8287c7b9731ad044cd2eada62863aef68e073",
+        "8e8e63399b3165712f56c2b99213b3d8ad299e520a1de2289fbb7ee545f0c0d9",
+        "3d3eb24db24d7079e71d3f8951b1bafc432716d812eb04961f3568985086f46f",
+        "69dbd724e89bf403a04769a967ab237550b2185f826476896c00a4a6a8361898",
+        "1819e1578589d5accd757efd41de3e66b4252990baa1a585486ea6623e64e2da",
+        "5b455e4249bcc181954127887a7313c093e744f4fefc9a95472995348249664d"
+      ]
+    }
+  },
+  {
+    "test_name": "交易打包功能",
+    "success": true,
+    "message": "测试了 2 种打包策略，均成功打包交易",
+    "execution_time": 0.03611326217651367,
+    "data": {
+      "strategy_results": {
+        "fifo": {
+          "multi_txns_count": 10,
+          "single_txns_count": 50,
+          "merkle_root": "cb2488f3ccc58442925e4fe80cf1a8147b3f5cf88e255aa940354997d64a2231",
+          "sender_addresses": [
+            "sender_003",
+            "sender_000",
+            "sender_005",
+            "sender_001",
+            "sender_008",
+            "sender_007",
+            "sender_006",
+            "sender_002"
+          ],
+          "package_time": "2025-10-22 10:44:59.029009"
+        },
+        "fee": {
+          "multi_txns_count": 10,
+          "single_txns_count": 50,
+          "merkle_root": "cb2488f3ccc58442925e4fe80cf1a8147b3f5cf88e255aa940354997d64a2231",
+          "sender_addresses": [
+            "sender_003",
+            "sender_000",
+            "sender_005",
+            "sender_001",
+            "sender_008",
+            "sender_007",
+            "sender_006",
+            "sender_002"
+          ],
+          "package_time": "2025-10-22 10:44:59.043628"
+        }
+      }
+    }
+  },
+  {
+    "test_name": "区块创建功能",
+    "success": true,
+    "message": "成功创建区块 1，包含 10 个多重交易",
+    "execution_time": 0.0591273307800293,
+    "data": {
+      "block_index": 1,
+      "block_hash": "0ce97fb163a18465ad9d95e4770f5e78f509d3ab424b23674103d6c4389977d6",
+      "merkle_root": "cb2488f3ccc58442925e4fe80cf1a8147b3f5cf88e255aa940354997d64a2231",
+      "miner": "miner_001",
+      "package_data": {
+        "multi_txns_count": 10,
+        "single_txns_count": 50,
+        "merkle_root": "cb2488f3ccc58442925e4fe80cf1a8147b3f5cf88e255aa940354997d64a2231",
+        "sender_addresses": [
+          "sender_003",
+          "sender_000",
+          "sender_005",
+          "sender_001",
+          "sender_008",
+          "sender_007",
+          "sender_006",
+          "sender_002"
+        ]
+      }
+    }
+  },
+  {
+    "test_name": "完整工作流程",
+    "success": true,
+    "message": "成功创建 3 个区块，完成完整工作流程测试",
+    "execution_time": 0.32020068168640137,
+    "data": {
+      "workflow_results": [
+        {
+          "block_num": 1,
+          "multi_txns_count": 5,
+          "single_txns_count": 25,
+          "block_hash": "1e3336101ca87e45d722ab59dd9d14eb7886c9cb0510f20b127d93260da84407",
+          "merkle_root": "69b62e09ddee71b856074eabf72fa6b31b05c3b947f8f994cf8fee93b7d6aa71",
+          "miner": "miner_000",
+          "sender_addresses": [
+            "sender_001",
+            "sender_000",
+            "sender_002",
+            "sender_005"
+          ]
+        },
+        {
+          "block_num": 2,
+          "multi_txns_count": 4,
+          "single_txns_count": 12,
+          "block_hash": "e27e004eeb3f49d332f76dab9795531b288dc96d6cb329fb1e005241475ccddc",
+          "merkle_root": "78e4f941f75c748410cccb2efa8f24ab71912675f70c9e9d8e9cc3046e20819b",
+          "miner": "miner_001",
+          "sender_addresses": [
+            "sender_001",
+            "sender_003",
+            "sender_000"
+          ]
+        },
+        {
+          "block_num": 3,
+          "multi_txns_count": 5,
+          "single_txns_count": 15,
+          "block_hash": "4ff7b48458715002c5e2eca24fd5986030839d3f4a194a239ef98f967ea40b1a",
+          "merkle_root": "e39448186ffc7a4c66f3cfc40f5932e2b50724d1839c9de804ace8a55e2e6d63",
+          "miner": "miner_002",
+          "sender_addresses": [
+            "sender_001",
+            "sender_003",
+            "sender_004",
+            "sender_000"
+          ]
+        }
+      ]
+    }
+  }
+]

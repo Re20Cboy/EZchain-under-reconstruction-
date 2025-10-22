@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 try:
-    from EZ_Block_Units.MerkleTree import MerkleTree, MerkleTreeNode
+    from EZ_Units.MerkleTree import MerkleTree, MerkleTreeNode
     from EZ_Tool_Box.Hash import sha256_hash
 except ImportError as e:
     print(f"Error importing MerkleTree or sha256_hash: {e}")

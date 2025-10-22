@@ -4,8 +4,8 @@ import os
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Block_Units.Bloom import BloomFilter,BloomFilterEncoder
-from EZ_Block_Units.MerkleTree import MerkleTree,MerkleTreeNode
+from EZ_Units.Bloom import BloomFilter,BloomFilterEncoder
+from EZ_Units.MerkleTree import MerkleTree,MerkleTreeNode
 from EZ_Tool_Box.temp_signature import temp_signature_system
 import datetime
 import hashlib

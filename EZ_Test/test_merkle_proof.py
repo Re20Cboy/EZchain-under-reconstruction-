@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 try:
-    from EZ_Block_Units.MerkleProof import MerkleTreeProof
-    from EZ_Block_Units.MerkleTree import MerkleTree
+    from EZ_Units.MerkleProof import MerkleTreeProof
+    from EZ_Units.MerkleTree import MerkleTree
 except ImportError as e:
     print(f"Error importing MerkleProof: {e}")
     sys.exit(1)

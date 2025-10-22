@@ -15,7 +15,7 @@ from cryptography.hazmat.backends import default_backend
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from EZ_Transaction.CreatSingleTransaction import CreateTransaction
+from EZ_Transaction.CreateSingleTransaction import CreateTransaction
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Value.Value import Value, ValueState
 from EZ_Value.AccountPickValues import AccountPickValues
