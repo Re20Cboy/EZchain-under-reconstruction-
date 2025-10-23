@@ -202,3 +202,12 @@ yarn-error.log*
 *.log
 *.tmp
 *.temp
+
+# Claude AI Code Assistant
+.claude/
+.claude/settings.local.json
+.claude/settings.json
+.claude/.env
+.claude/cache/
+.claude/logs/
+.claude/tmp/

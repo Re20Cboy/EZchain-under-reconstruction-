@@ -102,25 +102,64 @@ class TransactionPackager:
     
     def _select_transactions(self, multi_txns: List[MultiTransactions], strategy: str) -> List[MultiTransactions]:
         """
-        根据策略选择交易
-        
+        根据策略选择交易，并确保每个sender最多只有一个MultiTransaction被打包
+
         Args:
             multi_txns: 多重交易列表
             strategy: 选择策略
-            
+
         Returns:
-            选择后的多重交易列表
+            选择后的多重交易列表（每个sender最多只有一个）
         """
         if strategy == "fifo":
             # 先进先出策略
-            return multi_txns
+            filtered_txns = self._filter_unique_senders(multi_txns)
+            return filtered_txns
         elif strategy == "fee":
-            # 按手续费排序（这里简单按交易数量作为手续费代理）
-            return sorted(multi_txns, key=lambda x: len(x.multi_txns), reverse=True)
+            # 按手续费排序（这里假设每笔交易手续费相同，故简单按交易数量作为手续费代理）
+            sorted_txns = sorted(multi_txns, key=lambda x: len(x.multi_txns), reverse=True)
+            filtered_txns = self._filter_unique_senders(sorted_txns)
+            return filtered_txns
         else:
             # 默认先进先出
-            return multi_txns
-    
+            filtered_txns = self._filter_unique_senders(multi_txns)
+            return filtered_txns
+
+    def _filter_unique_senders(self, multi_txns: List[MultiTransactions]) -> List[MultiTransactions]:
+        """
+        过滤多重交易列表，确保每个sender最多只有一个MultiTransaction被选中
+        对于有多个MultiTransaction的sender，只选择最早提交的那个（根据打包策略）
+
+        Args:
+            multi_txns: 多重交易列表
+
+        Returns:
+            过滤后的多重交易列表（每个sender最多只有一个）
+        """
+        seen_senders = set()
+        filtered_txns = []
+
+        for multi_txn in multi_txns:
+            # 检查是否有有效的sender地址
+            if not multi_txn.sender:
+                # 如果没有sender，保留此交易
+                filtered_txns.append(multi_txn)
+                continue
+
+            # 如果这个sender还没有被选中，则保留此交易
+            if multi_txn.sender not in seen_senders:
+                seen_senders.add(multi_txn.sender)
+                filtered_txns.append(multi_txn)
+            # 否则跳过此交易（该sender已经有更早/更优的交易被选中）
+
+        # 记录被过滤掉的交易（用于调试和日志）
+        if len(multi_txns) != len(filtered_txns):
+            filtered_count = len(multi_txns) - len(filtered_txns)
+            print(f"Sender uniqueness filter: removed {filtered_count} duplicate sender transactions "
+                  f"(kept {len(filtered_txns)} unique sender transactions)")
+
+        return filtered_txns
+
     def _extract_sender_addresses(self, multi_txns: List[MultiTransactions]) -> List[str]:
         """
         提取发送者地址（用于布隆过滤器）
