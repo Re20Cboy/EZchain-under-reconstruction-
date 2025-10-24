@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple demonstration of blockchain persistence functionality.
+Simple demonstration of blockchain persistence functionality. 
 """
 
 import sys
