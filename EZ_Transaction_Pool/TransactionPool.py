@@ -184,10 +184,12 @@ class TransactionPool:
                 ''')
                 total_count = cursor.fetchone()[0]
                 
-                # Update stats to match database
-                self.stats['total_received'] = total_count
-                self.stats['valid_received'] = valid_count
-                self.stats['invalid_received'] = invalid_count
+                # Update stats - transactions in pool are all valid (invalid ones are filtered out)
+                loaded_count = len(self.pool)
+
+                self.stats['total_received'] = loaded_count
+                self.stats['valid_received'] = loaded_count  # All loaded transactions are valid
+                self.stats['invalid_received'] = 0          # Invalid transactions are not loaded
                 
                 conn.commit()
                 conn.close()

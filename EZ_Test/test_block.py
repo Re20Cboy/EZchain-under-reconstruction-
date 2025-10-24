@@ -368,7 +368,7 @@ class TestBlockSignature(unittest.TestCase):
         
         # Wait longer to ensure different timestamps
         import time
-        time.sleep(0.5)  # Wait 500ms to ensure different timestamps
+        time.sleep(1)  # Wait 1000 ms to ensure different timestamps
         
         block2 = Block(
             index=1,

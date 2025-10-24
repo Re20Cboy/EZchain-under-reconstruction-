@@ -1,0 +1,3613 @@
+{
+  "version": "1.0",
+  "timestamp": "2025-10-24T10:20:49.121458",
+  "config": {
+    "max_fork_height": 3,
+    "confirmation_blocks": 2,
+    "enable_fork_resolution": true,
+    "debug_mode": true,
+    "data_directory": "blockchain_data",
+    "auto_save": true,
+    "backup_enabled": true,
+    "backup_interval": 100,
+    "max_backups": 10,
+    "compression_enabled": false,
+    "integrity_check": true
+  },
+  "main_chain": [
+    {
+      "block_data": {
+        "index": 0,
+        "m_tree_root": "dc586109ac58fbb7b68856212386832e9b4ca3a4b406d0b361784a64941d45e6",
+        "miner": "genesis_miner",
+        "nonce": 0,
+        "pre_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sig": 0,
+        "time": "2025-10-24T09:24:48.874636",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0"
+    },
+    {
+      "block_data": {
+        "index": 1,
+        "m_tree_root": "663d49d7147541c7467b637c48914c728b6457d7b722843d6d8601b8396871f2",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "ab705a13b1afaf3dee67aaf67cd8589d3183abde5e42c1f8f31926721a7b3a2e",
+          "timestamp": "1761269088"
+        },
+        "time": "2025-10-24T09:24:48.917600",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a"
+    },
+    {
+      "block_data": {
+        "index": 2,
+        "m_tree_root": "",
+        "miner": "",
+        "nonce": 0,
+        "pre_hash": "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a",
+        "sig": {
+          "miner_id": "",
+          "public_key": "test_public_key_67890",
+          "signature": "b0eb4640446a2fd392f1ce5c0e59901c1e7fe33f105d06b99bbc5626584208d6",
+          "timestamp": "1761269088"
+        },
+        "time": "2025-10-24T09:24:48.962321",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2"
+    },
+    {
+      "block_data": {
+        "index": 3,
+        "m_tree_root": "merkle_root_137153",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.008706",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236"
+    },
+    {
+      "block_data": {
+        "index": 4,
+        "m_tree_root": "merkle_root_185836",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.015223",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900"
+    },
+    {
+      "block_data": {
+        "index": 5,
+        "m_tree_root": "merkle_root_185836",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.020581",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a"
+    },
+    {
+      "block_data": {
+        "index": 6,
+        "m_tree_root": "merkle_root_731641",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.061829",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b"
+    },
+    {
+      "block_data": {
+        "index": 7,
+        "m_tree_root": "merkle_root_503249",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.071029",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca"
+    },
+    {
+      "block_data": {
+        "index": 8,
+        "m_tree_root": "merkle_root_639911",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.074454",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070"
+    },
+    {
+      "block_data": {
+        "index": 9,
+        "m_tree_root": "merkle_root_260827",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.078985",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385"
+    },
+    {
+      "block_data": {
+        "index": 10,
+        "m_tree_root": "merkle_root_985243",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.121199",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e"
+    },
+    {
+      "block_data": {
+        "index": 11,
+        "m_tree_root": "merkle_root_985243",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.125529",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950"
+    },
+    {
+      "block_data": {
+        "index": 12,
+        "m_tree_root": "merkle_root_985243",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.130036",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739"
+    },
+    {
+      "block_data": {
+        "index": 13,
+        "m_tree_root": "empty_merkle_root",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+          "timestamp": "1761269089"
+        },
+        "time": "2025-10-24T09:24:49.172527",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9"
+    },
+    {
+      "block_data": {
+        "index": 14,
+        "m_tree_root": "fba33fe6d481ebe2d74370d293bb64f79b572e657cf17bc30fb8cb70e5ddf2db",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.217999",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25"
+    },
+    {
+      "block_data": {
+        "index": 15,
+        "m_tree_root": "",
+        "miner": "",
+        "nonce": 0,
+        "pre_hash": "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25",
+        "sig": {
+          "miner_id": "",
+          "public_key": "test_public_key_67890",
+          "signature": "f09c0e107c77cda5d356c82059d8c72ae103588e3f0f7524e82cf2a987c2628c",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.261744",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273"
+    },
+    {
+      "block_data": {
+        "index": 16,
+        "m_tree_root": "merkle_root_974443",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.314220",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40"
+    },
+    {
+      "block_data": {
+        "index": 17,
+        "m_tree_root": "merkle_root_209738",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.319441",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa"
+    },
+    {
+      "block_data": {
+        "index": 18,
+        "m_tree_root": "merkle_root_209738",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.329620",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81"
+    },
+    {
+      "block_data": {
+        "index": 19,
+        "m_tree_root": "merkle_root_869056",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.373109",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302"
+    },
+    {
+      "block_data": {
+        "index": 20,
+        "m_tree_root": "merkle_root_427033",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.380248",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2"
+    },
+    {
+      "block_data": {
+        "index": 21,
+        "m_tree_root": "merkle_root_200667",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.386253",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9"
+    },
+    {
+      "block_data": {
+        "index": 22,
+        "m_tree_root": "merkle_root_135738",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.393515",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657"
+    },
+    {
+      "block_data": {
+        "index": 23,
+        "m_tree_root": "merkle_root_329905",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.432393",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580"
+    },
+    {
+      "block_data": {
+        "index": 24,
+        "m_tree_root": "merkle_root_329905",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.444800",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698"
+    },
+    {
+      "block_data": {
+        "index": 25,
+        "m_tree_root": "merkle_root_329905",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.452824",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532"
+    },
+    {
+      "block_data": {
+        "index": 26,
+        "m_tree_root": "empty_merkle_root",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+          "timestamp": "1761272244"
+        },
+        "time": "2025-10-24T10:17:24.499240",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521"
+    },
+    {
+      "block_data": {
+        "index": 27,
+        "m_tree_root": "625e63f5d6bdc7e8403e929dbbab433be02b233a1d6c310390f694ba4c2cdc30",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.078732",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8"
+    },
+    {
+      "block_data": {
+        "index": 28,
+        "m_tree_root": "",
+        "miner": "",
+        "nonce": 0,
+        "pre_hash": "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8",
+        "sig": {
+          "miner_id": "",
+          "public_key": "test_public_key_67890",
+          "signature": "26686ffd57a25e0aa8c4677dca775fc4f7de6fc7e78288d227c2c42eb499c83c",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.165657",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486"
+    },
+    {
+      "block_data": {
+        "index": 29,
+        "m_tree_root": "merkle_root_301136",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.297440",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4"
+    },
+    {
+      "block_data": {
+        "index": 30,
+        "m_tree_root": "merkle_root_129887",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.317833",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c"
+    },
+    {
+      "block_data": {
+        "index": 31,
+        "m_tree_root": "merkle_root_129887",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.340481",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6"
+    },
+    {
+      "block_data": {
+        "index": 32,
+        "m_tree_root": "merkle_root_233395",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.428673",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a"
+    },
+    {
+      "block_data": {
+        "index": 33,
+        "m_tree_root": "merkle_root_662986",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.451181",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1"
+    },
+    {
+      "block_data": {
+        "index": 34,
+        "m_tree_root": "merkle_root_616591",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.473285",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e"
+    },
+    {
+      "block_data": {
+        "index": 35,
+        "m_tree_root": "merkle_root_652524",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.495291",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec"
+    },
+    {
+      "block_data": {
+        "index": 36,
+        "m_tree_root": "merkle_root_867613",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.589375",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d"
+    },
+    {
+      "block_data": {
+        "index": 37,
+        "m_tree_root": "merkle_root_867613",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.612717",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7"
+    },
+    {
+      "block_data": {
+        "index": 38,
+        "m_tree_root": "merkle_root_867613",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.655741",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f"
+    },
+    {
+      "block_data": {
+        "index": 39,
+        "m_tree_root": "empty_merkle_root",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+          "timestamp": "1761272264"
+        },
+        "time": "2025-10-24T10:17:44.750624",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e"
+    },
+    {
+      "block_data": {
+        "index": 40,
+        "m_tree_root": "5c594cd2096f73d6129fdb023bfcaa49bf41f26527e38d5af4feae52217d4a0a",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.604662",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c"
+    },
+    {
+      "block_data": {
+        "index": 41,
+        "m_tree_root": "",
+        "miner": "",
+        "nonce": 0,
+        "pre_hash": "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c",
+        "sig": {
+          "miner_id": "",
+          "public_key": "test_public_key_67890",
+          "signature": "c4dbc04edf156a9ae1b9f03e5d88c7c5cd57618b0cf21247924afa1f51cdef68",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.673276",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd"
+    },
+    {
+      "block_data": {
+        "index": 42,
+        "m_tree_root": "merkle_root_907558",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.772810",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf"
+    },
+    {
+      "block_data": {
+        "index": 43,
+        "m_tree_root": "merkle_root_361058",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.791351",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85"
+    },
+    {
+      "block_data": {
+        "index": 44,
+        "m_tree_root": "merkle_root_361058",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.810695",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4"
+    },
+    {
+      "block_data": {
+        "index": 45,
+        "m_tree_root": "merkle_root_295825",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.879828",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3"
+    },
+    {
+      "block_data": {
+        "index": 46,
+        "m_tree_root": "merkle_root_463033",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.910526",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9"
+    },
+    {
+      "block_data": {
+        "index": 47,
+        "m_tree_root": "merkle_root_548794",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.931573",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44"
+    },
+    {
+      "block_data": {
+        "index": 48,
+        "m_tree_root": "merkle_root_683156",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+          "timestamp": "1761272448"
+        },
+        "time": "2025-10-24T10:20:48.949979",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a"
+    },
+    {
+      "block_data": {
+        "index": 49,
+        "m_tree_root": "merkle_root_457565",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+          "timestamp": "1761272449"
+        },
+        "time": "2025-10-24T10:20:49.016650",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324"
+    },
+    {
+      "block_data": {
+        "index": 50,
+        "m_tree_root": "merkle_root_457565",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+          "timestamp": "1761272449"
+        },
+        "time": "2025-10-24T10:20:49.033412",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df"
+    },
+    {
+      "block_data": {
+        "index": 51,
+        "m_tree_root": "merkle_root_457565",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+          "timestamp": "1761272449"
+        },
+        "time": "2025-10-24T10:20:49.050104",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd"
+    },
+    {
+      "block_data": {
+        "index": 52,
+        "m_tree_root": "empty_merkle_root",
+        "miner": "miner_integration_test",
+        "nonce": 0,
+        "pre_hash": "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd",
+        "sig": {
+          "miner_id": "miner_integration_test",
+          "public_key": "test_public_key_67890",
+          "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+          "timestamp": "1761272449"
+        },
+        "time": "2025-10-24T10:20:49.121458",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "6e1a561e8feccc093955fc48f74e6c558f93bd684bb74643a523b723479dba29"
+    }
+  ],
+  "confirmed_blocks": [
+    "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900",
+    "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd",
+    "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0",
+    "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657",
+    "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf",
+    "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070",
+    "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40",
+    "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532",
+    "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950",
+    "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+    "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521",
+    "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8",
+    "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44",
+    "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9",
+    "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa",
+    "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580",
+    "5af81d7b6198b8f62ee53a139121e98833cf80a4b97a3a770f340a9df658815b",
+    "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f",
+    "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4",
+    "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df",
+    "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca",
+    "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698",
+    "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a",
+    "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85",
+    "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e",
+    "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf",
+    "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6",
+    "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7",
+    "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4",
+    "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+    "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a",
+    "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f",
+    "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f",
+    "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a",
+    "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c",
+    "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec",
+    "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236",
+    "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81",
+    "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c",
+    "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a",
+    "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324",
+    "ec1357fdabe5a6689ca1d76033864a65c90a344a879ecf3a993fca29f2e18bb7",
+    "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385",
+    "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e",
+    "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9",
+    "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b",
+    "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2",
+    "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9",
+    "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+    "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739",
+    "ce6176f6fa35db8748b79689046b4aa4d46336217a52a01c9b3608a56eb9a0eb",
+    "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302",
+    "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e",
+    "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+    "98366f31f51ae50ed58d99b33f4ade6d2cad2b49516acefdbd9f68590a43c94b",
+    "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25",
+    "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d",
+    "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051",
+    "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3",
+    "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1"
+  ],
+  "orphaned_blocks": [],
+  "fork_tree_root": {
+    "block": {
+      "block_data": {
+        "index": 0,
+        "m_tree_root": "dc586109ac58fbb7b68856212386832e9b4ca3a4b406d0b361784a64941d45e6",
+        "miner": "genesis_miner",
+        "nonce": 0,
+        "pre_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "sig": 0,
+        "time": "2025-10-24T09:24:48.874636",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0"
+    },
+    "parent_hash": null,
+    "is_main_chain": true,
+    "height": 0,
+    "consensus_status": "confirmed",
+    "children_hashes": [
+      "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a"
+    ]
+  },
+  "main_chain_tip_hash": "6e1a561e8feccc093955fc48f74e6c558f93bd684bb74643a523b723479dba29",
+  "hash_to_fork_node": {
+    "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0": {
+      "block": {
+        "block_data": {
+          "index": 0,
+          "m_tree_root": "dc586109ac58fbb7b68856212386832e9b4ca3a4b406d0b361784a64941d45e6",
+          "miner": "genesis_miner",
+          "nonce": 0,
+          "pre_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "sig": 0,
+          "time": "2025-10-24T09:24:48.874636",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0"
+      },
+      "parent_hash": null,
+      "is_main_chain": true,
+      "height": 0,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a"
+      ]
+    },
+    "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a": {
+      "block": {
+        "block_data": {
+          "index": 1,
+          "m_tree_root": "663d49d7147541c7467b637c48914c728b6457d7b722843d6d8601b8396871f2",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "ab705a13b1afaf3dee67aaf67cd8589d3183abde5e42c1f8f31926721a7b3a2e",
+            "timestamp": "1761269088"
+          },
+          "time": "2025-10-24T09:24:48.917600",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a"
+      },
+      "parent_hash": "de8714c792f8f7dc2f79746945f723126bc7465a3f5492483ef096365aad03b0",
+      "is_main_chain": true,
+      "height": 1,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2"
+      ]
+    },
+    "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2": {
+      "block": {
+        "block_data": {
+          "index": 2,
+          "m_tree_root": "",
+          "miner": "",
+          "nonce": 0,
+          "pre_hash": "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a",
+          "sig": {
+            "miner_id": "",
+            "public_key": "test_public_key_67890",
+            "signature": "b0eb4640446a2fd392f1ce5c0e59901c1e7fe33f105d06b99bbc5626584208d6",
+            "timestamp": "1761269088"
+          },
+          "time": "2025-10-24T09:24:48.962321",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2"
+      },
+      "parent_hash": "fdd9b91e09d8988ee0c709a5bc3b345a5d72daaadce161fda0bcf04b2d8b996a",
+      "is_main_chain": true,
+      "height": 2,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f",
+        "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236"
+      ]
+    },
+    "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f": {
+      "block": {
+        "block_data": {
+          "index": 3,
+          "m_tree_root": "merkle_root_985243",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.000628",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f"
+      },
+      "parent_hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+      "is_main_chain": true,
+      "height": 3,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "ce6176f6fa35db8748b79689046b4aa4d46336217a52a01c9b3608a56eb9a0eb"
+      ]
+    },
+    "ce6176f6fa35db8748b79689046b4aa4d46336217a52a01c9b3608a56eb9a0eb": {
+      "block": {
+        "block_data": {
+          "index": 4,
+          "m_tree_root": "merkle_root_185836",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.008062",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "ce6176f6fa35db8748b79689046b4aa4d46336217a52a01c9b3608a56eb9a0eb"
+      },
+      "parent_hash": "2414393d686504eae921212d8e11fe7466611f614c8b129af381f0c63992b46f",
+      "is_main_chain": true,
+      "height": 4,
+      "consensus_status": "confirmed",
+      "children_hashes": []
+    },
+    "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236": {
+      "block": {
+        "block_data": {
+          "index": 3,
+          "m_tree_root": "merkle_root_137153",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.008706",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236"
+      },
+      "parent_hash": "7a625629d2b38efe9265506b6a468bdb29e90250374232cba4c9e115c31a57e2",
+      "is_main_chain": true,
+      "height": 3,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900"
+      ]
+    },
+    "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900": {
+      "block": {
+        "block_data": {
+          "index": 4,
+          "m_tree_root": "merkle_root_185836",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.015223",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900"
+      },
+      "parent_hash": "980f61e98e7c940400ad6ed8e2ba61f9fa047871f7e64dc3102755c430468236",
+      "is_main_chain": true,
+      "height": 4,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a"
+      ]
+    },
+    "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a": {
+      "block": {
+        "block_data": {
+          "index": 5,
+          "m_tree_root": "merkle_root_185836",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.020581",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a"
+      },
+      "parent_hash": "77a55783532bebb85cc32079c34f5ea9eba06ba453caf22289e4f80878782900",
+      "is_main_chain": true,
+      "height": 5,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b"
+      ]
+    },
+    "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b": {
+      "block": {
+        "block_data": {
+          "index": 6,
+          "m_tree_root": "merkle_root_731641",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.061829",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b"
+      },
+      "parent_hash": "adce7f4df63db6d5057edafd9df5b9e66c711ad4de56ab4ad4cd293af0f9765a",
+      "is_main_chain": true,
+      "height": 6,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca"
+      ]
+    },
+    "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca": {
+      "block": {
+        "block_data": {
+          "index": 7,
+          "m_tree_root": "merkle_root_503249",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.071029",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca"
+      },
+      "parent_hash": "70535a9c36bbe693db68684746c8c19a1311d1414ba551a34d1c4f6d1118d37b",
+      "is_main_chain": true,
+      "height": 7,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070"
+      ]
+    },
+    "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070": {
+      "block": {
+        "block_data": {
+          "index": 8,
+          "m_tree_root": "merkle_root_639911",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.074454",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070"
+      },
+      "parent_hash": "7db67e22522b9295150fd9193f8db129e9bee51c711f415886e1f3361d975aca",
+      "is_main_chain": true,
+      "height": 8,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385"
+      ]
+    },
+    "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385": {
+      "block": {
+        "block_data": {
+          "index": 9,
+          "m_tree_root": "merkle_root_260827",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.078985",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385"
+      },
+      "parent_hash": "1bc5b9b8754b859fbc1a71667c8ad7d58f2977da56aba1f8434761b236261070",
+      "is_main_chain": true,
+      "height": 9,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e"
+      ]
+    },
+    "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e": {
+      "block": {
+        "block_data": {
+          "index": 10,
+          "m_tree_root": "merkle_root_985243",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.121199",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e"
+      },
+      "parent_hash": "1cf07cb101a2406e69ddc5496fd0d10d418df62bbc37995efcc6ef8607153385",
+      "is_main_chain": true,
+      "height": 10,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950"
+      ]
+    },
+    "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950": {
+      "block": {
+        "block_data": {
+          "index": 11,
+          "m_tree_root": "merkle_root_985243",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.125529",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950"
+      },
+      "parent_hash": "bec83539cd6cd8a01700651eb9cfa2faaf787591781891e03bdf1e2be02ef65e",
+      "is_main_chain": true,
+      "height": 11,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739"
+      ]
+    },
+    "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739": {
+      "block": {
+        "block_data": {
+          "index": 12,
+          "m_tree_root": "merkle_root_985243",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.130036",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739"
+      },
+      "parent_hash": "a8cce25b0f0b8b65a957dc76f1be962d9ab4ebdecff0c74058aa0d08662f6950",
+      "is_main_chain": true,
+      "height": 12,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9"
+      ]
+    },
+    "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9": {
+      "block": {
+        "block_data": {
+          "index": 13,
+          "m_tree_root": "empty_merkle_root",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "73d7e4790f2c285a32e07fd8829e5b270aae3fad7fe21183270649f00d15d119",
+            "timestamp": "1761269089"
+          },
+          "time": "2025-10-24T09:24:49.172527",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9"
+      },
+      "parent_hash": "5f1acd0b12f6ee17bbba856a46380fdc6d1325165d1c7d997aba9dfc87d91739",
+      "is_main_chain": true,
+      "height": 13,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25"
+      ]
+    },
+    "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25": {
+      "block": {
+        "block_data": {
+          "index": 14,
+          "m_tree_root": "fba33fe6d481ebe2d74370d293bb64f79b572e657cf17bc30fb8cb70e5ddf2db",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.217999",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25"
+      },
+      "parent_hash": "1f3504bdda32894ae93bd158d97e17b83e3c5111bc1e15eca6bf078d12b357f9",
+      "is_main_chain": true,
+      "height": 14,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273"
+      ]
+    },
+    "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273": {
+      "block": {
+        "block_data": {
+          "index": 15,
+          "m_tree_root": "",
+          "miner": "",
+          "nonce": 0,
+          "pre_hash": "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25",
+          "sig": {
+            "miner_id": "",
+            "public_key": "test_public_key_67890",
+            "signature": "f09c0e107c77cda5d356c82059d8c72ae103588e3f0f7524e82cf2a987c2628c",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.261744",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273"
+      },
+      "parent_hash": "7c24b5db38eb445e7ca5c675786fde5855521f9e4288a01af2a393f346ccca25",
+      "is_main_chain": true,
+      "height": 15,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf",
+        "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40"
+      ]
+    },
+    "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf": {
+      "block": {
+        "block_data": {
+          "index": 16,
+          "m_tree_root": "merkle_root_329905",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.303493",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf"
+      },
+      "parent_hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+      "is_main_chain": true,
+      "height": 16,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "5af81d7b6198b8f62ee53a139121e98833cf80a4b97a3a770f340a9df658815b"
+      ]
+    },
+    "5af81d7b6198b8f62ee53a139121e98833cf80a4b97a3a770f340a9df658815b": {
+      "block": {
+        "block_data": {
+          "index": 17,
+          "m_tree_root": "merkle_root_209738",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.309764",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "5af81d7b6198b8f62ee53a139121e98833cf80a4b97a3a770f340a9df658815b"
+      },
+      "parent_hash": "dc0cb73a76716222ef42e4acf1b0fbbcc855168eb46d07379bcd520225c99adf",
+      "is_main_chain": true,
+      "height": 17,
+      "consensus_status": "confirmed",
+      "children_hashes": []
+    },
+    "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40": {
+      "block": {
+        "block_data": {
+          "index": 16,
+          "m_tree_root": "merkle_root_974443",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.314220",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40"
+      },
+      "parent_hash": "9ee8a82d4cdb1b421874650866fe7fd2a312f1a19c43429382fc59c947899273",
+      "is_main_chain": true,
+      "height": 16,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa"
+      ]
+    },
+    "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa": {
+      "block": {
+        "block_data": {
+          "index": 17,
+          "m_tree_root": "merkle_root_209738",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.319441",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa"
+      },
+      "parent_hash": "ab52373925d0a59423cff66e9d90120a122b189504818272636b76b91e0d9d40",
+      "is_main_chain": true,
+      "height": 17,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81"
+      ]
+    },
+    "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81": {
+      "block": {
+        "block_data": {
+          "index": 18,
+          "m_tree_root": "merkle_root_209738",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.329620",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81"
+      },
+      "parent_hash": "095039cecf1dfe674a216313c24ef3dd023ce04ca1c654a2e427848d81be5eaa",
+      "is_main_chain": true,
+      "height": 18,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302"
+      ]
+    },
+    "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302": {
+      "block": {
+        "block_data": {
+          "index": 19,
+          "m_tree_root": "merkle_root_869056",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.373109",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302"
+      },
+      "parent_hash": "3823aa88a34abd97a3f3f318160fc6528a78740ca4d97a9638277b2177e92f81",
+      "is_main_chain": true,
+      "height": 19,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2"
+      ]
+    },
+    "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2": {
+      "block": {
+        "block_data": {
+          "index": 20,
+          "m_tree_root": "merkle_root_427033",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.380248",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2"
+      },
+      "parent_hash": "ff03be347295a04ce3318d100aab486b88a7fcbd8a124c4db40f210a2124c302",
+      "is_main_chain": true,
+      "height": 20,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9"
+      ]
+    },
+    "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9": {
+      "block": {
+        "block_data": {
+          "index": 21,
+          "m_tree_root": "merkle_root_200667",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.386253",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9"
+      },
+      "parent_hash": "ba72d48ffb353cf37045e70ab0f089f21bcac88405a5219224dde949f460a1e2",
+      "is_main_chain": true,
+      "height": 21,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657"
+      ]
+    },
+    "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657": {
+      "block": {
+        "block_data": {
+          "index": 22,
+          "m_tree_root": "merkle_root_135738",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.393515",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657"
+      },
+      "parent_hash": "1a1ed49f7e93934e6a98af8478e48e5e6a3634862e09c1dceef31f587c13f1c9",
+      "is_main_chain": true,
+      "height": 22,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580"
+      ]
+    },
+    "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580": {
+      "block": {
+        "block_data": {
+          "index": 23,
+          "m_tree_root": "merkle_root_329905",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.432393",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580"
+      },
+      "parent_hash": "9d1e71177f635452a5ede8d7ed566b958ed796a45a9337f495c24332a492c657",
+      "is_main_chain": true,
+      "height": 23,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698"
+      ]
+    },
+    "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698": {
+      "block": {
+        "block_data": {
+          "index": 24,
+          "m_tree_root": "merkle_root_329905",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.444800",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698"
+      },
+      "parent_hash": "e88b8f926f1f04be86d6ed871d57678223cd0b9edd5b45302103de90a22f5580",
+      "is_main_chain": true,
+      "height": 24,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532"
+      ]
+    },
+    "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532": {
+      "block": {
+        "block_data": {
+          "index": 25,
+          "m_tree_root": "merkle_root_329905",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.452824",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532"
+      },
+      "parent_hash": "b21422fdd25ea3d56b9d4f0c2f2c84f0f5da10117a034da25fec70ccae5dd698",
+      "is_main_chain": true,
+      "height": 25,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521"
+      ]
+    },
+    "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521": {
+      "block": {
+        "block_data": {
+          "index": 26,
+          "m_tree_root": "empty_merkle_root",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "a5929ed7e2270da6a33c9c6050ce4502303042f19e02fc279bd8f3ec9d30eee1",
+            "timestamp": "1761272244"
+          },
+          "time": "2025-10-24T10:17:24.499240",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521"
+      },
+      "parent_hash": "d0df3f1dd8d145f7eec121e7314f6cdc7453e176e2e36ecbf9f93b511739a532",
+      "is_main_chain": true,
+      "height": 26,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8"
+      ]
+    },
+    "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8": {
+      "block": {
+        "block_data": {
+          "index": 27,
+          "m_tree_root": "625e63f5d6bdc7e8403e929dbbab433be02b233a1d6c310390f694ba4c2cdc30",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.078732",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8"
+      },
+      "parent_hash": "2d9d127b9f68deec19dc17c0d1bc354fc7c3874605225693f33ed02fee250521",
+      "is_main_chain": true,
+      "height": 27,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486"
+      ]
+    },
+    "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486": {
+      "block": {
+        "block_data": {
+          "index": 28,
+          "m_tree_root": "",
+          "miner": "",
+          "nonce": 0,
+          "pre_hash": "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8",
+          "sig": {
+            "miner_id": "",
+            "public_key": "test_public_key_67890",
+            "signature": "26686ffd57a25e0aa8c4677dca775fc4f7de6fc7e78288d227c2c42eb499c83c",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.165657",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486"
+      },
+      "parent_hash": "4723479eaf5374c2471f8f7adacab0026d6b270e3dccf4e7991b3f38d6c5cdf8",
+      "is_main_chain": true,
+      "height": 28,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f",
+        "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4"
+      ]
+    },
+    "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f": {
+      "block": {
+        "block_data": {
+          "index": 29,
+          "m_tree_root": "merkle_root_867613",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.253539",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f"
+      },
+      "parent_hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+      "is_main_chain": true,
+      "height": 29,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "98366f31f51ae50ed58d99b33f4ade6d2cad2b49516acefdbd9f68590a43c94b"
+      ]
+    },
+    "98366f31f51ae50ed58d99b33f4ade6d2cad2b49516acefdbd9f68590a43c94b": {
+      "block": {
+        "block_data": {
+          "index": 30,
+          "m_tree_root": "merkle_root_129887",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.277006",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "98366f31f51ae50ed58d99b33f4ade6d2cad2b49516acefdbd9f68590a43c94b"
+      },
+      "parent_hash": "5729bd15397ef706f8e42987b05aa8c3b068962eac9e5c662c36fcf687604c7f",
+      "is_main_chain": true,
+      "height": 30,
+      "consensus_status": "confirmed",
+      "children_hashes": []
+    },
+    "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4": {
+      "block": {
+        "block_data": {
+          "index": 29,
+          "m_tree_root": "merkle_root_301136",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.297440",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4"
+      },
+      "parent_hash": "9fb97cb66cbd96baeb5a8e57c2bf67e07ba1003b4c3dbd753759b60594ad4486",
+      "is_main_chain": true,
+      "height": 29,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c"
+      ]
+    },
+    "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c": {
+      "block": {
+        "block_data": {
+          "index": 30,
+          "m_tree_root": "merkle_root_129887",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.317833",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c"
+      },
+      "parent_hash": "9d6972eb3e3d9e1a46695bf38875fd5a22d316a983e12a104b5a143f139620c4",
+      "is_main_chain": true,
+      "height": 30,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6"
+      ]
+    },
+    "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6": {
+      "block": {
+        "block_data": {
+          "index": 31,
+          "m_tree_root": "merkle_root_129887",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.340481",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6"
+      },
+      "parent_hash": "7c174253701b7da25d4fadda68be351bff05f9da6a7d5425eec056fa2cfb046c",
+      "is_main_chain": true,
+      "height": 31,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a"
+      ]
+    },
+    "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a": {
+      "block": {
+        "block_data": {
+          "index": 32,
+          "m_tree_root": "merkle_root_233395",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.428673",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a"
+      },
+      "parent_hash": "3f63d5df293f5ab12216de31f8b192cbd1042c07f83abb0fd25a535832443af6",
+      "is_main_chain": true,
+      "height": 32,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1"
+      ]
+    },
+    "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1": {
+      "block": {
+        "block_data": {
+          "index": 33,
+          "m_tree_root": "merkle_root_662986",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.451181",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1"
+      },
+      "parent_hash": "6df893ff05f691699da6447d6cb40c2446afced9842f87c1e4054a6b76d1cd9a",
+      "is_main_chain": true,
+      "height": 33,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e"
+      ]
+    },
+    "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e": {
+      "block": {
+        "block_data": {
+          "index": 34,
+          "m_tree_root": "merkle_root_616591",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.473285",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e"
+      },
+      "parent_hash": "d8078f900da75709e445528d62d236f3949a2f3718e156c8a38549656c62c0d1",
+      "is_main_chain": true,
+      "height": 34,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec"
+      ]
+    },
+    "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec": {
+      "block": {
+        "block_data": {
+          "index": 35,
+          "m_tree_root": "merkle_root_652524",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.495291",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec"
+      },
+      "parent_hash": "f0ea2e6ad2780269b7af70c97bc90d709159bc0973b5b78388dce992eb3d6f3e",
+      "is_main_chain": true,
+      "height": 35,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d"
+      ]
+    },
+    "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d": {
+      "block": {
+        "block_data": {
+          "index": 36,
+          "m_tree_root": "merkle_root_867613",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.589375",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d"
+      },
+      "parent_hash": "90c32453917940ba671e4af32f71bad58e27e88de9e429acc089f51b6892a5ec",
+      "is_main_chain": true,
+      "height": 36,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7"
+      ]
+    },
+    "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7": {
+      "block": {
+        "block_data": {
+          "index": 37,
+          "m_tree_root": "merkle_root_867613",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.612717",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7"
+      },
+      "parent_hash": "221a3d0d249a2fad1855d73c7552bfb48c1871150f96581f6df8ba841b82688d",
+      "is_main_chain": true,
+      "height": 37,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f"
+      ]
+    },
+    "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f": {
+      "block": {
+        "block_data": {
+          "index": 38,
+          "m_tree_root": "merkle_root_867613",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.655741",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f"
+      },
+      "parent_hash": "d67283490c497c6bc8c217d092fe4c71d846ac25160b028119a08b23af4517a7",
+      "is_main_chain": true,
+      "height": 38,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e"
+      ]
+    },
+    "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e": {
+      "block": {
+        "block_data": {
+          "index": 39,
+          "m_tree_root": "empty_merkle_root",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "4e006b91035b8a3b7c29754032d67fced9504913536c74c27d40c26e7e00ce03",
+            "timestamp": "1761272264"
+          },
+          "time": "2025-10-24T10:17:44.750624",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e"
+      },
+      "parent_hash": "b88e9ba81a073345c98a2f701c35f540a4784eb0def508a544196098102ec10f",
+      "is_main_chain": true,
+      "height": 39,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c"
+      ]
+    },
+    "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c": {
+      "block": {
+        "block_data": {
+          "index": 40,
+          "m_tree_root": "5c594cd2096f73d6129fdb023bfcaa49bf41f26527e38d5af4feae52217d4a0a",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.604662",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c"
+      },
+      "parent_hash": "81b1f42b69d8136592107d037281209bae82f8593055b627d12ae2ade798223e",
+      "is_main_chain": true,
+      "height": 40,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd"
+      ]
+    },
+    "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd": {
+      "block": {
+        "block_data": {
+          "index": 41,
+          "m_tree_root": "",
+          "miner": "",
+          "nonce": 0,
+          "pre_hash": "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c",
+          "sig": {
+            "miner_id": "",
+            "public_key": "test_public_key_67890",
+            "signature": "c4dbc04edf156a9ae1b9f03e5d88c7c5cd57618b0cf21247924afa1f51cdef68",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.673276",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd"
+      },
+      "parent_hash": "a5b93355c9ce667c35c10628c28fe46c02d64306a10876f74bdb1689be23262c",
+      "is_main_chain": true,
+      "height": 41,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051",
+        "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf"
+      ]
+    },
+    "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051": {
+      "block": {
+        "block_data": {
+          "index": 42,
+          "m_tree_root": "merkle_root_457565",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.739332",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051"
+      },
+      "parent_hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+      "is_main_chain": true,
+      "height": 42,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "ec1357fdabe5a6689ca1d76033864a65c90a344a879ecf3a993fca29f2e18bb7"
+      ]
+    },
+    "ec1357fdabe5a6689ca1d76033864a65c90a344a879ecf3a993fca29f2e18bb7": {
+      "block": {
+        "block_data": {
+          "index": 43,
+          "m_tree_root": "merkle_root_361058",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.757808",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "ec1357fdabe5a6689ca1d76033864a65c90a344a879ecf3a993fca29f2e18bb7"
+      },
+      "parent_hash": "049e48253e2db66317c9fbdc97b34fd32780057a170bc4ba35e3301b1d537051",
+      "is_main_chain": true,
+      "height": 43,
+      "consensus_status": "confirmed",
+      "children_hashes": []
+    },
+    "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf": {
+      "block": {
+        "block_data": {
+          "index": 42,
+          "m_tree_root": "merkle_root_907558",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.772810",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztzkERwCAQBDBgeCCr0iodD/Sx5SZRkNYAAIADPR0AAAC4yZsOAAAAVDbSAQAAAAAAAAAAAAAAAACgsJkOAAAAAAAAAHBipQMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQN5IBwDKmOkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwvZUOAAAAAAAAAAAAAAAAAADAbzzpAAAAAAAAAAAAAAAAAAAAAAAAAADwQU8HAAAAAAAAAAAAAAAAgJQNSEgA3w==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf"
+      },
+      "parent_hash": "1d6482bbe2fa7c6505bc31ec2f7cc35e5a0c019c055d43e0ab0d2fd099f9d5fd",
+      "is_main_chain": true,
+      "height": 42,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85"
+      ]
+    },
+    "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85": {
+      "block": {
+        "block_data": {
+          "index": 43,
+          "m_tree_root": "merkle_root_361058",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.791351",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85"
+      },
+      "parent_hash": "5243402709fcd4238dfd990d08240973174ba933ff4f48fdba25c7e335be0ccf",
+      "is_main_chain": true,
+      "height": 43,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4"
+      ]
+    },
+    "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4": {
+      "block": {
+        "block_data": {
+          "index": 44,
+          "m_tree_root": "merkle_root_361058",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.810695",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3VENgDAQRMGWr8qqNKTjgRzZXJlR8ARssmMAAAAvzHQAAAClVjoATnenAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOA3XPIAAAAAAAAAAAAAAAAAAAAAAAAAAECZKx0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAeysdAAAAAAAAAAAAVNjpAAAAAAAAOMNOBwAAAAAAAAAAAAAAAAAAAAAAAAAAANDATAcAAAAAAAAAAAAAAO3YIX/uAfsmAR4=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4"
+      },
+      "parent_hash": "da2f4ce7506ae341dc73da1aef80cb0edb46cf66914d96c3993a1927fa1ecb85",
+      "is_main_chain": true,
+      "height": 44,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3"
+      ]
+    },
+    "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3": {
+      "block": {
+        "block_data": {
+          "index": 45,
+          "m_tree_root": "merkle_root_295825",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.879828",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENwyAQRUFj+eBjSnAplObSU4MJ5As8U8DqnRYOSGwbAADQoKQDoJsrHbAuiwJgKmc6AFZ3pwMAAABWtqcDAAAAAAAAAAAAAAAAAICFHekAAAAAAAAAAFr4kgcAAAAAAAAAAAAAAAAAAAAAXqOOHP4ZORwAAADmsacDAACauckA9HKkAyCupAOADmo6AIAf1HQAAAAAAAAAAAAAMNCVDgAAAAAAAAAAAAAA/uZMBwAAAAAAAAAAAD3UdAAAAAAAAKyhpgMAAAAAAAAAAAAAAAAAAAAAAGBeVzrgqTsdAAAMUNIBALyGMwcAAAAAAAAAAAAAeMo75OG+SGQC3Q==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3"
+      },
+      "parent_hash": "836e1be6e65de8cdbe0d41703cb380d67d42f0f728a8973da869a656aa85c2d4",
+      "is_main_chain": true,
+      "height": 45,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9"
+      ]
+    },
+    "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9": {
+      "block": {
+        "block_data": {
+          "index": 46,
+          "m_tree_root": "merkle_root_463033",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.910526",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlGIUqRkBEbxaIxOHSkFSgi/D783wdfasu+mCQAAqKKlAwCAz7Z0AAAAAAAAAN2a0wEAAACU8UgHAAAAAAAAAADA2DzhAQAAatvSAcU4BQIAdGRNB/BnZnEBP3OOBwAAAACooqUD4D5e6QAAAACAlCUdAAAAAKdq6QAAAICOrekAAAAox+dDAAAAAAAA+JJVaIzDBlEAAC5mgiAAAAe4uQQAAAAAAAAAAAAAAAAABmdKBwAAAAAAAAAAwLuWDgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAOWdADQmTkdAAAAAAAAAAAAAAAAAAAU9EwHwAV2CmsCpA==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9"
+      },
+      "parent_hash": "94abf2986bfdeb98a57f60bdc358fb19f35f6d4f16910316f8011c33dcb858c3",
+      "is_main_chain": true,
+      "height": 46,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44"
+      ]
+    },
+    "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44": {
+      "block": {
+        "block_data": {
+          "index": 47,
+          "m_tree_root": "merkle_root_548794",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.931573",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENwkAMhtFwSkGZERglo3l0WgqQgoL473LvTfBVbmzJy0L3tnQAAAAAAADA1/Z0AAAAAAAAAAAAAAAAAAAAwHwqHQBwHZUOAAAAAAAAAAAAAIAptXQAAADA5WzpAAAAAGL2dACMa00HAAAAAAAAAACM5Z4OAOAYAxsAAAAAAAAAYFhOPwAAAAAAgM9sEgAAAAAAAHhxSwcAb1Q64B9aOgBOcH0BAAAAAAAAAD9R6QAAAAAAAAB690gHHFLpAAAAAAA6VekAIK3SAQAAAAAAAAAA0D8vtgEAAAAAAAAgbk0HcE5LBwAAAAAAAAAAAHANWzoAAAAAAACYyhOFkASJ",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44"
+      },
+      "parent_hash": "e20ddeb43fa7fbb2fad4b4c15f83e9bfbf5f6367d055e05e7ebdbfa5257042c9",
+      "is_main_chain": true,
+      "height": 47,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a"
+      ]
+    },
+    "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a": {
+      "block": {
+        "block_data": {
+          "index": 48,
+          "m_tree_root": "merkle_root_683156",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "e59359469d22a56f9303741cbe47e0d32c88b88593a306cf13856d6c027db3ac",
+            "timestamp": "1761272448"
+          },
+          "time": "2025-10-24T10:20:48.949979",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bsRwjAURUFrhsAhJVDKK82lOyYCBqz7bHYrOJmk0W9ZAAAA4IVbOgAAAAAAgBkqHQAAAAAATxxgBACAw410AADAcdZ0AAAAAI3d0wEAAABAnF1lAAAAAAAA3lHpAAAA6M1VLQAAAAAAAACgNx8kAwAAdGGFBsAMnp4GAAAA6MgrNQAAAAAAAAAA0NRIBwBwecYaAAAAAAAAAAAAIMlZRgAAAAAAAAAAAICL2tIBAAAAAADApyodAAAAACdQ6QAAAAAAADiHRzoAAAAAAADgb1Q6AAAAAACAn1vTAQBAe+YLAAAAAAAAAF8Y6QCYbUsHAAAAAADQyw4f+ALO",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a"
+      },
+      "parent_hash": "97a620358c5bdeb0e205c8c344799f4792c3994198cef3fe050383a1c560ed44",
+      "is_main_chain": true,
+      "height": 48,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324"
+      ]
+    },
+    "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324": {
+      "block": {
+        "block_data": {
+          "index": 49,
+          "m_tree_root": "merkle_root_457565",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+            "timestamp": "1761272449"
+          },
+          "time": "2025-10-24T10:20:49.016650",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324"
+      },
+      "parent_hash": "bec74d4b354c11e5dbd6ae69d68c5d8d65de07ebad562e14a433b37f893c1b5a",
+      "is_main_chain": true,
+      "height": 49,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df"
+      ]
+    },
+    "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df": {
+      "block": {
+        "block_data": {
+          "index": 50,
+          "m_tree_root": "merkle_root_457565",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+            "timestamp": "1761272449"
+          },
+          "time": "2025-10-24T10:20:49.033412",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df"
+      },
+      "parent_hash": "a4c1138f2356cf4f2eebf4a59b1ab021b2f5ca0e87dbda71c0005d87c39a2324",
+      "is_main_chain": true,
+      "height": 50,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd"
+      ]
+    },
+    "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd": {
+      "block": {
+        "block_data": {
+          "index": 51,
+          "m_tree_root": "merkle_root_457565",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+            "timestamp": "1761272449"
+          },
+          "time": "2025-10-24T10:20:49.050104",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3cENgCAQRUEhHCiL0izdGkTMjzhTwbvtHjbZ4wAAACaUdAAAAEv1dADs7kwHAAAA7KymAwAAAAAAAAAAAAAAAACAjbV0AAAAAAAAAAAzvOQBAAAAAAAAAAAAAAAAAAAAAAAAAIBlajoAAGCaTQZglZYOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPq+nAwAAAAAAAAAAgBVGOgAAAAAAAPYw0gEAAAAAAAAAAAAAAAAAAAAAAAAAwAMlHQDAb5g5AAAAAAAAAAAAAMBd7pBfdwE7OwEr",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd"
+      },
+      "parent_hash": "9e0619e67e53daa056295ae83767e14c53fe2cddd8307a56fd43a9df61cf55df",
+      "is_main_chain": true,
+      "height": 51,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "6e1a561e8feccc093955fc48f74e6c558f93bd684bb74643a523b723479dba29"
+      ]
+    },
+    "6e1a561e8feccc093955fc48f74e6c558f93bd684bb74643a523b723479dba29": {
+      "block": {
+        "block_data": {
+          "index": 52,
+          "m_tree_root": "empty_merkle_root",
+          "miner": "miner_integration_test",
+          "nonce": 0,
+          "pre_hash": "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd",
+          "sig": {
+            "miner_id": "miner_integration_test",
+            "public_key": "test_public_key_67890",
+            "signature": "865f0f554e35f537a052da21a02269e5d7130c88fc77ce2cf5f77bf7c92cf989",
+            "timestamp": "1761272449"
+          },
+          "time": "2025-10-24T10:20:49.121458",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJztwTEBAAAAwqD1T+1hDaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAbgAeAAE=",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "6e1a561e8feccc093955fc48f74e6c558f93bd684bb74643a523b723479dba29"
+      },
+      "parent_hash": "56d1ef6c1986835a733a2e62fa77437755fd803d2498f04779897bcfdf736bdd",
+      "is_main_chain": true,
+      "height": 52,
+      "consensus_status": "pending",
+      "children_hashes": []
+    }
+  },
+  "checksum": "94a7ec0d32b4d5fbca89a1cd4305cb6dd0fb45b82a5a1d6cae26a9b238f1a2bd"
+}

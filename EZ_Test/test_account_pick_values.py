@@ -111,11 +111,10 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, change_value, change_tx, main_tx = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         # Check that we have selected values
@@ -138,11 +137,10 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, change_value, change_tx, main_tx = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         # Check that we have selected values
@@ -173,11 +171,10 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, change_value, change_tx, main_tx = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         # Check that we have selected values
@@ -208,11 +205,10 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, change_value, change_tx, main_tx = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         assert len(selected_values) >= 2
@@ -226,12 +222,11 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         with pytest.raises(ValueError, match="余额不足！"):
             populated_account_pick_values.pick_values_for_transaction(
-                required_amount, sender, recipient, nonce, tx_hash, time
+                required_amount, sender, recipient, nonce, time
             )
 
     def test_pick_values_invalid_amount(self, populated_account_pick_values):
@@ -240,12 +235,11 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         with pytest.raises(ValueError, match="交易金额必须大于等于1"):
             populated_account_pick_values.pick_values_for_transaction(
-                required_amount, sender, recipient, nonce, tx_hash, time
+                required_amount, sender, recipient, nonce, time
             )
 
     def test_pick_values_no_available_values(self, account_pick_values):
@@ -254,12 +248,11 @@ class TestAccountPickValuesPickValuesForTransaction:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         with pytest.raises(ValueError, match="余额不足！"):
             account_pick_values.pick_values_for_transaction(
-                required_amount, sender, recipient, nonce, tx_hash, time
+                required_amount, sender, recipient, nonce, time
             )
 
 
@@ -273,11 +266,10 @@ class TestAccountPickValuesStateManagement:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, _, _, _ = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         # Check initial state
@@ -295,11 +287,10 @@ class TestAccountPickValuesStateManagement:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, _, _, _ = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         populated_account_pick_values.commit_transaction_values(selected_values)
@@ -316,11 +307,10 @@ class TestAccountPickValuesStateManagement:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, _, _, _ = populated_account_pick_values.pick_values_for_transaction(
-            required_amount, sender, recipient, nonce, tx_hash, time
+            required_amount, sender, recipient, nonce, time
         )
 
         # Check initial state
@@ -438,11 +428,10 @@ class TestAccountPickValuesEdgeCases:
         sender = "0xsender"
         recipient = "0xrecipient"
         nonce = 1
-        tx_hash = "0xtxhash"
         time = 1234567890
 
         selected_values, change_value, change_tx, main_tx = populated_account_pick_values.pick_values_for_transaction(
-            total_balance, sender, recipient, nonce, tx_hash, time
+            total_balance, sender, recipient, nonce, time
         )
 
         assert len(selected_values) >= 1

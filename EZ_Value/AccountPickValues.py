@@ -23,7 +23,7 @@ class AccountPickValues:
                 added_count += 1
         return added_count
     
-    def pick_values_for_transaction(self, required_amount: int, sender: str, recipient: str, 
+    def pick_values_for_transaction(self, required_amount: int, sender: str, recipient: str,
                                  nonce: int, time: int) -> Tuple[List[Value], Optional[Value], Optional[Transaction], Optional[Transaction]]:
         """为交易选择Value，返回选中的值、找零、找零交易、主交易"""
         if required_amount < 1:

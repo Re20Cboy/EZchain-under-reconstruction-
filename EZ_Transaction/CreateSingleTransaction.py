@@ -61,7 +61,7 @@ class CreateTransaction:
         
         timestamp = datetime.now().isoformat()
         
-        # Select values for the transaction
+        # Select values for transaction
         selected_values, change_value, change_transaction, main_transaction = \
             self.value_selector.pick_values_for_transaction(
                 required_amount=amount,

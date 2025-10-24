@@ -80,13 +80,62 @@ class TestTxnsPool(unittest.TestCase):
     
     def tearDown(self):
         """Clean up test fixtures."""
-        # Clean up temporary database file
-        if os.path.exists(self.temp_db.name):
-            os.unlink(self.temp_db.name)
-        
-        # Stop the cleanup thread
+        import tempfile
+        import shutil
+
+        # Stop the cleanup thread first
         if hasattr(self.pool, '_cleanup_thread'):
             self.pool._cleanup_thread = None
+
+        # Force garbage collection to close any remaining connections
+        import gc
+        gc.collect()
+
+        # Try to close any database connections more aggressively
+        if hasattr(self.pool, 'lock'):
+            try:
+                with self.pool.lock:
+                    # Use Windows-specific approach to close file handles
+                    import ctypes
+                    if os.name == 'nt':
+                        try:
+                            import ctypes.wintypes
+                            kernel32 = ctypes.windll.kernel32
+                            handle = kernel32.CreateFileW(
+                                self.temp_db.name,
+                                0x80000000,  # GENERIC_READ
+                                1,           # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+                                None,
+                                3,           # OPEN_EXISTING
+                                0x02000000,  # FILE_FLAG_DELETE_ON_CLOSE
+                                None
+                            )
+                            if handle != -1:  # INVALID_HANDLE_VALUE
+                                kernel32.CloseHandle(handle)
+                        except:
+                            pass
+            except:
+                pass
+
+        # Use shutil.rmtree for more aggressive cleanup on Windows
+        if os.path.exists(self.temp_db.name):
+            try:
+                os.unlink(self.temp_db.name)
+            except PermissionError:
+                # As a last resort, mark for deletion on reboot
+                if os.name == 'nt':
+                    try:
+                        import ctypes
+                        movefileex = ctypes.windll.kernel32.MoveFileExW
+                        movefileex(self.temp_db.name, None, 4)  # MOVEFILE_DELAY_UNTIL_REBOOT
+                    except:
+                        pass
+                # Or use tempfile for cleanup
+                try:
+                    temp_dir = os.path.dirname(self.temp_db.name)
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except:
+                    pass
     
     def test_initialization(self):
         """Test pool initialization."""
@@ -623,16 +672,16 @@ class TestTxnsPool(unittest.TestCase):
                 False
             ))
             
-            # Insert corrupted data (invalid blob)
+            # Insert corrupted data (invalid blob but with a dummy signature)
             cursor.execute('''
-                INSERT INTO multi_transactions 
+                INSERT INTO multi_transactions
                 (digest, sender, timestamp, signature, transactions_blob, is_valid, processed)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 "corrupted_digest",
                 "corrupted_sender",
                 "2023-01-01T00:00:00",
-                None,
+                "dummy_corrupted_signature",  # Fixed: Provide a non-null signature
                 b"corrupted_blob_data",
                 True,
                 False
