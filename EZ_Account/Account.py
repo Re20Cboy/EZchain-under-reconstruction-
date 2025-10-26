@@ -23,7 +23,7 @@ from EZ_Value.Value import Value, ValueState
 from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Value.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateSingleTransaction import CreateTransaction
-from EZ_Transaction.SingleTransaction import SingleTransaction
+from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction
 # TransactionPool is used by consensus nodes, not account nodes
 # from EZ_Transaction_Pool.TransactionPool import TransactionPool
 from EZ_VPB.VPBPair import VPBpair
@@ -56,9 +56,9 @@ class Account:
         self.public_key_pem = public_key_pem
 
         # Initialize core components
-        self.value_collection = AccountValueCollection()
-        self.value_selector = AccountPickValues(address)
-        self.transaction_creator = CreateTransaction(address)
+        self.value_collection = AccountValueCollection(address)
+        self.value_selector = AccountPickValues(address, self.value_collection)
+        self.transaction_creator = CreateTransaction(address, self.value_collection)
 
         # Account nodes don't maintain their own transaction pool
         # They submit transactions to consensus nodes' pools
@@ -73,7 +73,7 @@ class Account:
         self.last_activity = datetime.now()
 
         # Security: Use secure signature handler
-        self.signature_handler = secure_signature_handler(private_key_pem, public_key_pem)
+        self.signature_handler = secure_signature_handler
 
         # Transaction history tracking
         self.transaction_history: List[Dict] = []
@@ -92,7 +92,7 @@ class Account:
             Total balance amount
         """
         values = self.value_collection.find_by_state(state)
-        return sum(len(value.amount) for value in values)
+        return sum(value.value_num for value in values)
 
     def get_all_balances(self) -> Dict[str, int]:
         """
@@ -117,7 +117,7 @@ class Account:
             List of values
         """
         if state is None:
-            return self.value_collection.find_all()
+            return self.value_collection.get_all_values()
         return self.value_collection.find_by_state(state)
 
     def add_values(self, values: List[Value], position: str = "end") -> int:
@@ -136,7 +136,7 @@ class Account:
             try:
                 self.value_collection.add_value(value, position)
                 added_count += 1
-                print(f"Added value with {len(value.amount)} units to {self.name}")
+                print(f"Added value with {value.value_num} units to {self.name}")
             except Exception as e:
                 print(f"Failed to add value: {e}")
 
@@ -158,17 +158,23 @@ class Account:
         """
         try:
             # Select values for the transaction
-            selected_values, change_values = self.value_selector.pick_values(amount)
+            selected_values, change_values = self.value_selector.pick_values_for_transaction(
+                required_amount=amount,
+                sender=self.address,
+                recipient=recipient,
+                nonce=0,  # Will be set later
+                time=datetime.now().isoformat()
+            )
 
             if not selected_values:
                 print(f"Insufficient balance for transaction of {amount} units")
                 return None
 
             # Create the transaction
-            transaction = self.transaction_creator.create_single_transaction(
+            transaction = self.transaction_creator.create_transaction(
                 recipient=recipient,
                 amount=amount,
-                reference=reference
+                private_key_pem=self.private_key_pem  # 传递私钥用于签名
             )
 
             if transaction:
@@ -208,10 +214,17 @@ class Account:
             transaction_for_signing = self._prepare_transaction_for_signing(transaction)
 
             # Sign using secure signature handler
-            signature = self.signature_handler.sign(transaction_for_signing)
+            result = self.signature_handler.sign_transaction(
+                sender=transaction.get('sender', self.address),
+                recipient=transaction.get('recipient'),
+                nonce=transaction.get('nonce', 0),
+                value_data=transaction.get('values', []),
+                private_key_pem=self.private_key_pem,
+                timestamp=transaction.get('time')
+            )
 
-            if signature:
-                transaction['signature'] = signature
+            if result and 'signature' in result:
+                transaction['signature'] = result['signature']
                 transaction['public_key'] = self.public_key_pem.decode('utf-8')
 
                 # Record in history
@@ -239,14 +252,20 @@ class Account:
             if 'signature' not in transaction or 'public_key' not in transaction:
                 return False
 
-            # Prepare transaction for verification
-            transaction_for_verification = self._prepare_transaction_for_signing(transaction)
+            # Create transaction data for verification
+            transaction_data = {
+                "sender": transaction.get('sender', self.address),
+                "recipient": transaction.get('recipient'),
+                "nonce": transaction.get('nonce', 0),
+                "timestamp": transaction.get('time'),
+                "value": transaction.get('values', [])
+            }
 
-            # Verify signature
-            is_valid = self.signature_handler.verify(
-                transaction_for_verification,
-                transaction['signature'],
-                transaction['public_key'].encode('utf-8')
+            # Verify signature using secure signature handler
+            is_valid = self.signature_handler.verify_transaction_signature(
+                transaction_data=transaction_data,
+                signature_hex=transaction['signature'],
+                public_key_pem=transaction['public_key'].encode('utf-8')
             )
 
             return is_valid

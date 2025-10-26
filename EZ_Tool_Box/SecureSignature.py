@@ -422,6 +422,12 @@ class SecureTransactionSignature:
         """Enable security warnings."""
         self._security_warnings_enabled = True
 
+    def clear_key(self) -> None:
+        """Clear any cached sensitive data (placeholder for cleanup)."""
+        # This implementation doesn't cache keys long-term
+        # Keys are handled securely within the signing context
+        pass
+
 
 # Global instance for easy access
 secure_signature_handler = SecureTransactionSignature()

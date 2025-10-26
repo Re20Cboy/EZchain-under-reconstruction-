@@ -12,8 +12,16 @@ from EZ_Transaction.SingleTransaction import Transaction
 class AccountPickValues:
     """增强版Value选择器，基于AccountValueCollection实现高效调度"""
     
-    def __init__(self, account_address: str):
-        self.account_collection = AccountValueCollection(account_address)
+    def __init__(self, account_address: str, existing_collection: Optional[AccountValueCollection] = None):
+        """初始化AccountPickValues
+        Args:
+            account_address: 账户地址
+            existing_collection: 现有的ValueCollection，如果提供则使用现有的而不是创建新的
+        """
+        if existing_collection:
+            self.account_collection = existing_collection
+        else:
+            self.account_collection = AccountValueCollection(account_address)
         
     def add_values_from_list(self, values: List[Value]) -> int:
         """从Value列表批量添加Value"""
@@ -24,7 +32,7 @@ class AccountPickValues:
         return added_count
     
     def pick_values_for_transaction(self, required_amount: int, sender: str, recipient: str,
-                                 nonce: int, time: int) -> Tuple[List[Value], Optional[Value], Optional[Transaction], Optional[Transaction]]:
+                                 nonce: int, time: str) -> Tuple[List[Value], Optional[Value], Optional[Transaction], Optional[Transaction]]:
         """为交易选择Value，返回选中的值、找零、找零交易、主交易"""
         if required_amount < 1:
             raise ValueError("交易金额必须大于等于1")
@@ -35,15 +43,15 @@ class AccountPickValues:
         
         # 获取可用的未花销Value
         available_values = self.account_collection.find_by_state(ValueState.UNSPENT)
-        
+
         # 贪心算法选择Value
         for value in available_values:
             if total_selected >= required_amount:
                 break
-            
+
             selected_values.append(value)
             total_selected += value.value_num
-            
+
         # 检查余额是否足够
         if total_selected < required_amount:
             raise ValueError("余额不足！")

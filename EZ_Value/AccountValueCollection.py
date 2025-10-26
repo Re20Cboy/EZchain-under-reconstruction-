@@ -253,3 +253,74 @@ class AccountValueCollection:
                 return True
             current = current.next
         return False
+
+    def revert_selected_to_unspent(self) -> int:
+        """
+        将所有SELECTED状态的Value恢复为UNSPENT状态
+
+        Returns:
+            恢复的Value数量
+        """
+        reverted_count = 0
+        selected_node_ids = list(self._state_index[ValueState.SELECTED])
+
+        for node_id in selected_node_ids:
+            if self.update_value_state(node_id, ValueState.UNSPENT):
+                reverted_count += 1
+
+        return reverted_count
+
+    def validate_integrity(self) -> bool:
+        """
+        验证AccountValueCollection的完整性
+
+        Returns:
+            True if integrity is valid
+        """
+        try:
+            # 检查链表结构完整性
+            current = self.head
+            index = 0
+            while current:
+                index += 1
+
+                # 验证前驱指针
+                if current.prev is not None and current.prev.next != current:
+                    return False
+
+                # 验证后继指针
+                if current.next is not None and current.next.prev != current:
+                    return False
+
+                # 验证索引映射
+                if current.node_id not in self._index_map:
+                    return False
+
+                # 验证状态索引
+                if current.node_id not in self._state_index[current.value.state]:
+                    return False
+
+                current = current.next
+
+            # 检查size是否正确
+            if index != self.size:
+                return False
+
+            # 检查索引映射数量
+            if len(self._index_map) != self.size:
+                return False
+
+            # 检查状态索引总数
+            total_state_count = sum(len(state_set) for state_set in self._state_index.values())
+            if total_state_count != self.size:
+                return False
+
+            # 检查无重叠
+            if not self.validate_no_overlap():
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Error during integrity validation: {e}")
+            return False
