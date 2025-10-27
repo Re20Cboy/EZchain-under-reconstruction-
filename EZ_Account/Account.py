@@ -22,8 +22,7 @@ from datetime import datetime
 from EZ_Value.Value import Value, ValueState
 from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Value.AccountPickValues import AccountPickValues
-from EZ_Transaction.CreateSingleTransaction import CreateTransaction
-from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction
+from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 # TransactionPool is used by consensus nodes, not account nodes
 # from EZ_Transaction_Pool.TransactionPool import TransactionPool
 from EZ_VPB.VPBPair import VPBpair
@@ -58,7 +57,7 @@ class Account:
         # Initialize core components
         self.value_collection = AccountValueCollection(address)
         self.value_selector = AccountPickValues(address, self.value_collection)
-        self.transaction_creator = CreateTransaction(address, self.value_collection)
+        self.transaction_creator = CreateMultiTransactions(address)
 
         # Account nodes don't maintain their own transaction pool
         # They submit transactions to consensus nodes' pools
@@ -81,19 +80,7 @@ class Account:
 
         print(f"Account {self.name} ({address}) initialized successfully")
 
-    def get_balance(self, state: ValueState = ValueState.UNSPENT) -> int:
-        """
-        Get account balance for values in a specific state.
-
-        Args:
-            state: Value state to calculate balance for (default: UNSPENT)
-
-        Returns:
-            Total balance amount
-        """
-        values = self.value_collection.find_by_state(state)
-        return sum(value.value_num for value in values)
-
+    
     def get_all_balances(self) -> Dict[str, int]:
         """
         Get balances broken down by state.
@@ -143,192 +130,222 @@ class Account:
         self.last_activity = datetime.now()
         return added_count
 
-    def create_transaction(self, recipient: str, amount: int,
-                          reference: Optional[str] = None) -> Optional[Dict]:
+    def create_batch_transactions(self, transaction_requests: List[Dict],
+                                reference: Optional[str] = None) -> Optional[Dict]:
         """
-        Create a new transaction.
+        Create multiple transactions as a batch using CreateMultiTransactions.
 
         Args:
-            recipient: Recipient address
-            amount: Amount to transfer
+            transaction_requests: List of transaction requests with 'recipient' and 'amount'
             reference: Optional transaction reference
 
         Returns:
-            Transaction dictionary or None if failed
+            Multi-transaction dictionary or None if failed
         """
         try:
-            # Select values for the transaction
-            selected_values, change_values = self.value_selector.pick_values_for_transaction(
-                required_amount=amount,
-                sender=self.address,
-                recipient=recipient,
-                nonce=0,  # Will be set later
-                time=datetime.now().isoformat()
+            # Use CreateMultiTransactions to handle the complete batch transaction creation
+            multi_transaction_result = self.transaction_creator.create_multi_transactions(
+                transaction_requests=transaction_requests,
+                private_key_pem=self.private_key_pem
             )
 
-            if not selected_values:
-                print(f"Insufficient balance for transaction of {amount} units")
+            if multi_transaction_result:
+                # Record in history
+                self._record_multi_transaction(multi_transaction_result, "batch_created", reference)
+
+                multi_txn_hash = multi_transaction_result["multi_transactions"].digest
+                print(f"Batch multi-transaction created with {multi_transaction_result['transaction_count']} transactions: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
+                return multi_transaction_result
+            else:
+                print(f"Failed to create batch multi-transaction")
                 return None
 
-            # Create the transaction
-            transaction = self.transaction_creator.create_transaction(
-                recipient=recipient,
-                amount=amount,
-                private_key_pem=self.private_key_pem  # 传递私钥用于签名
-            )
-
-            if transaction:
-                # Mark selected values as SELECTED
-                for value in selected_values:
-                    self.value_collection.update_value_state(value.id, ValueState.SELECTED)
-
-                # Add change values if any
-                if change_values:
-                    self.add_values(change_values, "start")
-
-                # Record in history
-                self._record_transaction(transaction, "created")
-
-                print(f"Transaction created: {transaction['hash'][:16]}...")
-                return transaction
-
         except Exception as e:
-            print(f"Failed to create transaction: {e}")
-            # Revert value states on failure
-            self.value_collection.revert_selected_to_unspent()
+            print(f"Failed to create batch transactions: {e}")
+            return None
 
-        return None
-
-    def sign_transaction(self, transaction: Dict) -> bool:
+    def confirm_multi_transaction(self, multi_txn_result: Dict) -> bool:
         """
-        Sign a transaction using the account's private key.
+        Confirm a multi-transaction and update value states.
 
         Args:
-            transaction: Transaction dictionary
+            multi_txn_result: Result from create_multi_transactions method
 
         Returns:
-            True if signing successful
+            True if confirmation successful, False otherwise
         """
         try:
-            # Prepare transaction for signing
-            transaction_for_signing = self._prepare_transaction_for_signing(transaction)
-
-            # Sign using secure signature handler
-            result = self.signature_handler.sign_transaction(
-                sender=transaction.get('sender', self.address),
-                recipient=transaction.get('recipient'),
-                nonce=transaction.get('nonce', 0),
-                value_data=transaction.get('values', []),
-                private_key_pem=self.private_key_pem,
-                timestamp=transaction.get('time')
-            )
-
-            if result and 'signature' in result:
-                transaction['signature'] = result['signature']
-                transaction['public_key'] = self.public_key_pem.decode('utf-8')
-
-                # Record in history
-                self._record_transaction(transaction, "signed")
-
-                print(f"Transaction signed: {transaction['hash'][:16]}...")
-                return True
-
-        except Exception as e:
-            print(f"Failed to sign transaction: {e}")
-
-        return False
-
-    def verify_transaction(self, transaction: Dict) -> bool:
-        """
-        Verify a transaction signature.
-
-        Args:
-            transaction: Transaction dictionary
-
-        Returns:
-            True if signature is valid
-        """
-        try:
-            if 'signature' not in transaction or 'public_key' not in transaction:
-                return False
-
-            # Create transaction data for verification
-            transaction_data = {
-                "sender": transaction.get('sender', self.address),
-                "recipient": transaction.get('recipient'),
-                "nonce": transaction.get('nonce', 0),
-                "timestamp": transaction.get('time'),
-                "value": transaction.get('values', [])
-            }
-
-            # Verify signature using secure signature handler
-            is_valid = self.signature_handler.verify_transaction_signature(
-                transaction_data=transaction_data,
-                signature_hex=transaction['signature'],
-                public_key_pem=transaction['public_key'].encode('utf-8')
-            )
-
-            return is_valid
-
-        except Exception as e:
-            print(f"Failed to verify transaction: {e}")
-            return False
-
-    def submit_transaction(self, transaction: Dict, pool_connection=None) -> bool:
-        """
-        Submit a transaction to a consensus node's transaction pool.
-
-        Args:
-            transaction: Signed transaction dictionary
-            pool_connection: Optional connection to consensus node's transaction pool
-
-        Returns:
-            True if submission successful
-        """
-        try:
-            # Create SingleTransaction object
-            single_tx = SingleTransaction(
-                sender=transaction['sender'],
-                recipient=transaction['recipient'],
-                amount=transaction['amount'],
-                fee=transaction.get('fee', 0),
-                nonce=transaction.get('nonce', 0),
-                reference=transaction.get('reference'),
-                signature=transaction['signature'],
-                hash_value=transaction['hash']
-            )
-
-            # Submit to external transaction pool (consensus node)
-            if pool_connection is not None:
-                # Submit via provided connection (e.g., network API, local pool access)
-                success = pool_connection.add_transaction(single_tx)
-            else:
-                # For now, we'll simulate submission
-                # In practice, this would be submitted to consensus nodes via network
-                print(f"Transaction ready for network submission: {transaction['hash'][:16]}...")
-                success = True
+            success = self.transaction_creator.confirm_multi_transactions(multi_txn_result)
 
             if success:
-                # Update value states to LOCAL_COMMITTED
-                self._update_transaction_value_states(transaction, ValueState.LOCAL_COMMITTED)
-
                 # Record in history
-                self._record_transaction(transaction, "submitted")
+                self._record_multi_transaction(multi_txn_result, "confirmed")
+                print(f"Multi-transaction confirmed and value states updated")
 
-                print(f"Transaction submitted: {transaction['hash'][:16]}...")
-                return True
-            else:
-                # Revert value states on failure
-                self._update_transaction_value_states(transaction, ValueState.UNSPENT)
-                print(f"Failed to submit transaction")
+                # Update last activity
+                self.last_activity = datetime.now()
+
+            return success
 
         except Exception as e:
-            print(f"Error submitting transaction: {e}")
-            # Revert value states on error
-            self._update_transaction_value_states(transaction, ValueState.UNSPENT)
+            print(f"Failed to confirm multi-transaction: {e}")
+            return False
 
-        return False
+    def submit_multi_transaction(self, multi_txn_result: Dict, transaction_pool=None) -> bool:
+        """
+        Submit a multi-transaction to the transaction pool.
 
+        Args:
+            multi_txn_result: Multi-transaction result from creation methods
+            transaction_pool: Optional transaction pool connection
+
+        Returns:
+            True if submission successful, False otherwise
+        """
+        try:
+            if transaction_pool is not None:
+                # Use CreateMultiTransactions submission method
+                success, message = self.transaction_creator.submit_to_transaction_pool(
+                    multi_txn_result, transaction_pool, self.public_key_pem
+                )
+
+                if success:
+                    # Record in history
+                    self._record_multi_transaction(multi_txn_result, "submitted")
+                    print(f"Multi-transaction submitted to transaction pool: {message}")
+                    self.last_activity = datetime.now()
+                else:
+                    print(f"Failed to submit multi-transaction: {message}")
+
+                return success
+            else:
+                # Simulate submission (for testing)
+                multi_txn = multi_txn_result["multi_transactions"]
+                print(f"Multi-transaction ready for network submission: {multi_txn.digest[:16] if multi_txn.digest else 'N/A'}...")
+
+                # Record in history
+                self._record_multi_transaction(multi_txn_result, "submitted")
+                return True
+
+        except Exception as e:
+            print(f"Error submitting multi-transaction: {e}")
+            return False
+
+    def get_balance(self, state: ValueState = ValueState.UNSPENT) -> int:
+        """
+        Get account balance for values in a specific state.
+
+        Args:
+            state: Value state to calculate balance for (default: UNSPENT)
+
+        Returns:
+            Total balance amount
+        """
+        if state == ValueState.UNSPENT:
+            # Use CreateMultiTransactions method for UNSPENT balance
+            try:
+                return self.transaction_creator.get_account_balance()
+            except Exception as e:
+                print(f"Error getting balance via CreateMultiTransactions: {e}")
+
+        # Fallback to original method for other states or if CreateMultiTransactions fails
+        values = self.value_collection.find_by_state(state)
+        return sum(value.value_num for value in values)
+
+    def get_available_balance(self) -> int:
+        """
+        Get current available balance using CreateMultiTransactions method.
+
+        Returns:
+            Available balance amount
+        """
+        try:
+            return self.transaction_creator.get_account_balance()
+        except Exception as e:
+            print(f"Error getting available balance: {e}")
+            # Fallback to original method
+            values = self.value_collection.find_by_state(ValueState.UNSPENT)
+            return sum(value.value_num for value in values)
+
+    def get_account_integrity(self) -> bool:
+        """
+        Validate account integrity using CreateMultiTransactions method.
+
+        Returns:
+            True if account is valid, False otherwise
+        """
+        try:
+            return self.transaction_creator.validate_account_integrity()
+        except Exception as e:
+            print(f"Error validating account integrity: {e}")
+            return False
+
+    def cleanup_confirmed_values(self) -> int:
+        """
+        Clean up confirmed values using CreateMultiTransactions method.
+
+        Returns:
+            Number of cleaned up values
+        """
+        try:
+            return self.transaction_creator.cleanup_confirmed_values()
+        except Exception as e:
+            print(f"Error cleaning up confirmed values: {e}")
+            return 0
+
+    def verify_multi_transaction_signature(self, multi_txn_result: Dict) -> bool:
+        """
+        Verify a multi-transaction signature using the account's public key.
+
+        Args:
+            multi_txn_result: Multi-transaction result containing multi_transactions object
+
+        Returns:
+            True if signature is valid, False otherwise
+        """
+        try:
+            multi_txn = multi_txn_result.get("multi_transactions")
+            if not multi_txn:
+                print("No multi_transactions object found in result")
+                return False
+
+            # Use CreateMultiTransactions verification method
+            return self.transaction_creator.verify_multi_transactions_signature(
+                multi_txn,
+                self.public_key_pem
+            )
+
+        except Exception as e:
+            print(f"Failed to verify multi-transaction signature: {e}")
+            return False
+
+    def verify_all_transaction_signatures(self, multi_txn_result: Dict) -> Dict[str, bool]:
+        """
+        Verify all individual transaction signatures within a multi-transaction.
+
+        Args:
+            multi_txn_result: Multi-transaction result containing multi_transactions object
+
+        Returns:
+            Dictionary mapping transaction indices to verification results
+        """
+        try:
+            multi_txn = multi_txn_result.get("multi_transactions")
+            if not multi_txn:
+                print("No multi_transactions object found in result")
+                return {}
+
+            # Use CreateMultiTransactions method to verify all signatures
+            return self.transaction_creator.verify_all_transaction_signatures(
+                multi_txn,
+                self.public_key_pem
+            )
+
+        except Exception as e:
+            print(f"Failed to verify all transaction signatures: {e}")
+            return {}
+
+    
     def set_transaction_pool_url(self, pool_url: str):
         """
         Set the URL for transaction pool submission (future network integration).
@@ -341,39 +358,39 @@ class Account:
 
     def get_pending_transactions(self, pool_connection=None) -> List[Dict]:
         """
-        Get pending transactions from consensus node's transaction pool.
+        Get pending multi-transactions from consensus node's transaction pool.
 
         Args:
             pool_connection: Optional connection to consensus node's transaction pool
 
         Returns:
-            List of pending transactions
+            List of pending multi-transactions
         """
         try:
             if pool_connection is not None:
-                # Query external transaction pool for this account's transactions
-                pending = pool_connection.get_transactions_by_sender(self.address)
+                # Query external transaction pool for this account's multi-transactions
+                pending = pool_connection.get_multi_transactions_by_sender(self.address)
                 # Convert to dictionary format
-                return [tx.to_dict() for tx in pending]
+                return [multi_txn.to_dict() for multi_txn in pending]
             else:
                 # Return locally tracked pending transactions (those marked as LOCAL_COMMITTED)
                 local_committed = self.value_collection.find_by_state(ValueState.LOCAL_COMMITTED)
                 pending_count = len(local_committed)
 
                 if pending_count > 0:
-                    print(f"Account has {pending_count} locally committed transactions pending confirmation")
+                    print(f"Account has {pending_count} locally committed multi-transactions pending confirmation")
                     # For now, return basic info
                     return [{
                         'sender': self.address,
                         'status': 'LOCAL_COMMITTED',
                         'count': pending_count,
-                        'message': 'Transactions submitted to network, awaiting confirmation'
+                        'message': 'Multi-transactions submitted to network, awaiting confirmation'
                     }]
 
                 return []
 
         except Exception as e:
-            print(f"Error getting pending transactions: {e}")
+            print(f"Error getting pending multi-transactions: {e}")
             return []
 
     def create_vpb(self, values: List[Value], proofs: List, block_indices: List) -> VPBpair:
@@ -473,41 +490,68 @@ class Account:
             print(f"Failed to validate VPB: {e}")
             return False
 
-    def receive_transaction(self, transaction: Dict) -> bool:
+    def receive_multi_transaction(self, multi_txn_result: Dict) -> bool:
         """
-        Framework for receiving and validating transactions.
+        Framework for receiving and validating multi-transactions.
 
         Args:
-            transaction: Incoming transaction dictionary
+            multi_txn_result: Incoming multi-transaction result
+
+        Returns:
+            True if multi-transaction is accepted (framework ready)
+        """
+        try:
+            # Validate multi-transaction structure
+            multi_txn = multi_txn_result.get("multi_transactions")
+            if not multi_txn:
+                print("No multi_transactions object found")
+                return False
+
+            # Verify multi-transaction signature
+            if not self.verify_multi_transaction_signature(multi_txn_result):
+                print("Invalid multi-transaction signature")
+                return False
+
+            # Verify all individual transaction signatures
+            signature_results = self.verify_all_transaction_signatures(multi_txn_result)
+            if not all(signature_results.values()):
+                print("Some individual transaction signatures are invalid")
+                return False
+
+            # VPB validation (placeholder - to be implemented)
+            if not self._validate_multi_transaction_vpb(multi_txn_result):
+                print("VPB validation failed")
+                return False
+
+            # Check if any transactions are for this account (as recipient)
+            transactions_for_this_account = [
+                tx for tx in multi_txn.multi_txns
+                if tx.recipient == self.address
+            ]
+
+            if transactions_for_this_account:
+                self._process_incoming_multi_transactions(transactions_for_this_account)
+
+            print(f"Multi-transaction received: {multi_txn.digest[:16] if multi_txn.digest else 'N/A'}...")
+            return True
+
+        except Exception as e:
+            print(f"Error processing received multi-transaction: {e}")
+            return False
+
+    def receive_transaction(self, transaction: Dict) -> bool:
+        """
+        Legacy method for backward compatibility.
+        DEPRECATED: Use receive_multi_transaction instead.
+
+        Args:
+            transaction: Incoming transaction dictionary (legacy format)
 
         Returns:
             True if transaction is accepted (framework ready)
         """
-        try:
-            # Basic validation
-            if not self._basic_transaction_validation(transaction):
-                return False
-
-            # Verify transaction signature
-            if not self.verify_transaction(transaction):
-                print("Invalid transaction signature")
-                return False
-
-            # VPB validation (placeholder - to be implemented)
-            if not self._validate_transaction_vpb(transaction):
-                print("VPB validation failed")
-                return False
-
-            # If this account is the recipient, add values to account
-            if transaction.get('recipient') == self.address:
-                self._process_incoming_transaction(transaction)
-
-            print(f"Transaction received: {transaction['hash'][:16]}...")
-            return True
-
-        except Exception as e:
-            print(f"Error processing received transaction: {e}")
-            return False
+        print("WARNING: receive_transaction is deprecated. Use receive_multi_transaction instead.")
+        return False
 
     def get_account_info(self) -> Dict:
         """
@@ -530,12 +574,17 @@ class Account:
 
     def validate_integrity(self) -> bool:
         """
-        Validate account data integrity.
+        Validate account data integrity using CreateMultiTransactions.
 
         Returns:
             True if account data is consistent
         """
         try:
+            # Use CreateMultiTransactions integrity validation
+            if not self.get_account_integrity():
+                print("CreateMultiTransactions integrity check failed")
+                return False
+
             # Validate value collection integrity
             if not self.value_collection.validate_integrity():
                 print("Value collection integrity check failed")
@@ -547,12 +596,12 @@ class Account:
                     print(f"VPB {vpb_id[:16]}... integrity check failed")
                     return False
 
-            # Validate local transaction integrity
+            # Validate local multi-transaction integrity
             # Note: Account nodes don't maintain transaction pools,
             # but we can validate locally tracked transactions
             local_committed = self.value_collection.find_by_state(ValueState.LOCAL_COMMITTED)
             if local_committed:
-                print(f"Account has {len(local_committed)} locally committed transactions awaiting confirmation")
+                print(f"Account has {len(local_committed)} locally committed multi-transactions awaiting confirmation")
                 # Additional validation can be added here
 
             return True
@@ -562,26 +611,6 @@ class Account:
             return False
 
     # Private helper methods
-
-    def _prepare_transaction_for_signing(self, transaction: Dict) -> Dict:
-        """Prepare transaction dictionary for signing."""
-        # Create a copy without signature fields
-        tx_copy = transaction.copy()
-        tx_copy.pop('signature', None)
-        tx_copy.pop('public_key', None)
-        return tx_copy
-
-    def _update_transaction_value_states(self, transaction: Dict, target_state: ValueState):
-        """Update value states for a transaction."""
-        try:
-            # This is a simplified implementation
-            # In practice, you'd track which values belong to which transaction
-            selected_values = self.value_collection.find_by_state(ValueState.SELECTED)
-            for value in selected_values:
-                self.value_collection.update_value_state(value.id, target_state)
-
-        except Exception as e:
-            print(f"Error updating value states: {e}")
 
     def _record_transaction(self, transaction: Dict, action: str):
         """Record transaction in history."""
@@ -604,42 +633,91 @@ class Account:
         except Exception as e:
             print(f"Error recording transaction: {e}")
 
+    def _record_multi_transaction(self, multi_txn_result: Dict, action: str, reference: Optional[str] = None):
+        """Record multi-transaction in history."""
+        try:
+            with self.history_lock:
+                multi_txn = multi_txn_result["multi_transactions"]
+                history_entry = {
+                    'hash': multi_txn.digest,
+                    'action': action,
+                    'timestamp': datetime.now().isoformat(),
+                    'transaction_count': multi_txn_result['transaction_count'],
+                    'total_amount': multi_txn_result['total_amount'],
+                    'recipients': multi_txn_result.get('recipients', []),
+                    'sender': self.address,
+                    'reference': reference,
+                    'type': 'multi_transaction'
+                }
+                self.transaction_history.append(history_entry)
+
+                # Keep only last 1000 entries
+                if len(self.transaction_history) > 1000:
+                    self.transaction_history = self.transaction_history[-1000:]
+
+        except Exception as e:
+            print(f"Error recording multi-transaction: {e}")
+
     def _basic_transaction_validation(self, transaction: Dict) -> bool:
         """Perform basic transaction validation."""
         required_fields = ['hash', 'sender', 'recipient', 'amount']
         return all(field in transaction for field in required_fields)
 
-    def _validate_transaction_vpb(self, transaction: Dict) -> bool:
+    def _validate_multi_transaction_vpb(self, multi_txn_result: Dict) -> bool:
         """
-        Validate transaction VPB (placeholder for future implementation).
+        Validate multi-transaction VPB (placeholder for future implementation).
 
         Args:
-            transaction: Transaction dictionary
+            multi_txn_result: Multi-transaction result
 
         Returns:
             True if VPB validation passes (placeholder)
         """
+        # TODO: Implement VPB validation logic for multi-transactions
+        # This would involve verifying the sender's VPB for all transactions
+        return True
+
+    def _validate_transaction_vpb(self, transaction: Dict) -> bool:
+        """
+        Legacy method for backward compatibility.
+        DEPRECATED: Use _validate_multi_transaction_vpb instead.
+
+        Args:
+            transaction: Transaction dictionary (legacy format)
+
+        Returns:
+            True if VPB validation passes (placeholder)
+        """
+        print("WARNING: _validate_transaction_vpb is deprecated. Use _validate_multi_transaction_vpb instead.")
         # TODO: Implement VPB validation logic
         # This would involve verifying the sender's VPB for the transaction
         return True
 
-    def _process_incoming_transaction(self, transaction: Dict):
-        """Process an incoming transaction where this account is the recipient."""
+    def _process_incoming_multi_transactions(self, transactions: List) -> None:
+        """Process incoming multi-transactions where this account is the recipient."""
         try:
-            # Create new value objects for the received amount
-            # This is a simplified implementation
-            new_value = Value()
-            # TODO: Proper value creation based on transaction details
-            # new_value.amount = ... (create integer set for the amount)
-            # new_value.state = ValueState.UNSPENT
+            for transaction in transactions:
+                # Create new value objects for the received amount
+                # This is a simplified implementation
+                new_value = Value()
+                # TODO: Proper value creation based on transaction details
+                # new_value.amount = ... (create integer set for the amount)
+                # new_value.state = ValueState.UNSPENT
 
-            # Add to account collection
-            # self.add_values([new_value])
+                # Add to account collection
+                # self.add_values([new_value])
 
-            print(f"Received {transaction.get('amount', 0)} units")
+                print(f"Received transaction with {len(transaction.value)} values")
 
         except Exception as e:
-            print(f"Error processing incoming transaction: {e}")
+            print(f"Error processing incoming multi-transactions: {e}")
+
+    def _process_incoming_transaction(self, transaction: Dict):
+        """
+        Legacy method for backward compatibility.
+        DEPRECATED: Use _process_incoming_multi_transactions instead.
+        """
+        print("WARNING: _process_incoming_transaction is deprecated. Use _process_incoming_multi_transactions instead.")
 
     def cleanup(self):
         """Cleanup resources and sensitive data."""

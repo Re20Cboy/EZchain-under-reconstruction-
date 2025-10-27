@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Comprehensive unit tests for Account class functionality.
+Updated for MultiTransactions-based Account class.
 """
 
 import pytest
@@ -9,13 +10,15 @@ import os
 from unittest.mock import Mock, patch
 from datetime import datetime
 
-# Add the project root to Python path
+# Add project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from EZ_Value.Value import Value, ValueState
     from EZ_Account.Account import Account
     from EZ_VPB.VPBPair import VPBpair
+    from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+    from EZ_Transaction.MultiTransactions import MultiTransactions
     from EZ_Tool_Box.SecureSignature import TransactionSigner
 except ImportError as e:
     print(f"Error importing modules: {e}")
@@ -87,6 +90,7 @@ class TestAccountInitialization:
         assert test_account.value_collection is not None
         assert test_account.value_selector is not None
         assert test_account.transaction_creator is not None
+        assert isinstance(test_account.transaction_creator, CreateMultiTransactions)
         assert test_account.signature_handler is not None
 
 
@@ -98,15 +102,30 @@ class TestAccountBalance:
         balance = test_account.get_balance()
         assert balance == 0
 
+    def test_get_available_balance(self, test_account):
+        """Test getting available balance using CreateMultiTransactions method."""
+        with patch.object(test_account.transaction_creator, 'get_account_balance') as mock_balance:
+            mock_balance.return_value = 500
+
+            balance = test_account.get_available_balance()
+            assert balance == 500
+            mock_balance.assert_called_once()
+
     def test_get_balance_with_unspent_values(self, test_account, sample_values):
         """Test getting balance with unspent values."""
         # Add unspent values to account
         unspent_values = [v for v in sample_values if v.state == ValueState.UNSPENT]
         test_account.add_values(unspent_values)
 
-        balance = test_account.get_balance(ValueState.UNSPENT)
-        expected_balance = sum(v.value_num for v in unspent_values)
-        assert balance == expected_balance
+        # Test specific state balance
+        # For UNSPENT state, Account now uses CreateMultiTransactions method
+        # So we need to mock that method
+        with patch.object(test_account.transaction_creator, 'get_account_balance') as mock_balance:
+            mock_balance.return_value = sum(v.value_num for v in unspent_values)
+
+            balance = test_account.get_balance(ValueState.UNSPENT)
+            expected_balance = sum(v.value_num for v in unspent_values)
+            assert balance == expected_balance
 
     def test_get_all_balances(self, test_account, sample_values):
         """Test getting all balances by state."""
@@ -154,19 +173,6 @@ class TestAccountValueManagement:
         assert count == len(sample_values)
         assert len(test_account.get_values()) == len(sample_values)
 
-    def test_add_values_with_position(self, test_account, sample_values):
-        """Test adding values at different positions."""
-        # Add initial values
-        initial_values = [Value("0x5000", 50, ValueState.UNSPENT)]
-        test_account.add_values(initial_values)
-
-        # Add values at beginning
-        test_account.add_values(sample_values, "beginning")
-        all_values = test_account.get_values()
-
-        # Should have added values (position test is simplified)
-        assert len(all_values) >= len(sample_values)
-
     def test_add_values_partial_failure(self, test_account):
         """Test adding values with some failures."""
         # Mix valid and invalid values
@@ -191,142 +197,229 @@ class TestAccountValueManagement:
         assert count == 1
 
 
-class TestAccountTransactions:
-    """Test suite for account transaction functionality."""
+class TestAccountMultiTransactions:
+    """Test suite for account multi-transaction functionality."""
 
-    def test_create_transaction_insufficient_balance(self, test_account):
-        """Test creating transaction with insufficient balance."""
-        recipient = "0xRecipient1234567890ABCDEF"
-        amount = 1000  # More than available
+    def test_create_batch_transactions_insufficient_balance(self, test_account):
+        """Test creating batch transactions with insufficient balance."""
+        transaction_requests = [
+            {"recipient": "0xRecipient1", "amount": 1000},  # More than available
+            {"recipient": "0xRecipient2", "amount": 500}
+        ]
 
-        transaction = test_account.create_transaction(recipient, amount)
-        assert transaction is None
+        with patch.object(test_account.transaction_creator, 'create_multi_transactions') as mock_create:
+            mock_create.return_value = None  # Simulate failure due to insufficient balance
 
-    def test_create_transaction_success(self, test_account, sample_values):
-        """Test successful transaction creation."""
-        # Add sufficient balance
-        test_account.add_values(sample_values)
+            result = test_account.create_batch_transactions(transaction_requests)
+            assert result is None
 
+    def test_create_batch_transactions_success(self, test_account):
+        """Test successful batch transaction creation."""
+        transaction_requests = [
+            {"recipient": "0xAddr1", "amount": 100},
+            {"recipient": "0xAddr2", "amount": 200},
+            {"recipient": "0xAddr3", "amount": 150}
+        ]
+        reference = "Test batch transaction"
+
+        # Mock CreateMultiTransactions result
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_multi_txn.digest = "test_batch_transaction_hash_456"
+
+        mock_result = {
+            "multi_transactions": mock_multi_txn,
+            "transactions": [Mock(), Mock(), Mock()],
+            "selected_values": [Mock(), Mock()],
+            "change_values": [Mock()],
+            "total_amount": 450,
+            "transaction_count": 3,
+            "base_nonce": 12346,
+            "timestamp": "2023-01-01T00:01:00"
+        }
+
+        with patch.object(test_account.transaction_creator, 'create_multi_transactions') as mock_create:
+            mock_create.return_value = mock_result
+
+            with patch.object(test_account, '_record_multi_transaction') as mock_record:
+                result = test_account.create_batch_transactions(transaction_requests, reference)
+
+                assert result is not None
+                assert result == mock_result
+                mock_create.assert_called_once_with(
+                    transaction_requests=transaction_requests,
+                    private_key_pem=test_account.private_key_pem
+                )
+                mock_record.assert_called_with(mock_result, "batch_created", reference)
+
+    def test_create_single_transaction_via_batch(self, test_account):
+        """Test creating single transaction using batch_transactions method."""
         recipient = "0xRecipient1234567890ABCDEF"
         amount = 50
+        reference = "Test single transaction"
 
-        # Mock the value selector to return values
-        mock_selected = [sample_values[0]]
-        mock_change = []
+        # Use batch_transactions with single request
+        transaction_requests = [{"recipient": recipient, "amount": amount}]
 
-        # Add id attribute to the selected value
-        mock_selected[0].id = "test_value_id"
+        # Mock CreateMultiTransactions result
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_multi_txn.digest = "test_single_transaction_hash_123"
 
-        with patch.object(test_account.value_selector, 'pick_values_for_transaction') as mock_pick:
-            mock_pick.return_value = (mock_selected, mock_change)
-
-            with patch.object(test_account.transaction_creator, 'create_transaction') as mock_create:
-                mock_transaction = {
-                    'hash': 'test_hash_123',
-                    'sender': test_account.address,
-                    'recipient': recipient,
-                    'amount': amount,
-                    'values': [v.to_dict_for_signing() for v in mock_selected]
-                }
-                mock_create.return_value = mock_transaction
-
-                transaction = test_account.create_transaction(recipient, amount)
-
-                assert transaction is not None
-                assert transaction['hash'] == 'test_hash_123'
-                assert transaction['recipient'] == recipient
-                assert transaction['amount'] == amount
-
-    def test_sign_transaction_success(self, test_account):
-        """Test successful transaction signing."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': test_account.address,
-            'recipient': '0xRecipient1234567890ABCDEF',
-            'amount': 100,
-            'values': []
+        mock_result = {
+            "multi_transactions": mock_multi_txn,
+            "transactions": [Mock()],
+            "selected_values": [Mock()],
+            "change_values": [],
+            "total_amount": amount,
+            "transaction_count": 1,
+            "base_nonce": 12345,
+            "timestamp": "2023-01-01T00:00:00"
         }
 
-        # Mock the signature handler
-        mock_signature_result = {
-            'signature': 'test_signature_456'
+        with patch.object(test_account.transaction_creator, 'create_multi_transactions') as mock_create:
+            mock_create.return_value = mock_result
+
+            with patch.object(test_account, '_record_multi_transaction') as mock_record:
+                result = test_account.create_batch_transactions(transaction_requests, reference)
+
+                assert result is not None
+                assert result == mock_result
+                mock_create.assert_called_once_with(
+                    transaction_requests=transaction_requests,
+                    private_key_pem=test_account.private_key_pem
+                )
+                mock_record.assert_called_with(mock_result, "batch_created", reference)
+
+    
+    
+    def test_confirm_multi_transaction_success(self, test_account):
+        """Test successful multi-transaction confirmation."""
+        mock_result = {
+            "multi_transactions": Mock(spec=MultiTransactions),
+            "selected_values": [Mock()],
+            "change_values": [Mock()]
         }
 
-        with patch.object(test_account.signature_handler, 'sign_transaction') as mock_sign:
-            mock_sign.return_value = mock_signature_result
+        # Patch the underlying CreateMultiTransactions method
+        with patch.object(test_account.transaction_creator, 'confirm_multi_transactions') as mock_confirm:
+            mock_confirm.return_value = True
 
-            success = test_account.sign_transaction(transaction)
+            with patch.object(test_account, '_record_multi_transaction') as mock_record:
+                success = test_account.confirm_multi_transaction(mock_result)
+
+                assert success is True
+                mock_confirm.assert_called_once_with(mock_result)
+                mock_record.assert_called_with(mock_result, "confirmed")
+
+    def test_submit_multi_transaction_success(self, test_account):
+        """Test successful multi-transaction submission."""
+        mock_result = {
+            "multi_transactions": Mock(spec=MultiTransactions),
+            "selected_values": [Mock()]
+        }
+        mock_pool = Mock()
+
+        # Patch the underlying CreateMultiTransactions method
+        with patch.object(test_account.transaction_creator, 'submit_to_transaction_pool') as mock_submit:
+            mock_submit.return_value = (True, "Success")
+
+            with patch.object(test_account, '_record_multi_transaction') as mock_record:
+                success = test_account.submit_multi_transaction(mock_result, mock_pool)
+
+                assert success is True
+                mock_submit.assert_called_once_with(mock_result, mock_pool, test_account.public_key_pem)
+                mock_record.assert_called_with(mock_result, "submitted")
+
+    def test_submit_multi_transaction_no_pool(self, test_account):
+        """Test multi-transaction submission without pool (simulation)."""
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_multi_txn.digest = "test_hash_123"
+        mock_result = {
+            "multi_transactions": mock_multi_txn,
+            "selected_values": [Mock()]
+        }
+
+        with patch.object(test_account, '_record_multi_transaction') as mock_record:
+            success = test_account.submit_multi_transaction(mock_result)
 
             assert success is True
-            assert 'signature' in transaction
-            assert 'public_key' in transaction
-            assert transaction['signature'] == 'test_signature_456'
+            mock_record.assert_called_with(mock_result, "submitted")
 
-    def test_verify_transaction_success(self, test_account):
-        """Test successful transaction verification."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': test_account.address,
-            'recipient': '0xRecipient1234567890ABCDEF',
-            'amount': 100,
-            'signature': 'test_signature_456',
-            'public_key': test_account.public_key_pem.decode('utf-8'),
-            'values': []
+    def test_verify_multi_transaction_signature_success(self, test_account):
+        """Test successful multi-transaction signature verification."""
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_result = {
+            "multi_transactions": mock_multi_txn
         }
 
-        # Mock successful verification
-        with patch.object(test_account.signature_handler, 'verify_transaction_signature') as mock_verify:
+        # Patch the underlying CreateMultiTransactions method
+        with patch.object(test_account.transaction_creator, 'verify_multi_transactions_signature') as mock_verify:
             mock_verify.return_value = True
 
-            is_valid = test_account.verify_transaction(transaction)
-
+            is_valid = test_account.verify_multi_transaction_signature(mock_result)
             assert is_valid is True
+            mock_verify.assert_called_once_with(mock_multi_txn, test_account.public_key_pem)
 
-    def test_verify_transaction_missing_signature(self, test_account):
-        """Test transaction verification with missing signature."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': test_account.address,
-            'recipient': '0xRecipient1234567890ABCDEF',
-            'amount': 100,
-            'values': []
-            # Missing signature and public_key
+    def test_verify_all_transaction_signatures_success(self, test_account):
+        """Test successful verification of all transaction signatures."""
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_result = {
+            "multi_transactions": mock_multi_txn
         }
 
-        is_valid = test_account.verify_transaction(transaction)
-        assert is_valid is False
+        expected_results = {"transaction_0": True, "transaction_1": True}
 
-    def test_submit_transaction_success(self, test_account):
-        """Test successful transaction submission."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': test_account.address,
-            'recipient': '0xRecipient1234567890ABCDEF',
-            'amount': 100,
-            'signature': 'test_signature_456',
-            'values': []
+        with patch.object(test_account.transaction_creator, 'verify_all_transaction_signatures') as mock_verify:
+            mock_verify.return_value = expected_results
+
+            results = test_account.verify_all_transaction_signatures(mock_result)
+            assert results == expected_results
+            mock_verify.assert_called_once_with(mock_multi_txn, test_account.public_key_pem)
+
+    def test_get_account_integrity_success(self, test_account):
+        """Test successful account integrity validation."""
+        with patch.object(test_account.transaction_creator, 'validate_account_integrity') as mock_validate:
+            mock_validate.return_value = True
+
+            is_valid = test_account.get_account_integrity()
+            assert is_valid is True
+            mock_validate.assert_called_once()
+
+    def test_cleanup_confirmed_values(self, test_account):
+        """Test cleanup of confirmed values."""
+        with patch.object(test_account.transaction_creator, 'cleanup_confirmed_values') as mock_cleanup:
+            mock_cleanup.return_value = 5
+
+            count = test_account.cleanup_confirmed_values()
+            assert count == 5
+            mock_cleanup.assert_called_once()
+
+    
+
+class TestAccountMultiTransactionReceiving:
+    """Test suite for account multi-transaction receiving functionality."""
+
+    def test_receive_multi_transaction_missing_multi_transactions(self, test_account):
+        """Test receiving result without multi_transactions object."""
+        mock_result = {}  # No multi_transactions key
+
+        success = test_account.receive_multi_transaction(mock_result)
+        assert success is False
+
+    def test_receive_multi_transaction_invalid_signature(self, test_account):
+        """Test receiving multi-transaction with invalid signature."""
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_result = {
+            "multi_transactions": mock_multi_txn
         }
 
-        # Mock the SingleTransaction constructor to avoid parameter errors
-        with patch('EZ_Account.Account.SingleTransaction') as mock_tx_class:
-            mock_tx = Mock()
-            mock_tx_class.return_value = mock_tx
+        with patch.object(test_account.transaction_creator, 'verify_multi_transactions_signature') as mock_verify:
+            mock_verify.return_value = False
 
-            success = test_account.submit_transaction(transaction)
-            assert success is True
+            success = test_account.receive_multi_transaction(mock_result)
+            assert success is False
+            mock_verify.assert_called_once_with(mock_multi_txn, test_account.public_key_pem)
 
-    def test_set_transaction_pool_url(self, test_account):
-        """Test setting transaction pool URL."""
-        pool_url = "http://localhost:8080/pool"
-        test_account.set_transaction_pool_url(pool_url)
-        assert test_account.transaction_pool_url == pool_url
-
-    def test_get_pending_transactions_empty(self, test_account):
-        """Test getting pending transactions from empty account."""
-        pending = test_account.get_pending_transactions()
-        assert isinstance(pending, list)
-        assert len(pending) == 0
-
+    
 
 class TestAccountVPB:
     """Test suite for account VPB functionality."""
@@ -387,12 +480,11 @@ class TestAccountVPB:
         mock_vpb.block_index_lst = Mock()
 
         # Use a direct approach - test that the method exists and can be called
-        # The actual VPB validation logic is complex and would require more setup
         try:
             result = test_account.validate_vpb(mock_vpb)
             # If it doesn't crash, that's a basic success
             assert isinstance(result, bool)
-        except Exception as e:
+        except Exception:
             # Expected due to mock complexity - this is acceptable for basic functionality testing
             pass
 
@@ -448,73 +540,63 @@ class TestAccountInfo:
         """Test successful account integrity validation."""
         test_account.add_values(sample_values)
 
-        # Mock the value collection integrity check
-        with patch.object(test_account.value_collection, 'validate_integrity') as mock_validate:
-            mock_validate.return_value = True
+        # Mock both integrity checks to return True
+        with patch.object(test_account, 'get_account_integrity') as mock_integrity:
+            with patch.object(test_account.value_collection, 'validate_integrity') as mock_validate:
+                mock_integrity.return_value = True
+                mock_validate.return_value = True
 
-            is_valid = test_account.validate_integrity()
-            assert is_valid is True
+                is_valid = test_account.validate_integrity()
+                assert is_valid is True
 
     def test_validate_integrity_failure(self, test_account):
         """Test account integrity validation failure."""
-        # Mock the value collection integrity check to fail
-        with patch.object(test_account.value_collection, 'validate_integrity') as mock_validate:
-            mock_validate.return_value = False
+        # Mock the account integrity check to fail
+        with patch.object(test_account, 'get_account_integrity') as mock_integrity:
+            mock_integrity.return_value = False
 
             is_valid = test_account.validate_integrity()
             assert is_valid is False
 
 
-class TestAccountTransactionReceiving:
-    """Test suite for account transaction receiving functionality."""
+class TestAccountPoolAndHistory:
+    """Test suite for transaction pool and history functionality."""
 
-    def test_receive_transaction_success(self, test_account):
-        """Test successful transaction reception."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': '0xSender1234567890ABCDEF',
-            'recipient': test_account.address,
-            'amount': 100,
-            'signature': 'test_signature',
-            'public_key': 'test_public_key',
-            'values': []
+    def test_set_transaction_pool_url(self, test_account):
+        """Test setting transaction pool URL."""
+        pool_url = "http://localhost:8080/pool"
+        test_account.set_transaction_pool_url(pool_url)
+        assert test_account.transaction_pool_url == pool_url
+
+    def test_get_pending_transactions_empty(self, test_account):
+        """Test getting pending transactions from empty account."""
+        pending = test_account.get_pending_transactions()
+        assert isinstance(pending, list)
+        assert len(pending) == 0
+
+    def test_record_multi_transaction_history(self, test_account):
+        """Test recording multi-transaction in history."""
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_multi_txn.digest = "test_hash_123"
+
+        mock_result = {
+            "multi_transactions": mock_multi_txn,
+            "transaction_count": 2,
+            "total_amount": 300,
+            "recipients": ["0xAddr1", "0xAddr2"]
         }
 
-        # Mock verification methods
-        with patch.object(test_account, 'verify_transaction') as mock_verify:
-            mock_verify.return_value = True
+        test_account._record_multi_transaction(mock_result, "created", "Test reference")
 
-            success = test_account.receive_transaction(transaction)
-            assert success is True
-
-    def test_receive_transaction_invalid_signature(self, test_account):
-        """Test receiving transaction with invalid signature."""
-        transaction = {
-            'hash': 'test_hash_123',
-            'sender': '0xSender1234567890ABCDEF',
-            'recipient': test_account.address,
-            'amount': 100,
-            'signature': 'invalid_signature',
-            'public_key': 'test_public_key',
-            'values': []
-        }
-
-        # Mock verification to fail
-        with patch.object(test_account, 'verify_transaction') as mock_verify:
-            mock_verify.return_value = False
-
-            success = test_account.receive_transaction(transaction)
-            assert success is False
-
-    def test_receive_transaction_missing_fields(self, test_account):
-        """Test receiving transaction with missing required fields."""
-        transaction = {
-            'sender': '0xSender1234567890ABCDEF',
-            # Missing required fields
-        }
-
-        success = test_account.receive_transaction(transaction)
-        assert success is False
+        assert len(test_account.transaction_history) == 1
+        history_entry = test_account.transaction_history[0]
+        assert history_entry['hash'] == "test_hash_123"
+        assert history_entry['action'] == "created"
+        assert history_entry['transaction_count'] == 2
+        assert history_entry['total_amount'] == 300
+        assert history_entry['recipients'] == ["0xAddr1", "0xAddr2"]
+        assert history_entry['reference'] == "Test reference"
+        assert history_entry['type'] == "multi_transaction"
 
 
 class TestAccountCleanup:
@@ -525,6 +607,12 @@ class TestAccountCleanup:
         # Add some data to the account
         test_account.add_values(sample_values)
         test_account.create_vpb(sample_values, ["proof1"], [1])
+
+        # Add to history
+        mock_multi_txn = Mock(spec=MultiTransactions)
+        mock_multi_txn.digest = "test_hash_123"
+        mock_result = {"multi_transactions": mock_multi_txn}
+        test_account._record_multi_transaction(mock_result, "created")
 
         # Perform cleanup
         test_account.cleanup()
@@ -540,12 +628,12 @@ class TestAccountCleanup:
 
         account = Account(address, private_key_pem, public_key_pem)
 
-        # Mock the cleanup method
+        # Mock cleanup method
         with patch.object(account, 'cleanup') as mock_cleanup:
             account.__del__()
             mock_cleanup.assert_called_once()
 
 
 if __name__ == "__main__":
-    # Run the tests
+    # Run tests
     pytest.main([__file__, "-v"])
