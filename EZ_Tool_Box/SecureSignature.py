@@ -248,9 +248,9 @@ class SecureTransactionSignature:
         transaction_hash = hashlib.sha256(transaction_bytes).digest()
         
         # Debug: Print the transaction data being used for signing
-        print(f"DEBUG - Transaction data for signing: {transaction_data}")
-        print(f"DEBUG - Transaction JSON: {transaction_json}")
-        print(f"DEBUG - Transaction hash: {transaction_hash.hex()}")
+        # print(f"DEBUG - Transaction data for signing: {transaction_data}")
+        # print(f"DEBUG - Transaction JSON: {transaction_json}")
+        # print(f"DEBUG - Transaction hash: {transaction_hash.hex()}")
         
         # Sign the transaction hash
         signature = self.signer.sign_transaction_data(transaction_hash, private_key_pem)

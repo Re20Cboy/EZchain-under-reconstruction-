@@ -1,9 +1,9 @@
 {
   "version": "1.0",
-  "timestamp": "2025-10-24T15:23:55.756619",
+  "timestamp": "2025-10-28T17:20:00.014110",
   "config": {
-    "max_fork_height": 3,
-    "confirmation_blocks": 2,
+    "max_fork_height": 6,
+    "confirmation_blocks": 3,
     "enable_fork_resolution": true,
     "debug_mode": true,
     "data_directory": "blockchain_data",
@@ -373,24 +373,104 @@
         "__module__": "EZ_Units.Bloom"
       },
       "hash": "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e"
+    },
+    {
+      "block_data": {
+        "index": 14,
+        "m_tree_root": "decedc42d77846db0fd33bc84b56bea0f8c661cca5f6ec039cca17497900f405",
+        "miner": "miner_real_test_001",
+        "nonce": 0,
+        "pre_hash": "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e",
+        "sig": {
+          "miner_id": "miner_real_test_001",
+          "public_key": "test_public_key_67890",
+          "signature": "a852b9cc5b50f305f909d5e9c1597bc2b5b4745dfdef5b7d8b18e88e19a8fad2",
+          "timestamp": "1761643172"
+        },
+        "time": "2025-10-28T17:19:32.136402",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlGMUlBmBI/CaB49TaSgdBGGH5P3Jvi6k+6KmyYAAADgraQD4BQtHXCOZzoAAAA43pIOAOBLSwf84DNFbIYBAAAAAAAAAAAAAADgcuZ0AAAAbLV0AAAAAAAAAAAAAAAAAAAA3ElLBwAAwIjWdAAAAAAAAAAAAAAA97KkAwAAABhASQcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAlneMAAAAQAdrOgAAAPpxQQMAAAAAAIAdHumA0ZV0wJgcegEAAICeajoAAAAAAAAArqamAwAOU9MBAAAAAAAAAAAAAAAAo5jTAQAAAADAndR0AAD8g5YOYKcXrvsDzQ==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48"
+    },
+    {
+      "block_data": {
+        "index": 15,
+        "m_tree_root": "1816dd685ee7fb25605797979b03eeae1e1df4d0770316b1f23c23c4fa6f4749",
+        "miner": "miner_real_test_001",
+        "nonce": 0,
+        "pre_hash": "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48",
+        "sig": {
+          "miner_id": "miner_real_test_001",
+          "public_key": "test_public_key_67890",
+          "signature": "767ddec500f04a40acafadd2b575c7f1abf4ad728b5e49de683eea1c8b3163b4",
+          "timestamp": "1761643190"
+        },
+        "time": "2025-10-28T17:19:50.433717",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENgzAQhlFAKSgzQkZhNI+eFikVkcVvc+9N8NW+s70sAAAAAAAAAAAAAAAAQBF7OgCYWksHAAAA0N0rHQD87Z0OAABGt6UDAAAAAACgOKs5AAAAANBHxb1Y54tTm+XmV0sHAAC3aekAAAAAgAFUHDsCV/jTCQAAAAAAAAAAAAAAAAAABuGVbgCYnac8AAAAAAAAAAC435EOAAAAAAAAAAAAAAAAHqGlAwAAAAAAAAAAAAAA4LojHQAAQN6eDgAAxralAwAAADpa0wEAAAAAAAAwlU86oCiTTQAAnsYNJQAAAIAzE0EAAAAAAAAAAAAAAAAAAAAA+PEFeBcC/g==",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc"
+    },
+    {
+      "block_data": {
+        "index": 16,
+        "m_tree_root": "515fd58c3bcefe54be89888be379142670b3e1870221e4c64081eca86213ddef",
+        "miner": "miner_real_test_001",
+        "nonce": 0,
+        "pre_hash": "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc",
+        "sig": {
+          "miner_id": "miner_real_test_001",
+          "public_key": "test_public_key_67890",
+          "signature": "04bdbeb9be6f0e8281c1c45fc2f070baa96591dbc2b9e9aa902d4f74710eeeea",
+          "timestamp": "1761643200"
+        },
+        "time": "2025-10-28T17:20:00.013109",
+        "version": "1.0"
+      },
+      "bloom_filter": {
+        "size": 1048576,
+        "hash_count": 5,
+        "compressed_bit_array": "eJzt3bENwjAURdEEpaBkBI+S0Tw6NUJCIDl58eecCW7pwnp/WQC4sjUdAAAAAAAAAAAAwFF8EQMAAAAAAAAAAAAAAAAAAABgrEc6AAAAmEdPB/CbLR0AVGMaFQD4lncDAADAXFo6AAAAAAAAYFo9HQB8dEsHAAAAAAAAAAAAAAAM1dMBAACncHIbAAAAoJA9HQAAQBktHQAAMC973by7pwMAGGBLBwAAAADXtqcDAAAAAAAAAAAAoLCWDiBuTQcwVk8HAAAAAPCqpQMAAAAAADiGWxvw53o6AAAAAAAAAIqwgQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU8ATPjgO/",
+        "compressed": true,
+        "__class__": "BloomFilter",
+        "__module__": "EZ_Units.Bloom"
+      },
+      "hash": "bd5c7eef6d51f1fabf0ae1b15fd6d7031cb86ab97a2e99e5e44ef190b63ba5d3"
     }
   ],
   "confirmed_blocks": [
-    "bfb0fd8ac8914a712e2c051ee72047f5fd7dc235267b9d1b4cbf231269794f79",
-    "a2d877b8d556e59889f3c2bca3634b9288e5e3e88a074c8bf81b72393131282e",
-    "b24655df1187f5cff03d319e5a022968671ebb05df06e1864b757b2334a66de1",
-    "10ead64e36771129e5eba9ebcea9cf39e53b72c9778d6d19361f1fa65b2d52f6",
+    "2dce38bf4acdce50726ddde3f3d2940e104bf26c6238463c577d9ef2429b6fa9",
     "d31b58e53aa018aa862eee0cd1f188095341a91fdcaf8fe6a3415de99fee62b1",
-    "160d605797a8f4b78d2e3502a5cd47454debba6dddb4f5a3151e267a1c0433ff",
     "add739e0ec672e5e0e9f559834c9415f0109ae39cbeab6a04686e1183424d03f",
+    "c4335a8a2da725e1655f18d286b7173802d87ec66e1f4cd8246382da1f6d545f",
+    "bfb0fd8ac8914a712e2c051ee72047f5fd7dc235267b9d1b4cbf231269794f79",
+    "10ead64e36771129e5eba9ebcea9cf39e53b72c9778d6d19361f1fa65b2d52f6",
     "936d9b950c3cb5d1c744d4e9abbb1787d414e07ecbbcbf5d88cd7e24286b1755",
     "d1ff0e230aed6f109858c678c8235f22368bfa03ac07105d98e07b7a00034168",
-    "70986b47dae9d7bd505a9c9cc38a09bacee941de51a929968bd3442f39465ece",
     "8f2f8929450e822db461018d8b9f01e0cdd482cc8a1ba86e98e03ce2c10dd432",
-    "2dce38bf4acdce50726ddde3f3d2940e104bf26c6238463c577d9ef2429b6fa9",
+    "70986b47dae9d7bd505a9c9cc38a09bacee941de51a929968bd3442f39465ece",
+    "a1937efc76025effe77d4b6519f641e4407526baa6967c95cded3c78f9d1dcb6",
     "f45e6fba146753299327eada858ca5b917de57a1d95b7e585420055662f6abbb",
-    "c4335a8a2da725e1655f18d286b7173802d87ec66e1f4cd8246382da1f6d545f",
-    "a1937efc76025effe77d4b6519f641e4407526baa6967c95cded3c78f9d1dcb6"
+    "160d605797a8f4b78d2e3502a5cd47454debba6dddb4f5a3151e267a1c0433ff",
+    "b24655df1187f5cff03d319e5a022968671ebb05df06e1864b757b2334a66de1",
+    "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e",
+    "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48",
+    "a2d877b8d556e59889f3c2bca3634b9288e5e3e88a074c8bf81b72393131282e"
   ],
   "orphaned_blocks": [],
   "fork_tree_root": {
@@ -423,7 +503,7 @@
       "8f2f8929450e822db461018d8b9f01e0cdd482cc8a1ba86e98e03ce2c10dd432"
     ]
   },
-  "main_chain_tip_hash": "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e",
+  "main_chain_tip_hash": "bd5c7eef6d51f1fabf0ae1b15fd6d7031cb86ab97a2e99e5e44ef190b63ba5d3",
   "hash_to_fork_node": {
     "bfb0fd8ac8914a712e2c051ee72047f5fd7dc235267b9d1b4cbf231269794f79": {
       "block": {
@@ -974,9 +1054,114 @@
       "parent_hash": "936d9b950c3cb5d1c744d4e9abbb1787d414e07ecbbcbf5d88cd7e24286b1755",
       "is_main_chain": true,
       "height": 13,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48"
+      ]
+    },
+    "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48": {
+      "block": {
+        "block_data": {
+          "index": 14,
+          "m_tree_root": "decedc42d77846db0fd33bc84b56bea0f8c661cca5f6ec039cca17497900f405",
+          "miner": "miner_real_test_001",
+          "nonce": 0,
+          "pre_hash": "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e",
+          "sig": {
+            "miner_id": "miner_real_test_001",
+            "public_key": "test_public_key_67890",
+            "signature": "a852b9cc5b50f305f909d5e9c1597bc2b5b4745dfdef5b7d8b18e88e19a8fad2",
+            "timestamp": "1761643172"
+          },
+          "time": "2025-10-28T17:19:32.136402",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlGMUlBmBI/CaB49TaSgdBGGH5P3Jvi6k+6KmyYAAADgraQD4BQtHXCOZzoAAAA43pIOAOBLSwf84DNFbIYBAAAAAAAAAAAAAADgcuZ0AAAAbLV0AAAAAAAAAAAAAAAAAAAA3ElLBwAAwIjWdAAAAAAAAAAAAAAA97KkAwAAABhASQcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAlneMAAAAQAdrOgAAAPpxQQMAAAAAAIAdHumA0ZV0wJgcegEAAICeajoAAAAAAAAArqamAwAOU9MBAAAAAAAAAAAAAAAAo5jTAQAAAADAndR0AAD8g5YOYKcXrvsDzQ==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48"
+      },
+      "parent_hash": "a990113b0ce9d80a14aed09ef7612b5f2c91625da87d997b31619d2072c3c27e",
+      "is_main_chain": true,
+      "height": 14,
+      "consensus_status": "confirmed",
+      "children_hashes": [
+        "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc"
+      ]
+    },
+    "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc": {
+      "block": {
+        "block_data": {
+          "index": 15,
+          "m_tree_root": "1816dd685ee7fb25605797979b03eeae1e1df4d0770316b1f23c23c4fa6f4749",
+          "miner": "miner_real_test_001",
+          "nonce": 0,
+          "pre_hash": "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48",
+          "sig": {
+            "miner_id": "miner_real_test_001",
+            "public_key": "test_public_key_67890",
+            "signature": "767ddec500f04a40acafadd2b575c7f1abf4ad728b5e49de683eea1c8b3163b4",
+            "timestamp": "1761643190"
+          },
+          "time": "2025-10-28T17:19:50.433717",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENgzAQhlFAKSgzQkZhNI+eFikVkcVvc+9N8NW+s70sAAAAAAAAAAAAAAAAQBF7OgCYWksHAAAA0N0rHQD87Z0OAABGt6UDAAAAAACgOKs5AAAAANBHxb1Y54tTm+XmV0sHAAC3aekAAAAAgAFUHDsCV/jTCQAAAAAAAAAAAAAAAAAABuGVbgCYnac8AAAAAAAAAAC435EOAAAAAAAAAAAAAAAAHqGlAwAAAAAAAAAAAAAA4LojHQAAQN6eDgAAxralAwAAADpa0wEAAAAAAAAwlU86oCiTTQAAnsYNJQAAAIAzE0EAAAAAAAAAAAAAAAAAAAAA+PEFeBcC/g==",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc"
+      },
+      "parent_hash": "88965d056e9d8377386e94f520e84abf2fc3d4307cb3ca7b1d4c0fcb2871ba48",
+      "is_main_chain": true,
+      "height": 15,
+      "consensus_status": "pending",
+      "children_hashes": [
+        "bd5c7eef6d51f1fabf0ae1b15fd6d7031cb86ab97a2e99e5e44ef190b63ba5d3"
+      ]
+    },
+    "bd5c7eef6d51f1fabf0ae1b15fd6d7031cb86ab97a2e99e5e44ef190b63ba5d3": {
+      "block": {
+        "block_data": {
+          "index": 16,
+          "m_tree_root": "515fd58c3bcefe54be89888be379142670b3e1870221e4c64081eca86213ddef",
+          "miner": "miner_real_test_001",
+          "nonce": 0,
+          "pre_hash": "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc",
+          "sig": {
+            "miner_id": "miner_real_test_001",
+            "public_key": "test_public_key_67890",
+            "signature": "04bdbeb9be6f0e8281c1c45fc2f070baa96591dbc2b9e9aa902d4f74710eeeea",
+            "timestamp": "1761643200"
+          },
+          "time": "2025-10-28T17:20:00.013109",
+          "version": "1.0"
+        },
+        "bloom_filter": {
+          "size": 1048576,
+          "hash_count": 5,
+          "compressed_bit_array": "eJzt3bENwjAURdEEpaBkBI+S0Tw6NUJCIDl58eecCW7pwnp/WQC4sjUdAAAAAAAAAAAAwFF8EQMAAAAAAAAAAAAAAAAAAABgrEc6AAAAmEdPB/CbLR0AVGMaFQD4lncDAADAXFo6AAAAAAAAYFo9HQB8dEsHAAAAAAAAAAAAAAAM1dMBAACncHIbAAAAoJA9HQAAQBktHQAAMC973by7pwMAGGBLBwAAAADXtqcDAAAAAAAAAAAAoLCWDiBuTQcwVk8HAAAAAPCqpQMAAAAAADiGWxvw53o6AAAAAAAAAIqwgQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAU8ATPjgO/",
+          "compressed": true,
+          "__class__": "BloomFilter",
+          "__module__": "EZ_Units.Bloom"
+        },
+        "hash": "bd5c7eef6d51f1fabf0ae1b15fd6d7031cb86ab97a2e99e5e44ef190b63ba5d3"
+      },
+      "parent_hash": "9c4c919f276d26dbe2a9643dff8829e6773282c91583c960e93b5e272084cfbc",
+      "is_main_chain": true,
+      "height": 16,
       "consensus_status": "pending",
       "children_hashes": []
     }
   },
-  "checksum": "14f0fa11fd01390703d3c6069ba75b5fe849c36ba58b0827943f591c0598567a"
+  "checksum": "5118a59b8f30bc9b17f5312ebd1ea3f451c0c59edd9263c651ff5571c394c1f8"
 }

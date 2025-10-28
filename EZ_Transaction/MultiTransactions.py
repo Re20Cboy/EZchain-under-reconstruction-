@@ -104,7 +104,7 @@ class MultiTransactions:
                 "recipient": txn.recipient,
                 "nonce": txn.nonce,
                 "timestamp": txn.time,
-                "value": txn._serialize_values() if hasattr(txn, '_serialize_values') else []
+                "value": txn._serialize_values_for_signing() if hasattr(txn, '_serialize_values_for_signing') else []
             }
             for txn in self.multi_txns
         ]
@@ -144,7 +144,7 @@ class MultiTransactions:
                     "recipient": txn.recipient,
                     "nonce": txn.nonce,
                     "timestamp": txn.time,
-                    "value": txn._serialize_values() if hasattr(txn, '_serialize_values') else []
+                    "value": txn._serialize_values_for_signing() if hasattr(txn, '_serialize_values_for_signing') else []
                 }
                 for txn in self.multi_txns
             ],

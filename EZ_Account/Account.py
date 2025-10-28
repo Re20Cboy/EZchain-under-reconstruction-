@@ -57,7 +57,7 @@ class Account:
         # Initialize core components
         self.value_collection = AccountValueCollection(address)
         self.value_selector = AccountPickValues(address, self.value_collection)
-        self.transaction_creator = CreateMultiTransactions(address)
+        self.transaction_creator = CreateMultiTransactions(address, self.value_collection)
 
         # Account nodes don't maintain their own transaction pool
         # They submit transactions to consensus nodes' pools
@@ -121,7 +121,13 @@ class Account:
         added_count = 0
         for value in values:
             try:
+                # Add to the main value collection
                 self.value_collection.add_value(value, position)
+
+                # Note: Since value_selector and transaction_creator share the same
+                # AccountValueCollection instance, we don't need to add separately
+                # The values are automatically available to all components
+
                 added_count += 1
                 print(f"Added value with {value.value_num} units to {self.name}")
             except Exception as e:

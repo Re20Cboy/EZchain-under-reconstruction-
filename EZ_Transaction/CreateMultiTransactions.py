@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Value.AccountPickValues import AccountPickValues
+from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Value.Value import Value, ValueState
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import sha256_hash
@@ -27,15 +28,16 @@ class CreateMultiTransactions:
     value selection and secure signature functionality.
     """
     
-    def __init__(self, sender_address: str):
+    def __init__(self, sender_address: str, existing_collection: Optional[AccountValueCollection] = None):
         """
         Initialize the multi-transaction creator with sender's account.
-        
+
         Args:
             sender_address: The address of the sender account
+            existing_collection: Existing AccountValueCollection to use (optional)
         """
         self.sender_address = sender_address
-        self.value_selector = AccountPickValues(sender_address)
+        self.value_selector = AccountPickValues(sender_address, existing_collection)
         self.created_multi_transactions = []
     
     def create_multi_transactions(

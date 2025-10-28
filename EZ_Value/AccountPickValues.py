@@ -18,7 +18,7 @@ class AccountPickValues:
             account_address: 账户地址
             existing_collection: 现有的ValueCollection，如果提供则使用现有的而不是创建新的
         """
-        if existing_collection:
+        if existing_collection is not None:
             self.account_collection = existing_collection
         else:
             self.account_collection = AccountValueCollection(account_address)

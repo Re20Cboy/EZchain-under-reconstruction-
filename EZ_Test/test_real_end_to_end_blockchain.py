@@ -2,18 +2,20 @@
 """
 真实端到端区块链集成测试（不包含共识、P2P验证等模块）
 date：2025/10/25
+updated：2025/10/28 (适配新版Account.py)
 
 这是一个完全真实的区块链全流程测试，包括：
 1. 创建真实的Account账户（包含真实的密钥对生成）
 2. 账户初始余额（Value）的创建和分配
-3. Account发起真实的交易（包含真实的数字签名）
-4. 交易提交至交易池的真实流程
+3. Account使用CreateMultiTransactions发起真实的批量交易（包含真实的数字签名）
+4. 批量交易提交至交易池的真实流程
 5. 交易池打包交易形成区块的真实过程
 6. 区块上链和共识确认的真实流程
 7. VPB（Verification Proof Balance）的创建和验证
 8. 完整的状态转换和余额更新
 
 这个测试模拟了真实的区块链运行环境，确保所有组件能够正确协作。
+已适配新版Account.py的MultiTransactions架构。
 """
 
 import sys
@@ -41,9 +43,9 @@ from EZ_Account.Account import Account
 from EZ_Value.Value import Value, ValueState
 from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Value.AccountPickValues import AccountPickValues
-from EZ_Transaction.CreateSingleTransaction import CreateTransaction
-from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction
+from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 from EZ_Transaction.MultiTransactions import MultiTransactions
+from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction
 from EZ_Transaction_Pool.TransactionPool import TransactionPool
 from EZ_Transaction_Pool.PackTransactions import (
     TransactionPackager,
@@ -175,41 +177,91 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
         print(f"成功创建 {len(self.accounts)} 个真实账户")
 
     def create_initial_values(self, account: Account, total_amount: int) -> List[Value]:
-        """为账户创建初始余额（Value）"""
+        """为账户创建初始余额（Value），确保Value之间无重叠"""
         print(f"为账户 {account.name} 创建初始余额: {total_amount}")
 
         values = []
 
-        # 创建多个Value对象，每个Value代表一定金额
-        # 使用连续的begin_index
-        start_index = "0x1000000000000000"
+        # 为每个账户使用不同的起始索引范围，避免账户间的Value重叠
+        # 使用账户地址的哈希值作为基础偏移量
+        account_hash = hash(account.address)
+        base_offset = abs(int(account_hash, 16)) % 0x100000000  # 限制偏移量范围
+
+        # 设置起始索引，每个账户有不同的基础范围
+        start_index = hex(0x1000000000000000 + base_offset)
+        print(f"账户 {account.name} 使用起始索引: {start_index}")
 
         remaining_amount = total_amount
-        value_index = 0
+        current_index = int(start_index, 16)
+        value_count = 0
 
         while remaining_amount > 0:
             # 每个Value最多1000单位
             value_amount = min(remaining_amount, 1000)
 
-            # 计算当前Value的begin_index
-            current_begin = hex(int(start_index, 16) + value_index * 1000)
+            # 创建Value对象，使用当前索引作为begin_index
+            current_begin = hex(current_index)
 
-            # 创建Value对象
             value = Value(
                 beginIndex=current_begin,
                 valueNum=value_amount,
                 state=ValueState.UNSPENT
             )
 
+            # 验证Value的有效性
+            if not value.check_value():
+                raise ValueError(f"创建的Value无效: begin={current_begin}, amount={value_amount}")
+
             values.append(value)
+            print(f"  创建Value {value_count + 1}: {current_begin} ~ {value.end_index} (金额: {value_amount})")
+
+            # 计算下一个Value的起始索引（当前Value的结束索引 + 1）
+            current_index = int(value.end_index, 16) + 1
             remaining_amount -= value_amount
-            value_index += 1
+            value_count += 1
+
+        # 验证Value之间无重叠
+        if not self.verify_values_no_overlap(values):
+            raise ValueError(f"为账户 {account.name} 创建的Value存在重叠")
 
         # 将Value添加到账户
         added_count = account.add_values(values)
-        print(f"为账户 {account.name} 添加了 {added_count} 个Value对象")
+        print(f"为账户 {account.name} 成功添加了 {added_count} 个Value对象")
+
+        # 验证添加后的余额
+        total_value = sum(value.value_num for value in values)
+        actual_balance = account.get_balance()
+        print(f"预期总金额: {total_value}, 实际账户余额: {actual_balance}")
+
+        if total_value != total_amount:
+            print(f"WARNING: 创建的Value总金额({total_value})与请求金额({total_amount})不匹配")
+        if actual_balance != total_amount:
+            print(f"WARNING: 账户实际余额({actual_balance})与请求金额({total_amount})不匹配")
 
         return values
+
+    def verify_values_no_overlap(self, values: List[Value]) -> bool:
+        """验证Value列表中所有Value之间无重叠"""
+        if len(values) <= 1:
+            return True
+
+        # 将Value按起始索引排序
+        sorted_values = sorted(values, key=lambda v: int(v.begin_index, 16))
+
+        for i in range(len(sorted_values) - 1):
+            current = sorted_values[i]
+            next_val = sorted_values[i + 1]
+
+            current_end = int(current.end_index, 16)
+            next_begin = int(next_val.begin_index, 16)
+
+            # 检查是否有重叠：如果当前Value的结束索引 >= 下一个Value的起始索引，则有重叠
+            if current_end >= next_begin:
+                print(f"ERROR: Value {current.begin_index}~{current.end_index} 与 Value {next_val.begin_index}~{next_val.end_index} 重叠")
+                return False
+
+        print("OK: 所有Value之间无重叠")
+        return True
 
     def test_real_complete_blockchain_flow(self):
         """测试完整的真实区块链流程"""
@@ -241,8 +293,8 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
 
         print("√ 所有账户初始化完成")
 
-        # 步骤2：为每个sender创建多个singleTransaction并聚合成MultiTransaction
-        print("\n步骤2: 创建和发起真实交易")
+        # 步骤2：使用新版Account.py的批量交易API创建MultiTransaction
+        print("\n步骤2: 使用CreateMultiTransactions创建和发起真实交易")
         print("-" * 50)
 
         # 定义按sender分组的交易场景（使用真实地址）
@@ -269,7 +321,7 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
         created_multi_transactions = []
 
         for sender_address, transactions in sender_transactions.items():
-            print(f"为发送方 {sender_address[:16]}... 创建交易组:")
+            print(f"为发送方 {sender_address[:16]}... 创建批量交易:")
 
             # 找到对应的账户对象
             sender_account = None
@@ -285,108 +337,92 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
                 continue
 
             # 检查发送方余额
-            sender_balance = sender_account.get_balance()
+            sender_balance = sender_account.get_available_balance()
             total_amount = sum(tx['amount'] for tx in transactions)
-            print(f"  发送方 {sender_name} 当前余额: {sender_balance}, 需要总额: {total_amount}")
+            print(f"  发送方 {sender_name} 当前可用余额: {sender_balance}, 需要总额: {total_amount}")
 
             if sender_balance < total_amount:
                 print(f"  X 余额不足，跳过此发送方的所有交易")
                 continue
 
-            # 为该sender创建多个singleTransaction
-            single_transactions = []
-            for tx_info in transactions:
-                print(f"  创建交易: {tx_info['description']} -> {tx_info['recipient'][:16]}..., 金额: {tx_info['amount']}")
+            # 使用新版Account.py的批量交易API
+            try:
+                # 准备交易请求数据
+                transaction_requests = []
+                for tx_info in transactions:
+                    print(f"  准备交易: {tx_info['description']} -> {tx_info['recipient'][:16]}..., 金额: {tx_info['amount']}")
+                    transaction_requests.append({
+                        "recipient": tx_info['recipient'],
+                        "amount": tx_info['amount']
+                    })
 
-                # 创建单个交易
-                transaction = sender_account.create_transaction(
-                    recipient=tx_info['recipient'],  # 直接使用地址
-                    amount=tx_info['amount'],
-                    reference=tx_info['description']
+                # 使用Account的create_batch_transactions方法
+                multi_txn_result = sender_account.create_batch_transactions(
+                    transaction_requests=transaction_requests,
+                    reference=f"{sender_name}_batch_transfer"
                 )
 
-                if transaction:
-                    # 签名交易
-                    signed = sender_account.sign_transaction(transaction)
-                    if signed:
-                        try:
-                            # 创建SingleTransaction对象
-                            # 从交易字典中提取values（List[Value]）
-                            values = transaction.get('values', [])
-
-                            single_tx = SingleTransaction(
-                                sender=transaction['sender'],
-                                recipient=transaction['recipient'],
-                                nonce=transaction.get('nonce', 0),
-                                signature=transaction.get('signature'),
-                                value=values,  # 使用正确的参数名
-                                time=transaction.get('time')  # 使用正确的参数名
-                            )
-                            single_transactions.append(single_tx)
-                            print(f"    √ 单个交易创建成功: {transaction['hash'][:16]}...")
-                            print(f"      包含 {len(values)} 个Value对象")
-                        except Exception as e:
-                            print(f"    X SingleTransaction构造失败: {e}")
-                            # 如果构造失败，跳过这个交易
-                            continue
-                    else:
-                        print(f"    X 交易签名失败")
-                else:
-                    print(f"    X 交易创建失败")
-
-            if single_transactions:
-                # 将该sender的所有singleTransaction聚合成一个MultiTransaction
-                try:
-                    multi_transaction = MultiTransactions(
-                        sender=sender_address,  # 使用真实地址
-                        multi_txns=single_transactions
-                    )
-
-                    # 使用sender的私钥签名MultiTransaction
-                    private_key_pem = self.account_data[sender_name]['private_key']
-                    multi_transaction.sig_acc_txn(private_key_pem)
-
+                if multi_txn_result:
+                    # 提取MultiTransaction对象
+                    multi_transaction = multi_txn_result["multi_transactions"]
                     created_multi_transactions.append(multi_transaction)
-                    print(f"  √ 成功创建包含 {len(single_transactions)} 个交易的MultiTransaction")
 
-                except Exception as e:
-                    print(f"  X MultiTransaction创建失败: {e}")
+                    print(f"  √ 成功创建批量MultiTransaction:")
+                    print(f"    交易数量: {multi_txn_result['transaction_count']}")
+                    print(f"    总金额: {multi_txn_result['total_amount']}")
+                    print(f"    Digest: {multi_transaction.digest[:16] if multi_transaction.digest else 'N/A'}...")
+                    print(f"    接收方: {multi_txn_result.get('recipients', [])}")
+                else:
+                    print(f"  X 批量MultiTransaction创建失败")
+
+            except Exception as e:
+                print(f"  X 批量交易创建异常: {e}")
 
         print(f"√ 成功创建 {len(created_multi_transactions)} 个MultiTransaction")
 
-        # 步骤3：MultiTransaction提交到交易池
-        print("\n步骤3: MultiTransaction提交到交易池")
+        # 步骤3：使用新版Account.py的API提交MultiTransaction到交易池
+        print("\n步骤3: 使用Account API提交MultiTransaction到交易池")
         print("-" * 50)
 
         submitted_multi_transactions = []
+        multi_txn_results = []  # 保存结果用于后续验证
 
         for multi_transaction in created_multi_transactions:
             try:
-                # 获取sender的公钥用于验证
+                # 找到对应的账户对象
+                sender_account = None
                 sender_name = None
                 for name, data in self.account_data.items():
                     if data['address'] == multi_transaction.sender:
+                        sender_account = data['account']
                         sender_name = name
                         break
 
-                if not sender_name:
+                if not sender_account:
                     print(f"  X 找不到sender账户: {multi_transaction.sender}")
                     continue
 
-                sender_public_key = self.account_data[sender_name]['public_key']
+                # 构造multi_txn_result字典（Account.py的submit_multi_transaction需要的格式）
+                multi_txn_result = {
+                    "multi_transactions": multi_transaction,
+                    "transaction_count": len(multi_transaction.multi_txns),
+                    "total_amount": sum(sum(value.value_num for value in tx.value) for tx in multi_transaction.multi_txns),
+                    "recipients": [tx.recipient for tx in multi_transaction.multi_txns]
+                }
 
-                # 直接将MultiTransaction提交到交易池
-                success, message = self.transaction_pool.add_multi_transactions(
-                    multi_transaction,
-                    public_key_pem=sender_public_key
+                # 使用Account的submit_multi_transaction方法
+                success = sender_account.submit_multi_transaction(
+                    multi_txn_result=multi_txn_result,
+                    transaction_pool=self.transaction_pool
                 )
 
                 if success:
                     submitted_multi_transactions.append(multi_transaction)
+                    multi_txn_results.append(multi_txn_result)
                     print(f"  √ MultiTransaction提交成功: {multi_transaction.sender} ({len(multi_transaction)}个交易)")
                     print(f"    Digest: {multi_transaction.digest[:16] if multi_transaction.digest else 'N/A'}...")
                 else:
-                    print(f"  X MultiTransaction提交失败: {message}")
+                    print(f"  X MultiTransaction提交失败")
 
             except Exception as e:
                 print(f"  X MultiTransaction提交异常: {e}")
@@ -471,74 +507,94 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
         confirmed_height = self.blockchain.get_latest_confirmed_block_index()
         print(f"最新确认区块高度: {confirmed_height}")
 
-        # 验证账户余额
+        # 验证账户余额（使用新版API）
         print("\n最终账户余额:")
         for name, data in self.account_data.items():
             account = data['account']
-            final_balance = account.get_balance()
+            final_balance = account.get_available_balance()
+            all_balances = account.get_all_balances()
             pending_count = len(account.value_collection.find_by_state(ValueState.LOCAL_COMMITTED))
             confirmed_count = len(account.value_collection.find_by_state(ValueState.CONFIRMED))
 
             print(f"  {name}:")
             print(f"    可用余额: {final_balance}")
+            print(f"    按状态分类余额: {all_balances}")
             print(f"    待确认交易: {pending_count}")
             print(f"    已确认交易: {confirmed_count}")
 
-        # 验证VPB完整性
-        print("\n验证VPB完整性:")
+        # 验证账户完整性（使用新版API）
+        print("\n验证账户完整性:")
         vpb_valid_count = 0
         for name, data in self.account_data.items():
             account = data['account']
             integrity_valid = account.validate_integrity()
             if integrity_valid:
                 vpb_valid_count += 1
-            print(f"  {name}: VPB完整性 {'√' if integrity_valid else 'X'}")
+            print(f"  {name}: 账户完整性 {'√' if integrity_valid else 'X'}")
 
-        # 步骤6：性能和安全性验证
+        # 步骤6：性能和安全性验证（使用新版API）
         print("\n步骤6: 性能和安全性验证")
         print("-" * 50)
 
-        # 测试交易验证
+        # 测试MultiTransaction签名验证（使用新版Account.py API）
         print("测试MultiTransaction签名验证...")
-        for multi_transaction in submitted_multi_transactions[:2]:  # 测试前两个MultiTransaction
+        for i, multi_txn_result in enumerate(multi_txn_results[:2]):  # 测试前两个MultiTransaction
             # 找到对应的账户
             sender_name = None
             sender_account = None
-            sender_public_key = None
             for name, data in self.account_data.items():
-                if data['address'] == multi_transaction.sender:
+                if data['address'] == multi_txn_result["multi_transactions"].sender:
                     sender_name = name
                     sender_account = data['account']
-                    sender_public_key = data['public_key']
                     break
 
             if not sender_account:
-                print(f"  X 找不到sender账户: {multi_transaction.sender}")
+                print(f"  X 找不到sender账户: {multi_txn_result['multi_transactions'].sender}")
                 continue
 
-            # 验证MultiTransaction的签名
-            is_valid = multi_transaction.check_acc_txn_sig(sender_public_key)
-            print(f"  MultiTransaction {multi_transaction.sender} 签名验证: {'√' if is_valid else 'X'}")
-            self.assertTrue(is_valid, "MultiTransaction签名验证应该成功")
+            # 使用新版Account.py的验证方法
+            multi_sig_valid = sender_account.verify_multi_transaction_signature(multi_txn_result)
+            print(f"  MultiTransaction {sender_name} 签名验证: {'√' if multi_sig_valid else 'X'}")
+            self.assertTrue(multi_sig_valid, "MultiTransaction签名验证应该成功")
 
-            # 也测试内部的单个交易
-            for single_tx in multi_transaction.multi_txns[:1]:  # 测试第一个交易
-                tx_dict = {
-                    'sender': single_tx.sender,
-                    'recipient': single_tx.recipient,
-                    'amount': single_tx.amount,
-                    'signature': single_tx.signature,
-                    'hash': single_tx.hash_value
-                }
-                is_single_valid = sender_account.verify_transaction(tx_dict)
-                print(f"    内部交易 {single_tx.hash_value[:16]}... 签名验证: {'√' if is_single_valid else 'X'}")
+            # 验证所有内部交易签名
+            all_sig_results = sender_account.verify_all_transaction_signatures(multi_txn_result)
+            valid_count = sum(1 for valid in all_sig_results.values() if valid)
+            total_count = len(all_sig_results)
+            print(f"    内部交易签名验证: {valid_count}/{total_count} 有效")
 
-        # 测试账户完整性
-        print("测试账户完整性...")
+        # 测试账户完整性（使用新版API）
+        print("测试账户完整性和相关功能...")
         for account in self.accounts:
+            # 基本完整性
             integrity = account.validate_integrity()
             print(f"  账户 {account.name} 完整性: {'√' if integrity else 'X'}")
             self.assertTrue(integrity, "账户完整性验证应该成功")
+
+            # 账户完整性检查
+            account_integrity = account.get_account_integrity()
+            print(f"  账户 {account.name} 内部完整性: {'√' if account_integrity else 'X'}")
+            self.assertTrue(account_integrity, "账户内部完整性应该有效")
+
+            # 获取账户信息
+            account_info = account.get_account_info()
+            print(f"    账户信息: 交易历史数={account_info['transaction_history_count']}, VPB数={account_info['local_vpbs']}")
+
+        # 测试确认交易功能
+        print("测试确认交易功能...")
+        for i, multi_txn_result in enumerate(multi_txn_results[:1]):  # 测试第一个
+            sender_name = None
+            sender_account = None
+            for name, data in self.account_data.items():
+                if data['address'] == multi_txn_result["multi_transactions"].sender:
+                    sender_name = name
+                    sender_account = data['account']
+                    break
+
+            if sender_account:
+                # 尝试确认交易
+                confirm_success = sender_account.confirm_multi_transaction(multi_txn_result)
+                print(f"  账户 {sender_name} 确认MultiTransaction: {'√' if confirm_success else 'X'}")
 
         print("\n" + "="*80)
         print("√ 真实端到端区块链全流程测试完成！")
@@ -607,9 +663,9 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
 
     
     def test_concurrent_transactions(self):
-        """测试并发MultiTransaction处理"""
+        """测试并发MultiTransaction处理（使用新版Account.py API）"""
         print("\n" + "="*80)
-        print("测试并发MultiTransaction处理")
+        print("测试并发MultiTransaction处理（新版API）")
         print("="*80)
 
         # 为两个账户创建初始余额
@@ -619,50 +675,34 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
         self.create_initial_values(alice_account, 2000)
         self.create_initial_values(bob_account, 1500)
 
-        # 创建多个并发MultiTransaction
-        def create_multi_transaction_thread(sender_name: str, account: Account, recipient: str, amounts: List[int], results: list):
-            """创建MultiTransaction的线程函数"""
+        # 创建多个并发MultiTransaction的线程函数
+        def create_batch_transactions_thread(sender_name: str, account: Account, recipient: str, amounts: List[int], results: list):
+            """使用新版Account.py API创建批量MultiTransaction的线程函数"""
             try:
-                # 为该sender创建多个单个交易
-                single_transactions = []
-                for i, amount in enumerate(amounts):
-                    transaction = account.create_transaction(recipient, amount, f"Concurrent transfer {amount} (Tx{i+1})")
-                    if transaction:
-                        signed = account.sign_transaction(transaction)
-                        if signed:
-                            try:
-                                # 创建SingleTransaction对象
-                                values = transaction.get('values', [])
-                                single_tx = SingleTransaction(
-                                    sender=transaction['sender'],
-                                    recipient=transaction['recipient'],
-                                    nonce=transaction.get('nonce', 0),
-                                    signature=transaction.get('signature'),
-                                    value=values,
-                                    time=transaction.get('time')
-                                )
-                                single_transactions.append(single_tx)
-                            except Exception as e:
-                                print(f"  线程 {threading.current_thread().name} SingleTransaction构造失败: {e}")
-                                continue
+                # 准备交易请求
+                transaction_requests = []
+                for amount in amounts:
+                    transaction_requests.append({
+                        "recipient": recipient,
+                        "amount": amount
+                    })
 
-                if single_transactions:
-                    # 创建MultiTransaction
-                    multi_transaction = MultiTransactions(
-                        sender=sender_name,
-                        multi_txns=single_transactions
-                    )
+                # 使用新版Account.py的批量交易API
+                multi_txn_result = account.create_batch_transactions(
+                    transaction_requests=transaction_requests,
+                    reference=f"Concurrent_{sender_name}_{threading.current_thread().name}"
+                )
 
-                    # 签名MultiTransaction
-                    private_key_pem = self.account_data[sender_name]['private_key']
-                    multi_transaction.sig_acc_txn(private_key_pem)
-
-                    results.append(multi_transaction)
-                    print(f"  线程 {threading.current_thread().name} 创建MultiTransaction成功: {len(single_transactions)}个交易")
+                if multi_txn_result:
+                    multi_transaction = multi_txn_result["multi_transactions"]
+                    results.append(multi_txn_result)
+                    print(f"  线程 {threading.current_thread().name} 创建批量MultiTransaction成功: {len(multi_transaction.multi_txns)}个交易")
+                    print(f"    总金额: {multi_txn_result['total_amount']}")
                 else:
-                    print(f"  线程 {threading.current_thread().name} 没有成功创建任何交易")
+                    print(f"  线程 {threading.current_thread().name} 批量MultiTransaction创建失败")
+
             except Exception as e:
-                print(f"  线程 {threading.current_thread().name} 创建MultiTransaction失败: {e}")
+                print(f"  线程 {threading.current_thread().name} 批量MultiTransaction创建异常: {e}")
 
         # 创建并发MultiTransaction
         results = []
@@ -673,9 +713,9 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
             recipient = self.account_data['bob']['address']
             amounts = [50 + i*10, 30 + i*5]  # 每个MultiTransaction包含2个不同金额的交易
             thread = threading.Thread(
-                target=create_multi_transaction_thread,
+                target=create_batch_transactions_thread,
                 args=('alice', alice_account, recipient, amounts, results),
-                name=f"Alice-MultiTX-{i}"
+                name=f"Alice-BatchTX-{i}"
             )
             threads.append(thread)
 
@@ -684,14 +724,14 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
             recipient = self.account_data['alice']['address']
             amounts = [40 + i*8] if i % 2 == 0 else [25 + i*5, 35 + i*7]  # 有些MultiTransaction只有1个交易
             thread = threading.Thread(
-                target=create_multi_transaction_thread,
+                target=create_batch_transactions_thread,
                 args=('bob', bob_account, recipient, amounts, results),
-                name=f"Bob-MultiTX-{i}"
+                name=f"Bob-BatchTX-{i}"
             )
             threads.append(thread)
 
         # 启动所有线程
-        print("启动并发MultiTransaction创建...")
+        print("启动并发批量MultiTransaction创建...")
         for thread in threads:
             thread.start()
 
@@ -699,134 +739,132 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
         for thread in threads:
             thread.join()
 
-        print(f"并发MultiTransaction创建完成，成功创建 {len(results)} 个MultiTransaction")
+        print(f"并发批量MultiTransaction创建完成，成功创建 {len(results)} 个MultiTransaction")
 
         # 统计总交易数
-        total_single_txns = sum(len(multi_tx) for multi_tx in results)
+        total_single_txns = sum(result['transaction_count'] for result in results)
         print(f"总共包含 {total_single_txns} 个单个交易")
 
-        # 验证并发创建的MultiTransaction
-        for multi_tx in results:
-            sender_public_key = self.account_data[multi_tx.sender]['public_key']
-            is_valid = multi_tx.check_acc_txn_sig(sender_public_key)
-            self.assertTrue(is_valid, f"并发MultiTransaction的签名应该有效: {multi_tx.sender}")
+        # 验证并发创建的MultiTransaction（使用新版API）
+        for multi_txn_result in results:
+            multi_transaction = multi_txn_result["multi_transactions"]
+            sender_name = None
+            sender_account = None
+            for name, data in self.account_data.items():
+                if data['address'] == multi_transaction.sender:
+                    sender_name = name
+                    sender_account = data['account']
+                    break
 
-            # 验证内部的单个交易
-            sender_account = self.account_data[multi_tx.sender]['account']
-            for single_tx in multi_tx.multi_txns:
-                tx_dict = {
-                    'sender': single_tx.sender,
-                    'recipient': single_tx.recipient,
-                    'amount': single_tx.amount,
-                    'signature': single_tx.signature,
-                    'hash': single_tx.hash_value
-                }
-                is_single_valid = sender_account.verify_transaction(tx_dict)
-                self.assertTrue(is_single_valid, f"并发MultiTransaction内部交易签名应该有效: {single_tx.hash_value[:16]}...")
+            if sender_account:
+                # 使用新版Account.py的验证方法
+                multi_sig_valid = sender_account.verify_multi_transaction_signature(multi_txn_result)
+                self.assertTrue(multi_sig_valid, f"并发MultiTransaction的签名应该有效: {sender_name}")
 
-        print("√ 并发MultiTransaction处理测试通过")
+                # 验证所有内部交易签名
+                all_sig_results = sender_account.verify_all_transaction_signatures(multi_txn_result)
+                valid_count = sum(1 for valid in all_sig_results.values() if valid)
+                total_count = len(all_sig_results)
+                print(f"  {sender_name} 内部交易签名验证: {valid_count}/{total_count} 有效")
+                self.assertEqual(valid_count, total_count, f"所有内部交易签名都应该有效: {sender_name}")
+
+        print("√ 并发批量MultiTransaction处理测试通过")
 
     def test_account_recovery_and_integrity(self):
-        """测试账户恢复和数据完整性（使用MultiTransaction）"""
+        """测试账户恢复和数据完整性（使用新版Account.py的MultiTransaction）"""
         print("\n" + "="*80)
-        print("测试账户恢复和数据完整性")
+        print("测试账户恢复和数据完整性（新版API）")
         print("="*80)
 
         # 创建账户并添加余额
         alice_account = self.account_data['alice']['account']
         initial_values = self.create_initial_values(alice_account, 1000)
 
-        # 创建一些MultiTransaction
+        # 使用新版Account.py API创建一些MultiTransaction
         bob_address = self.account_data['bob']['address']
 
-        multi_transactions = []
+        multi_txn_results = []
         for i in range(3):
             # 每次创建一个包含1-2个交易的MultiTransaction
             num_txns = 1 if i % 2 == 0 else 2
-            single_transactions = []
+            transaction_requests = []
 
-            for j in range(num_txns):
-                tx = alice_account.create_transaction(bob_address, 50, f"Recovery test {i+1}-{j+1}")
-                if tx:
-                    alice_account.sign_transaction(tx)
-                    try:
-                        # 创建SingleTransaction对象
-                        values = tx.get('values', [])
-                        single_tx = SingleTransaction(
-                            sender=tx['sender'],
-                            recipient=tx['recipient'],
-                            nonce=tx.get('nonce', 0),
-                            signature=tx.get('signature'),
-                            value=values,
-                            time=tx.get('time')
-                        )
-                        single_transactions.append(single_tx)
-                    except Exception as e:
-                        print(f"  SingleTransaction构造失败: {e}")
-                        continue
+            for _ in range(num_txns):
+                transaction_requests.append({
+                    "recipient": bob_address,
+                    "amount": 50
+                })
 
-            if single_transactions:
-                # 创建MultiTransaction
-                multi_transaction = MultiTransactions(
-                    sender='alice',
-                    multi_txns=single_transactions
-                )
+            # 使用新版Account.py的批量交易API
+            multi_txn_result = alice_account.create_batch_transactions(
+                transaction_requests=transaction_requests,
+                reference=f"Recovery_test_{i+1}"
+            )
 
-                # 签名MultiTransaction
-                private_key_pem = self.account_data['alice']['private_key']
-                multi_transaction.sig_acc_txn(private_key_pem)
+            if multi_txn_result:
+                multi_txn_results.append(multi_txn_result)
+                print(f"  创建批量MultiTransaction {i+1}: {multi_txn_result['transaction_count']}个交易")
 
-                multi_transactions.append(multi_transaction)
+        print(f"创建了 {len(multi_txn_results)} 个批量MultiTransaction")
 
-        print(f"创建了 {len(multi_transactions)} 个MultiTransaction")
-
-        # 验证账户状态
-        balance_before = alice_account.get_balance()
+        # 验证账户状态（使用新版API）
+        balance_before = alice_account.get_available_balance()
+        all_balances_before = alice_account.get_all_balances()
         history_before = len(alice_account.transaction_history)
 
-        print(f"操作前余额: {balance_before}")
+        print(f"操作前可用余额: {balance_before}")
+        print(f"操作前所有余额状态: {all_balances_before}")
         print(f"操作前历史记录数: {history_before}")
 
-        # 测试账户完整性
+        # 测试账户完整性（使用新版API）
         integrity_before = alice_account.validate_integrity()
+        account_integrity_before = alice_account.get_account_integrity()
         self.assertTrue(integrity_before, "账户操作前完整性应该有效")
+        self.assertTrue(account_integrity_before, "账户操作前内部完整性应该有效")
 
         # 模拟账户数据序列化和反序列化（备份恢复场景）
         account_info = alice_account.get_account_info()
         print(f"账户信息: {account_info}")
 
-        # 验证所有组件仍然正常工作
-        balance_after = alice_account.get_balance()
+        # 验证所有组件仍然正常工作（使用新版API）
+        balance_after = alice_account.get_available_balance()
+        all_balances_after = alice_account.get_all_balances()
         history_after = len(alice_account.transaction_history)
         integrity_after = alice_account.validate_integrity()
+        account_integrity_after = alice_account.get_account_integrity()
 
-        print(f"操作后余额: {balance_after}")
+        print(f"操作后可用余额: {balance_after}")
+        print(f"操作后所有余额状态: {all_balances_after}")
         print(f"操作后历史记录数: {history_after}")
 
         # 验证数据一致性
         self.assertEqual(balance_before, balance_after, "余额应该保持一致")
+        self.assertEqual(all_balances_before, all_balances_after, "所有余额状态应该保持一致")
         self.assertEqual(history_before, history_after, "历史记录数应该保持一致")
         self.assertTrue(integrity_after, "账户操作后完整性应该仍然有效")
+        self.assertTrue(account_integrity_after, "账户操作后内部完整性应该仍然有效")
 
-        # 验证MultiTransaction仍然有效
-        alice_public_key = self.account_data['alice']['public_key']
-        for multi_tx in multi_transactions:
-            is_multi_valid = multi_tx.check_acc_txn_sig(alice_public_key)
-            self.assertTrue(is_multi_valid, "恢复后的MultiTransaction签名应该仍然有效")
+        # 验证MultiTransaction仍然有效（使用新版API）
+        for multi_txn_result in multi_txn_results:
+            # 验证MultiTransaction签名
+            multi_sig_valid = alice_account.verify_multi_transaction_signature(multi_txn_result)
+            self.assertTrue(multi_sig_valid, "恢复后的MultiTransaction签名应该仍然有效")
 
-            # 验证内部的单个交易
-            for single_tx in multi_tx.multi_txns:
-                tx_dict = {
-                    'sender': single_tx.sender,
-                    'recipient': single_tx.recipient,
-                    'amount': single_tx.amount,
-                    'signature': single_tx.signature,
-                    'hash': single_tx.hash_value
-                }
-                is_single_valid = alice_account.verify_transaction(tx_dict)
-                self.assertTrue(is_single_valid, "恢复后的内部交易签名应该仍然有效")
+            # 验证所有内部交易签名
+            all_sig_results = alice_account.verify_all_transaction_signatures(multi_txn_result)
+            valid_count = sum(1 for valid in all_sig_results.values() if valid)
+            total_count = len(all_sig_results)
+            self.assertEqual(valid_count, total_count, "恢复后的所有内部交易签名都应该有效")
 
-        print("√ 账户恢复和数据完整性测试通过")
+            # 测试确认交易功能
+            confirm_success = alice_account.confirm_multi_transaction(multi_txn_result)
+            print(f"  MultiTransaction确认测试: {'√' if confirm_success else 'X'}")
+
+        # 测试清理功能
+        cleanup_count = alice_account.cleanup_confirmed_values()
+        print(f"清理确认的Value数量: {cleanup_count}")
+
+        print("√ 账户恢复和数据完整性测试通过（新版API）")
 
 
 def run_real_end_to_end_tests():
