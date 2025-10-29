@@ -484,7 +484,7 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
                 blocks_created.append(block)
 
                 print(f"  √ 区块 #{block.index} 创建成功")
-                print(f"    默克尔根: {block.get_merkle_root()[:16]}...")
+                print(f"    默克尔根: {block.get_m_tree_root()[:16]}...")
                 print(f"    主链状态: {'主链' if is_main_chain else '分叉'}")
 
                 # 显示区块包含的MultiTransaction信息

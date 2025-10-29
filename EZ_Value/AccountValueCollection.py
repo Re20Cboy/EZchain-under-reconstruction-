@@ -11,6 +11,28 @@ class ValueNode:
         self.node_id = node_id or str(uuid.uuid4())
         self.next = None
         self.prev = None
+        # VPB information slots (will be managed by Account's VPBManager)
+        #TODO 此处Proofs应当使用指针模式，因为Proofs中存在大量重复的Proof unit。
+        self._proofs = None
+        self._block_index_lst = None
+
+    def set_vpb_info(self, proofs, block_index_lst):
+        """设置VPB信息（由Account调用）"""
+        self._proofs = proofs
+        self._block_index_lst = block_index_lst
+
+    def get_proofs(self):
+        """获取Proofs信息"""
+        return self._proofs
+
+    def get_block_index_lst(self):
+        """获取BlockIndexList信息"""
+        return self._block_index_lst
+
+    def clear_vpb_info(self):
+        """清除VPB信息"""
+        self._proofs = None
+        self._block_index_lst = None
         
 class AccountValueCollection:
     """账户Value集合管理类 - 使用链表结构解决index混乱问题"""

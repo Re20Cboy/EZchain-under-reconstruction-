@@ -211,3 +211,13 @@ yarn-error.log*
 .claude/cache/
 .claude/logs/
 .claude/tmp/
+
+# Demo files and test data
+EZ_Test/demo_*.py
+EZ_Test/demo_refactored_block_index_list.py
+EZ_Test/test_refactored_block_index_list.py
+EZ_simulation_data/test_results.json
+EZ_Test/EZ_simulation_data/
+**/blockchain_data/*.json
+**/blockchain_data/*.pkl
+EZ_Test/blockchain_data/
