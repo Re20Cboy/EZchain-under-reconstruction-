@@ -58,5 +58,16 @@ class MerkleTreeProof:
         # Final verification: current_hash should match the root
         if current_hash != self.mt_prf_list[-1]:
             check_flag = False
-        
+
         return check_flag
+
+    def to_dict(self) -> dict:
+        """Convert MerkleTreeProof to dictionary for storage"""
+        return {
+            'mt_prf_list': self.mt_prf_list
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'MerkleTreeProof':
+        """Create MerkleTreeProof from dictionary"""
+        return cls(mt_prf_list=data['mt_prf_list'])

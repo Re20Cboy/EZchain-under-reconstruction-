@@ -179,3 +179,35 @@ class Transaction:
     def count_value_in_value(self, value: Any) -> int:
         """Count how many times the value is contained within the transaction values."""
         return sum(1 for v in self.value if v.is_in_value(value))
+
+    def to_dict(self) -> dict:
+        """Convert Transaction to dictionary for storage"""
+        return {
+            'sender': self.sender,
+            'recipient': self.recipient,
+            'nonce': self.nonce,
+            'signature': self.signature.hex() if self.signature else None,
+            'value': [val.to_dict() for val in self.value],
+            'time': self.time,
+            'tx_hash': self.tx_hash.hex() if self.tx_hash else None
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Transaction':
+        """Create Transaction from dictionary"""
+        from EZ_Value.Value import Value
+        values = [Value.from_dict(val_data) for val_data in data['value']]
+        transaction = cls(
+            sender=data['sender'],
+            recipient=data['recipient'],
+            nonce=data['nonce'],
+            signature=bytes.fromhex(data['signature']) if data.get('signature') else None,
+            value=values,
+            time=data.get('time')
+        )
+
+        # Restore tx_hash if present
+        if data.get('tx_hash'):
+            transaction.tx_hash = bytes.fromhex(data['tx_hash'])
+
+        return transaction

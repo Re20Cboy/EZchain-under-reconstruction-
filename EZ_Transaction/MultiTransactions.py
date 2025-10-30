@@ -182,8 +182,36 @@ class MultiTransactions:
     def __iter__(self):
         """
         Make the MultiTransactions object iterable.
-        
+
         Returns:
             Iterator over the transactions
         """
         return iter(self.multi_txns)
+
+    def to_dict(self) -> dict:
+        """Convert MultiTransactions to dictionary for storage"""
+        return {
+            'sender': self.sender,
+            'multi_txns': [txn.to_dict() for txn in self.multi_txns],
+            'time': self.time,
+            'signature': self.signature.hex() if self.signature else None,
+            'digest': self.digest
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'MultiTransactions':
+        """Create MultiTransactions from dictionary"""
+        from .SingleTransaction import Transaction
+
+        multi_txns = [Transaction.from_dict(txn_data) for txn_data in data['multi_txns']]
+        multi_txn = cls(
+            sender=data['sender'],
+            multi_txns=multi_txns
+        )
+
+        # Restore additional fields
+        multi_txn.time = data.get('time')
+        multi_txn.signature = bytes.fromhex(data['signature']) if data.get('signature') else None
+        multi_txn.digest = data.get('digest')
+
+        return multi_txn

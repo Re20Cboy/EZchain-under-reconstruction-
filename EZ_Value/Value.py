@@ -144,3 +144,12 @@ class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16
             "end_index": self.end_index,
             "value_num": self.value_num
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Value':
+        """Create Value from dictionary"""
+        return cls(
+            beginIndex=data['begin_index'],
+            valueNum=data['value_num'],
+            state=ValueState(data['state'])
+        )
