@@ -148,7 +148,13 @@ class Transaction:
 
     def print_tx(self) -> str:
         """Format and return transaction details as string."""
-        transaction_details = [self.sender, self.recipient, self.value, self.tx_hash]
+        if isinstance(self.tx_hash, (bytes, bytearray)):
+            # Ensure deterministic representation so downstream tests see the byte marker.
+            tx_hash_repr = f"b'{self.tx_hash.hex()}'"
+        else:
+            tx_hash_repr = self.tx_hash
+
+        transaction_details = [self.sender, self.recipient, self.value, tx_hash_repr]
         return f"{transaction_details}\n"
 
     def encode(self) -> bytes:
