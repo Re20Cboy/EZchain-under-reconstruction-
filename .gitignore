@@ -221,3 +221,40 @@ EZ_Test/EZ_simulation_data/
 **/blockchain_data/*.json
 **/blockchain_data/*.pkl
 EZ_Test/blockchain_data/
+
+# VPB testing and development files
+# Temporary VPB storage databases
+ez_vpb_storage.db
+*_vpb_storage.db
+ez_proof_*.db
+*proof_storage.db
+test_*.db
+*_test.db
+
+# VPB test temporary files
+vpb_test_*.db
+*_vpb_test.db
+vpb_temp_*.db
+*_vpb_temp.db
+temp_vpb_*.db
+*_temp_vpb.db
+
+# General test databases
+**/test_storage*.db
+**/*test*.db
+**/temp*.db
+**/tmp*.db
+
+# Simulation database files
+EZ_simulation_data/*.db
+EZ_Test/EZ_simulation_data/*.db
+simulation_pool_*.db
+*simulation_*.db
+
+# Development and testing artifacts
+*.test
+tests_output/
+test_results/
+coverage_reports/
+temp/
+tmp/

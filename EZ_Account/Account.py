@@ -25,7 +25,7 @@ from EZ_Value.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 # TransactionPool is used by consensus nodes, not account nodes
 # from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_VPB.VPBPair import VPBpair
+from EZ_VPB.VPBPairs import VPBpair
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import hash
 
@@ -64,7 +64,7 @@ class Account:
         self.transaction_pool_url = None  # Optional: URL to submit transactions
 
         # VPB management
-        from EZ_VPB.VPBPair import VPBManager
+        from EZ_VPB.VPBPairs import VPBManager
         self.vpb_manager = VPBManager()
         self.vpb_lock = threading.RLock()
 

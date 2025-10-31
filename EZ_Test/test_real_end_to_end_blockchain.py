@@ -51,7 +51,7 @@ from EZ_Transaction_Pool.PackTransactions import (
     TransactionPackager,
     package_transactions_from_pool
 )
-from EZ_VPB.VPBPair import VPBpair
+from EZ_VPB.VPBPairs import VPBpair
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import hash
 

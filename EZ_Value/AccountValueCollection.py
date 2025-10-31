@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional, Set, Dict
+from typing import List, Tuple, Optional
 from collections import defaultdict
 import uuid
 
@@ -269,6 +269,36 @@ class AccountValueCollection:
                 reverted_count += 1
 
         return reverted_count
+
+    def get_value_by_id(self, value_id: str) -> Optional[Value]:
+        """
+        根据Value ID获取Value对象
+
+        Args:
+            value_id: Value的唯一标识符（通常是begin_index）
+
+        Returns:
+            Value对象，如果不存在则返回None
+        """
+        # 首先尝试通过十进制映射查找
+        try:
+            decimal_begin = int(value_id, 16) if value_id.startswith('0x') else int(value_id)
+            if decimal_begin in self._decimal_begin_map:
+                node_id = self._decimal_begin_map[decimal_begin]
+                node = self._index_map.get(node_id)
+                if node:
+                    return node.value
+        except (ValueError, TypeError):
+            pass
+
+        # 如果十进制映射查找失败，遍历所有Value查找匹配的begin_index
+        current = self.head
+        while current:
+            if current.value.begin_index == value_id:
+                return current.value
+            current = current.next
+
+        return None
 
     def validate_integrity(self) -> bool:
         """
