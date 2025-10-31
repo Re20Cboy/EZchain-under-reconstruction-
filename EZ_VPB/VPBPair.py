@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__) + "/..")
 
 from EZ_BlockIndex import BlockIndexList
 from EZ_Proof import Proofs
-from EZ_Value import Value
+from EZ_Value.Value import Value
 
 
 class VPBpair:
