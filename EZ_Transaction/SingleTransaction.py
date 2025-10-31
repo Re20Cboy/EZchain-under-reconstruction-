@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Tool_Box.Hash import sha256_hash
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
-from EZ_Value import Value
+from EZ_Value.Value import Value
 
 class Transaction:
     def __init__(self, sender: str, recipient: str, nonce: int, signature: Optional[bytes], value: List[Value], time: Optional[str]):
@@ -148,7 +148,13 @@ class Transaction:
 
     def print_tx(self) -> str:
         """Format and return transaction details as string."""
-        transaction_details = [self.sender, self.recipient, self.value, self.tx_hash]
+        if isinstance(self.tx_hash, (bytes, bytearray)):
+            # Ensure deterministic representation so downstream tests see the byte marker.
+            tx_hash_repr = f"b'{self.tx_hash.hex()}'"
+        else:
+            tx_hash_repr = self.tx_hash
+
+        transaction_details = [self.sender, self.recipient, self.value, tx_hash_repr]
         return f"{transaction_details}\n"
 
     def encode(self) -> bytes:

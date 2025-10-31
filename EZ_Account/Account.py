@@ -13,10 +13,11 @@ Key Features:
 - Integration with existing EZChain modules
 """
 
-import threading
 import json
-from typing import Dict, List, Optional, Tuple, Any
+import threading
+import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 # Core EZChain imports
 from EZ_Value.Value import Value, ValueState
@@ -67,9 +68,7 @@ class Account:
         from EZ_VPB.VPBPairs import VPBManager
         self.vpb_manager = VPBManager()
         self.vpb_lock = threading.RLock()
-
-        # Set lock for VPB manager
-        self.vpb_manager.set_lock(self.vpb_lock)
+        self.local_vpbs: Dict[str, VPBpair] = {}
 
         # Account metadata
         self.created_at = datetime.now()
@@ -142,7 +141,8 @@ class Account:
                 if proofs is not None and block_indices is not None:
                     from EZ_BlockIndex import BlockIndexList
                     block_index_lst = BlockIndexList(block_indices[i], owner=self.address)
-                    self.vpb_manager.add_vpb(value, proofs[i], block_index_lst)
+                    vpb = VPBpair(value, proofs[i], block_index_lst)
+                    self._store_vpb(vpb)
                     print(f"Added value with {value.value_num} units and VPB to {self.name}")
                 else:
                     print(f"Added value with {value.value_num} units to {self.name}")
@@ -170,11 +170,11 @@ class Account:
             # Add to value collection
             if self.value_collection.add_value(value):
                 # Add VPB information
-                success = self.vpb_manager.add_vpb(value, proofs, block_index_lst)
-                if success:
-                    print(f"Added value with {value.value_num} units and VPB to {self.name}")
-                    self.last_activity = datetime.now()
-                return success
+                vpb = VPBpair(value, proofs, block_index_lst)
+                self._store_vpb(vpb)
+                print(f"Added value with {value.value_num} units and VPB to {self.name}")
+                self.last_activity = datetime.now()
+                return True
             return False
         except Exception as e:
             print(f"Failed to add value with VPB: {e}")
@@ -443,34 +443,28 @@ class Account:
             print(f"Error getting pending multi-transactions: {e}")
             return []
 
-    def create_vpb(self, values: List[Value], proofs: List, block_indices: List) -> bool:
+    def create_vpb(self, values: List[Value], proofs, block_indices) -> Optional[VPBpair]:
         """
-        Create VPB triplets for multiple values.
+        Create a VPB (Verification Proof Balance) triplet.
 
         Args:
             values: List of values
-            proofs: List of proofs
-            block_indices: List of block indices
+            proofs: Proof information (list or object)
+            block_indices: Block index information (list or object)
 
         Returns:
-            True if all VPBs created successfully
+            VPBpair object if created successfully, otherwise None
         """
         try:
-            if not (len(values) == len(proofs) == len(block_indices)):
-                raise ValueError("Length of values, proofs, and block_indices must match")
-
-            success_count = 0
-            for value, proof, block_idx in zip(values, proofs, block_indices):
-                if self.add_value_with_vpb(value, proof, block_idx):
-                    success_count += 1
-
+            vpb = VPBpair(values, proofs, block_indices)
+            self._store_vpb(vpb)
             self.last_activity = datetime.now()
-            print(f"Created {success_count}/{len(values)} VPBs")
-            return success_count == len(values)
+            print(f"Created VPB with {self._safe_component_length(values)} values")
+            return vpb
 
         except Exception as e:
-            print(f"Failed to create VPBs: {e}")
-            return False
+            print(f"Failed to create VPB: {e}")
+            return None
 
     def create_single_vpb(self, value: Value, proofs, block_indices) -> VPBpair:
         """
@@ -485,74 +479,89 @@ class Account:
             VPBpair object
         """
         try:
-            # Create VPB object
-            vpb = VPBpair(value, proofs, block_indices)
-
-            # Add to VPB manager and value collection
-            if self.add_value_with_vpb(value, proofs, block_indices):
-                self.last_activity = datetime.now()
-                print(f"VPB created for value with {value.value_num} units")
-                return vpb
-            else:
+            if not self.value_collection.add_value(value):
                 return None
+
+            vpb = VPBpair(value, proofs, block_indices)
+            self._store_vpb(vpb)
+            self.last_activity = datetime.now()
+            print(f"VPB created for value with {value.value_num} units")
+            return vpb
 
         except Exception as e:
             print(f"Failed to create VPB: {e}")
             return None
 
-    def update_vpb(self, value: Value, new_proofs=None, new_block_index_lst=None) -> bool:
+    def update_vpb(self, vpb_id: str, proofs=None, block_index_lst=None) -> bool:
         """
-        Update an existing VPB for a specific value.
+        Update an existing VPB entry.
 
         Args:
-            value: Value object whose VPB should be updated
-            new_proofs: New proofs object (optional)
-            new_block_index_lst: New block index list (optional)
+            vpb_id: Identifier of the VPB to update
+            proofs: New proofs data (optional)
+            block_index_lst: New block index list (optional)
 
         Returns:
             True if update successful
         """
         try:
-            success = self.vpb_manager.update_vpb(value, new_proofs, new_block_index_lst)
-            if success:
-                print(f"VPB updated for value with {value.value_num} units")
-            return success
+            with self.vpb_lock:
+                vpb = self.local_vpbs.get(vpb_id)
+                if vpb is None:
+                    return False
+
+                if proofs is not None:
+                    setattr(vpb, "proofs", proofs)
+                if block_index_lst is not None:
+                    setattr(vpb, "block_index_lst", block_index_lst)
+
+            self.last_activity = datetime.now()
+            print(f"VPB {vpb_id} updated successfully")
+            return True
 
         except Exception as e:
             print(f"Failed to update VPB: {e}")
             return False
 
-    def remove_vpb(self, value: Value) -> bool:
+    def remove_vpb(self, identifier) -> bool:
         """
-        Remove VPB for a specific value.
+        Remove VPB by identifier or value reference.
 
         Args:
-            value: Value object whose VPB should be removed
+            identifier: VPB id string or Value object
 
         Returns:
             True if removal successful
         """
         try:
-            success = self.vpb_manager.remove_vpb(value)
-            if success:
-                print(f"VPB removed for value with {value.value_num} units")
-            return success
+            with self.vpb_lock:
+                if isinstance(identifier, str):
+                    removed = self.local_vpbs.pop(identifier, None)
+                else:
+                    removed = self._remove_vpb_by_value(identifier)
+
+            if removed:
+                print(f"VPB removed for identifier {identifier}")
+                self.last_activity = datetime.now()
+                return True
+            return False
 
         except Exception as e:
             print(f"Failed to remove VPB: {e}")
             return False
 
-    def get_vpb(self, value: Value) -> Optional[VPBpair]:
+    def get_vpb(self, identifier) -> Optional[VPBpair]:
         """
-        Get VPB for a specific value.
+        Get VPB by identifier or value reference.
 
         Args:
-            value: Value object
+            identifier: VPB id string or Value object
 
         Returns:
             VPBpair object or None if not found
         """
-        return self.vpb_manager.get_vpb(value)
+        _, vpb = self._find_vpb_entry(identifier)
+        return vpb
 
     def get_all_vpbs(self) -> Dict[str, VPBpair]:
         """
@@ -561,7 +570,8 @@ class Account:
         Returns:
             Dictionary mapping value identifiers to VPB objects
         """
-        return self.vpb_manager.get_all_vpbs()
+        with self.vpb_lock:
+            return self.local_vpbs.copy()
 
     def validate_vpb(self, vpb: VPBpair) -> bool:
         """
@@ -574,12 +584,33 @@ class Account:
             True if VPB is valid
         """
         try:
-            # Check if VPB components are consistent
-            if not vpb.value or not vpb.proofs or not vpb.block_index_lst:
+            # Prefer VPBpair's validation if available and returns boolean
+            if hasattr(vpb, "is_valid_vpb"):
+                result = vpb.is_valid_vpb()
+                if isinstance(result, bool):
+                    return result
+
+            components = [
+                getattr(vpb, "value", None),
+                getattr(vpb, "proofs", None),
+                getattr(vpb, "block_index_lst", None),
+            ]
+
+            if any(component is None for component in components):
                 return False
 
-            # Use VPBpair's built-in validation
-            return vpb.is_valid_vpb()
+            lengths = [
+                length for component in components
+                if (length := self._component_length(component)) is not None
+            ]
+
+            if lengths:
+                if any(length == 0 for length in lengths):
+                    return False
+                if len(set(lengths)) > 1:
+                    return False
+
+            return True
 
         except Exception as e:
             print(f"Failed to validate VPB: {e}")
@@ -592,7 +623,11 @@ class Account:
         Returns:
             True if all VPBs are valid
         """
-        return self.vpb_manager.validate_vpb_consistency()
+        try:
+            with self.vpb_lock:
+                return all(self.validate_vpb(vpb) for vpb in self.local_vpbs.values())
+        except Exception:
+            return False
 
     def clear_all_vpbs(self) -> bool:
         """
@@ -602,14 +637,60 @@ class Account:
             True if cleared successfully
         """
         try:
-            success = self.vpb_manager.clear_all_vpbs()
-            if success:
-                print(f"All VPBs cleared for {self.name}")
-            return success
+            with self.vpb_lock:
+                self.local_vpbs.clear()
+
+            print(f"All VPBs cleared for {self.name}")
+            return True
 
         except Exception as e:
             print(f"Failed to clear VPBs: {e}")
             return False
+
+    def _store_vpb(self, vpb: VPBpair, vpb_id: Optional[str] = None) -> str:
+        """
+        Store VPB and return its identifier.
+        """
+        with self.vpb_lock:
+            identifier = vpb_id or self._generate_vpb_id()
+            self.local_vpbs[identifier] = vpb
+            return identifier
+
+    def _generate_vpb_id(self) -> str:
+        """Generate a unique VPB identifier."""
+        return f"vpb_{uuid.uuid4().hex}"
+
+    def _find_vpb_entry(self, identifier) -> Tuple[Optional[str], Optional[VPBpair]]:
+        with self.vpb_lock:
+            if isinstance(identifier, str):
+                return identifier, self.local_vpbs.get(identifier)
+
+            for vpb_id, vpb in self.local_vpbs.items():
+                if getattr(vpb, "value", None) is identifier:
+                    return vpb_id, vpb
+
+        return None, None
+
+    def _remove_vpb_by_value(self, value) -> Optional[VPBpair]:
+        vpb_id, vpb = self._find_vpb_entry(value)
+        if vpb_id is not None:
+            with self.vpb_lock:
+                return self.local_vpbs.pop(vpb_id, None)
+        return None
+
+    @staticmethod
+    def _component_length(component: Any) -> Optional[int]:
+        if component is None:
+            return 0
+        try:
+            return len(component)  # type: ignore[arg-type]
+        except TypeError:
+            return None
+
+    @staticmethod
+    def _safe_component_length(component: Any) -> int:
+        length = Account._component_length(component)
+        return length if length is not None else 0
 
     def receive_multi_transaction(self, multi_txn_result: Dict) -> bool:
         """
