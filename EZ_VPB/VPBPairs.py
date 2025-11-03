@@ -332,7 +332,7 @@ class VPBPair:
 
 
 class VPBManager:
-    """VPB管理器 - Account管理VPB的唯一渠道
+    """VPB管理器 - 管理VPB的渠道
 
     重构说明：统一VPB管理入口，确保Value和Proofs数据的一致性。
     """
@@ -352,11 +352,19 @@ class VPBManager:
         # AccountPickValues实例
         self._value_selector: Optional[AccountPickValues] = None
 
-        # 如果提供了ValueCollection，初始化相关组件
-        if self._value_collection and account_address:
-            self._value_selector = AccountPickValues(account_address, self._value_collection)
-            # 加载现有VPB数据
-            self._load_existing_vpbs()
+        # 初始化AccountPickValues（使用is not None而不是布尔值检查）
+        try:
+            if self._value_collection is not None and account_address:
+                self._value_selector = AccountPickValues(account_address, self._value_collection)
+                # 加载现有VPB数据
+                self._load_existing_vpbs()
+            elif self._value_collection is not None:
+                # 即使没有account_address，也应该初始化_value_selector
+                self._value_selector = AccountPickValues("", self._value_collection)
+                print("Warning: VPBManager initialized without account_address")
+        except Exception as e:
+            print(f"Warning: Failed to initialize AccountPickValues: {e}")
+            self._value_selector = None
 
     def set_account_address(self, address: str):
         """设置账户地址并加载现有VPB"""
@@ -593,81 +601,401 @@ class VPBManager:
 
 class VPBPairs:
     """
-    VPBPairs主类 - 提供完整的VPB管理功能接口
+    VPBPairs主类 - Account管理VPB的统一接口
 
-    重构说明：简化为VPBManager的包装器，保持向后兼容性，
-    同时确保架构的一致性。
+    这是Account与VPB系统交互的唯一入口点，提供完整的VPB生命周期管理、
+    交易支持、持久化存储和状态查询功能。
+
+    核心职责：
+    1. 作为Account的统一VPB管理接口
+    2. 协调VPBManager进行具体业务逻辑处理
+    3. 提供简洁一致的API供Account调用
+    4. 确保VPB数据的完整性和一致性
     """
 
-    def __init__(self, account_address: str, value_collection: AccountValueCollection):
+    def __init__(self, account_address: str, value_collection: Optional[AccountValueCollection] = None):
         """
         初始化VPBPairs
 
         Args:
-            account_address: 账户地址
-            value_collection: AccountValueCollection实例
+            account_address: 账户地址，用于标识VPB的所有者
+            value_collection: 可选的AccountValueCollection实例，如果不提供则自动创建
         """
         self.account_address = account_address
         self.storage = VPBStorage()
+
+        # 如果没有提供ValueCollection，则创建一个
+        if value_collection is None:
+            from EZ_Value.AccountValueCollection import AccountValueCollection
+            value_collection = AccountValueCollection(account_address)
+
         self.manager = VPBManager(account_address, self.storage, value_collection)
 
         print(f"VPBPairs initialized for account: {account_address[:16]}...")
 
+    # ========== VPB生命周期管理接口 ==========
+
     def add_vpb(self, value: Value, proofs: Proofs, block_index_lst: BlockIndexList) -> bool:
-        """添加VPB三元组"""
+        """
+        添加新的VPB三元组
+
+        建立Value-Proofs-BlockIndexList的一一对应关系并持久化存储
+
+        Args:
+            value: Value对象
+            proofs: 对应的Proofs对象
+            block_index_lst: 对应的BlockIndexList对象
+
+        Returns:
+            bool: 添加成功返回True，失败返回False
+        """
         return self.manager.add_vpb(value, proofs, block_index_lst)
 
     def remove_vpb(self, value: Value) -> bool:
-        """删除VPB三元组"""
+        """
+        删除指定的VPB三元组
+
+        Args:
+            value: 要删除的Value对象
+
+        Returns:
+            bool: 删除成功返回True，失败返回False
+        """
         return self.manager.remove_vpb(value)
 
     def get_vpb(self, value: Value) -> Optional[VPBPair]:
-        """获取VPB三元组"""
+        """
+        获取指定Value对应的VPB三元组
+
+        Args:
+            value: Value对象
+
+        Returns:
+            Optional[VPBPair]: VPB三元组，如果不存在返回None
+        """
         return self.manager.get_vpb(value)
 
     def get_vpb_by_id(self, value_id: str) -> Optional[VPBPair]:
-        """根据Value ID获取VPB三元组"""
-        return self.manager.get_vpb_by_id(value_id)
+        """
+        根据Value ID获取VPB三元组
 
-    def get_all_vpbs(self) -> Dict[str, VPBPair]:
-        """获取所有VPB三元组"""
-        return self.manager.get_all_vpbs()
+        Args:
+            value_id: Value的唯一标识符（begin_index）
+
+        Returns:
+            Optional[VPBPair]: VPB三元组，如果不存在返回None
+        """
+        return self.manager.get_vpb_by_id(value_id)
 
     def update_vpb(self, value: Value, new_proofs: Optional[Proofs] = None,
                    new_block_index_lst: Optional[BlockIndexList] = None) -> bool:
-        """更新VPB三元组"""
+        """
+        更新VPB三元组中的Proofs或BlockIndexList组件
+
+        在交易过程中，Value对应的Proofs和BlockIndexList会不断变化，
+        此接口提供更新功能以保持数据一致性。
+
+        Args:
+            value: 要更新的Value对象
+            new_proofs: 新的Proofs对象（可选）
+            new_block_index_lst: 新的BlockIndexList对象（可选）
+
+        Returns:
+            bool: 更新成功返回True，失败返回False
+        """
         return self.manager.update_vpb(value, new_proofs, new_block_index_lst)
+
+    # ========== 批量查询和状态管理接口 ==========
+
+    def get_all_vpbs(self) -> Dict[str, VPBPair]:
+        """
+        获取账户的所有VPB三元组
+
+        Returns:
+            Dict[str, VPBPair]: 所有VPB的字典，key为value_id
+        """
+        return self.manager.get_all_vpbs()
+
+    def get_vpbs_by_state(self, state: ValueState) -> List[VPBPair]:
+        """
+        根据Value状态获取VPB列表
+
+        Args:
+            state: Value状态枚举
+
+        Returns:
+            List[VPBPair]: 指定状态的VPB列表
+        """
+        return self.manager.get_vpbs_by_state(state)
+
+    def validate_all_vpbs(self) -> bool:
+        """
+        验证所有VPB的完整性和一致性
+
+        检查每个VPB的三元组关系是否正确，数据是否完整
+
+        Returns:
+            bool: 所有VPB都有效返回True，否则返回False
+        """
+        return self.manager.validate_vpb_consistency()
+
+    # ========== 交易支持接口 ==========
 
     def pick_values_for_transaction(self, required_amount: int, sender: str,
                                   recipient: str, nonce: int, time: str) -> Optional[Dict]:
-        """为交易选择值（集成AccountPickValues）"""
-        return self.manager.pick_values_for_transaction(required_amount, sender, recipient, nonce, time)
+        """
+        为交易选择最优的Value组合
+
+        集成AccountPickValues算法，为交易选择合适的Value，
+        并返回对应的VPB信息和交易数据。
+
+        Args:
+            required_amount: 交易需要的金额
+            sender: 发送方地址
+            recipient: 接收方地址
+            nonce: 交易随机数
+            time: 交易时间戳
+
+        Returns:
+            Optional[Dict]: 包含选中Value、VPB信息和交易数据的字典，
+                          如果选择失败返回None
+        """
+        return self.manager.pick_values_for_transaction(
+            required_amount, sender, recipient, nonce, time
+        )
 
     def commit_transaction(self, selected_values: List[Value]) -> bool:
-        """提交交易"""
+        """
+        提交交易，更新Value状态
+
+        在交易确认后调用，更新相关Value的状态为已消费
+
+        Args:
+            selected_values: 交易中使用的Value列表
+
+        Returns:
+            bool: 提交成功返回True，失败返回False
+        """
         return self.manager.commit_transaction_values(selected_values)
 
     def rollback_transaction(self, selected_values: List[Value]) -> bool:
-        """回滚交易"""
+        """
+        回滚交易选择，恢复Value状态
+
+        在交易失败时调用，恢复选中Value的状态为可用
+
+        Args:
+            selected_values: 之前选择的Value列表
+
+        Returns:
+            bool: 回滚成功返回True，失败返回False
+        """
         return self.manager.rollback_transaction_selection(selected_values)
 
-    def validate_all_vpbs(self) -> bool:
-        """验证所有VPB的完整性"""
-        return self.manager.validate_vpb_consistency()
+    # ========== 统计和导出接口 ==========
 
     def get_statistics(self) -> Dict[str, int]:
-        """获取VPB统计信息"""
+        """
+        获取VPB统计信息
+
+        Returns:
+            Dict[str, int]: 包含各状态VPB数量和总数的统计字典
+        """
         return self.manager.get_vpb_statistics()
 
     def export_data(self) -> Dict[str, Any]:
-        """导出VPB数据"""
+        """
+        导出所有VPB数据
+
+        用于备份、迁移或数据分析
+
+        Returns:
+            Dict[str, Any]: 包含所有VPB数据的完整字典
+        """
         return self.manager.export_vpbs_to_dict()
 
+    # ========== 资源管理接口 ==========
+
     def cleanup(self):
-        """清理资源"""
+        """清理资源，删除所有VPB数据"""
         self.manager.clear_all_vpbs()
         print("VPBPairs cleaned up")
+
+    # ========== 直接访问管理器接口（高级用法） ==========
+
+    @property
+    def vpb_manager(self) -> VPBManager:
+        """
+        获取底层VPBManager实例
+
+        供需要更精细控制的场景使用，一般情况下不建议直接调用
+        """
+        return self.manager
+
+    def set_external_lock(self, lock: threading.RLock):
+        """
+        设置外部锁，与Account的锁机制同步
+
+        Args:
+            lock: 外部提供的RLock实例
+        """
+        self.manager.set_lock(lock)
+
+    # ========== Value管理接口（通过VPBPairs统一管理） ==========
+
+    def get_value_collection(self) -> AccountValueCollection:
+        """
+        获取底层ValueCollection实例（只读访问）
+
+        Returns:
+            AccountValueCollection实例
+        """
+        return self.manager._value_collection
+
+    def add_value(self, value: Value, proofs: Optional[Proofs] = None,
+                  block_index_lst: Optional[BlockIndexList] = None,
+                  position: str = "end") -> bool:
+        """
+        添加Value到ValueCollection，可选择同时创建VPB
+
+        Args:
+            value: Value对象
+            proofs: 可选的Proofs对象
+            block_index_lst: 可选的BlockIndexList对象
+            position: 添加位置 ("start" 或 "end")
+
+        Returns:
+            bool: 添加成功返回True
+        """
+        # 首先添加到ValueCollection
+        success = self.manager._value_collection.add_value(value, position)
+
+        # 如果提供了VPB信息，同时创建VPB
+        if success and proofs is not None and block_index_lst is not None:
+            return self.add_vpb(value, proofs, block_index_lst)
+
+        return success
+
+    def get_values(self, state: Optional[ValueState] = None) -> List[Value]:
+        """
+        获取ValueCollection中的Value
+
+        Args:
+            state: 可选的状态过滤器
+
+        Returns:
+            List of Value objects
+        """
+        if state is None:
+            return self.manager._value_collection.get_all_values()
+        return self.manager._value_collection.find_by_state(state)
+
+    def get_balance(self, state: ValueState = ValueState.UNSPENT) -> int:
+        """
+        获取指定状态的Value余额
+
+        Args:
+            state: Value状态
+
+        Returns:
+            int: 总余额
+        """
+        values = self.get_values(state)
+        return sum(value.value_num for value in values)
+
+    def get_all_balances(self) -> Dict[str, int]:
+        """
+        获取所有状态的余额
+
+        Returns:
+            Dict[str, int]: 各状态的余额字典
+        """
+        balances = {}
+        for state in ValueState:
+            balances[state.name] = self.get_balance(state)
+        return balances
+
+    # ========== 交易相关组件访问 ==========
+
+    def get_transaction_creator(self) -> 'CreateMultiTransactions':
+        """
+        获取CreateMultiTransactions实例
+
+        Returns:
+            CreateMultiTransactions实例
+        """
+        # 通过VPBManager获取transaction_creator
+        if hasattr(self.manager, '_value_selector') and self.manager._value_selector:
+            # 通过value_selector间接访问transaction_creator的逻辑
+            pass
+
+        # 如果VPBManager没有直接暴露transaction_creator，我们需要创建一个新的
+        if not hasattr(self, '_transaction_creator'):
+            from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+            self._transaction_creator = CreateMultiTransactions(
+                self.account_address,
+                self.manager._value_collection
+            )
+
+        return self._transaction_creator
 
 
 # 向后兼容性别名
 VPBpair = VPBPair
+
+
+# ========== 使用示例 ==========
+"""
+Account使用VPBPairs的典型示例：
+
+```python
+class Account:
+    def __init__(self, address: str):
+        self.address = address
+        self.value_collection = AccountValueCollection()
+
+        # VPBPairs作为Account管理VPB的唯一入口
+        self.vpb_pairs = VPBPairs(address, self.value_collection)
+
+        # 设置共享锁确保线程安全
+        self._lock = threading.RLock()
+        self.vpb_pairs.set_external_lock(self._lock)
+
+    def add_new_value(self, value: Value, proofs: Proofs, block_index_lst: BlockIndexList):
+        # 添加新的VPB三元组
+        return self.vpb_pairs.add_vpb(value, proofs, block_index_lst)
+
+    def create_transaction(self, amount: int, recipient: str):
+        # 使用VPBPairs选择交易值
+        result = self.vpb_pairs.pick_values_for_transaction(
+            amount, self.address, recipient, self.get_next_nonce(),
+            datetime.now().isoformat()
+        )
+
+        if result:
+            # 提交交易
+            self.vpb_pairs.commit_transaction(result['selected_values'])
+            return result['main_transaction']
+        return None
+
+    def get_available_balance(self) -> int:
+        # 获取可用余额
+        available_vpbs = self.vpb_pairs.get_vpbs_by_state(ValueState.AVAILABLE)
+        return sum(vpb.value.value_num for vpb in available_vpbs if vpb.value)
+
+    def validate_account_data(self) -> bool:
+        # 验证账户所有VPB的完整性
+        return self.vpb_pairs.validate_all_vpbs()
+```
+
+VPBPairs设计总结：
+
+1. **统一接口**：VPBPairs作为Account与VPB系统交互的唯一入口
+2. **完整功能**：提供VPB生命周期管理、交易支持、状态查询等全部功能
+3. **清晰分层**：VPBPairs(接口层) → VPBManager(业务层) → VPBStorage(数据层)
+4. **线程安全**：支持外部锁机制，确保与Account的并发安全
+5. **持久化**：内置SQLite存储，支持数据恢复和迁移
+6. **易用性**：提供简洁一致的API，降低使用复杂度
+
+这样的设计完全符合VPB design.md的要求，为Account提供了强大而易用的VPB管理能力。
+"""

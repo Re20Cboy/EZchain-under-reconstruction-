@@ -15,9 +15,8 @@ Key Features:
 
 import json
 import threading
-import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # Core EZChain imports
 from EZ_Value.Value import Value, ValueState
@@ -26,7 +25,7 @@ from EZ_Value.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 # TransactionPool is used by consensus nodes, not account nodes
 # from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_VPB.VPBPairs import VPBpair
+from EZ_VPB.VPBPairs import VPBPairs, VPBPair
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import hash
 
@@ -55,20 +54,21 @@ class Account:
         self.private_key_pem = private_key_pem
         self.public_key_pem = public_key_pem
 
-        # Initialize core components
-        self.value_collection = AccountValueCollection(address)
-        self.value_selector = AccountPickValues(address, self.value_collection)
-        self.transaction_creator = CreateMultiTransactions(address, self.value_collection)
+        # VPB管理 - VPBPairs作为统一管理接口
+        # VPBPairs内部管理ValueCollection、AccountPickValues、CreateMultiTransactions
+        self.vpb_pairs = VPBPairs(address)
+        self.vpb_lock = threading.RLock()
+
+        # 设置共享锁确保线程安全
+        self.vpb_pairs.set_external_lock(self.vpb_lock)
 
         # Account nodes don't maintain their own transaction pool
         # They submit transactions to consensus nodes' pools
         self.transaction_pool_url = None  # Optional: URL to submit transactions
 
-        # VPB management
-        from EZ_VPB.VPBPairs import VPBManager
-        self.vpb_manager = VPBManager()
-        self.vpb_lock = threading.RLock()
-        self.local_vpbs: Dict[str, VPBpair] = {}
+        # 提供向后兼容的属性访问（只读）
+        # 这些属性现在通过VPBPairs访问，确保数据一致性
+        self._transaction_creator = None  # 延迟初始化，通过VPBPairs获取
 
         # Account metadata
         self.created_at = datetime.now()
@@ -83,7 +83,27 @@ class Account:
 
         print(f"Account {self.name} ({address}) initialized successfully")
 
-    
+    # ========== 属性访问器（通过VPBPairs统一访问） ==========
+
+    @property
+    def value_collection(self) -> AccountValueCollection:
+        """获取ValueCollection（通过VPBPairs访问）"""
+        return self.vpb_pairs.get_value_collection()
+
+    @property
+    def transaction_creator(self) -> 'CreateMultiTransactions':
+        """获取CreateMultiTransactions实例（通过VPBPairs访问）"""
+        if self._transaction_creator is None:
+            self._transaction_creator = self.vpb_pairs.get_transaction_creator()
+        return self._transaction_creator
+
+    @property
+    def value_selector(self) -> 'AccountPickValues':
+        """获取AccountPickValues实例（通过VPBPairs访问）"""
+        # VPBManager内部管理value_selector
+        return self.vpb_pairs.manager._value_selector
+
+
     def get_all_balances(self) -> Dict[str, int]:
         """
         Get balances broken down by state.
@@ -91,10 +111,7 @@ class Account:
         Returns:
             Dictionary with balances by state
         """
-        balances = {}
-        for state in ValueState:
-            balances[state.name] = self.get_balance(state)
-        return balances
+        return self.vpb_pairs.get_all_balances()
 
     def get_values(self, state: Optional[ValueState] = None) -> List[Value]:
         """
@@ -106,9 +123,7 @@ class Account:
         Returns:
             List of values
         """
-        if state is None:
-            return self.value_collection.get_all_values()
-        return self.value_collection.find_by_state(state)
+        return self.vpb_pairs.get_values(state)
 
     def add_values(self, values: List[Value], proofs: Optional[List] = None,
                    block_indices: Optional[List] = None, position: str = "end") -> int:
@@ -134,20 +149,30 @@ class Account:
 
         for i, value in enumerate(values):
             try:
-                # Add to the main value collection
-                self.value_collection.add_value(value, position)
+                # 准备VPB信息
+                vpb_proofs = proofs[i] if proofs is not None else None
+                vpb_block_indices = None
+                if block_indices is not None:
+                    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+                    vpb_block_indices = BlockIndexList(block_indices[i], owner=self.address)
 
-                # Add VPB information if provided
-                if proofs is not None and block_indices is not None:
-                    from EZ_BlockIndex import BlockIndexList
-                    block_index_lst = BlockIndexList(block_indices[i], owner=self.address)
-                    vpb = VPBpair(value, proofs[i], block_index_lst)
-                    self._store_vpb(vpb)
-                    print(f"Added value with {value.value_num} units and VPB to {self.name}")
+                # 通过VPBPairs统一添加，确保Value和VPB的一致性
+                success = self.vpb_pairs.add_value(
+                    value=value,
+                    proofs=vpb_proofs,
+                    block_index_lst=vpb_block_indices,
+                    position=position
+                )
+
+                if success:
+                    added_count += 1
+                    if vpb_proofs is not None and vpb_block_indices is not None:
+                        print(f"Added value with {value.value_num} units and VPB to {self.name}")
+                    else:
+                        print(f"Added value with {value.value_num} units to {self.name}")
                 else:
-                    print(f"Added value with {value.value_num} units to {self.name}")
+                    print(f"Failed to add value {value.begin_index}")
 
-                added_count += 1
             except Exception as e:
                 print(f"Failed to add value: {e}")
 
@@ -156,7 +181,7 @@ class Account:
 
     def add_value_with_vpb(self, value: Value, proofs, block_index_lst) -> bool:
         """
-        Add a single value with its VPB information.
+        Add a single value with its VPB information through VPBPairs.
 
         Args:
             value: Value object to add
@@ -167,15 +192,15 @@ class Account:
             True if added successfully
         """
         try:
-            # Add to value collection
-            if self.value_collection.add_value(value):
-                # Add VPB information
-                vpb = VPBpair(value, proofs, block_index_lst)
-                self._store_vpb(vpb)
+            # 通过VPBPairs统一添加Value和VPB，确保数据一致性
+            success = self.vpb_pairs.add_value(value, proofs, block_index_lst)
+            if success:
                 print(f"Added value with {value.value_num} units and VPB to {self.name}")
                 self.last_activity = datetime.now()
                 return True
-            return False
+            else:
+                print(f"Failed to add value with VPB to VPBPairs for value {value.begin_index}")
+                return False
         except Exception as e:
             print(f"Failed to add value with VPB: {e}")
             return False
@@ -443,32 +468,48 @@ class Account:
             print(f"Error getting pending multi-transactions: {e}")
             return []
 
-    def create_vpb(self, values: List[Value], proofs, block_indices) -> Optional[VPBpair]:
+    def create_vpb(self, values: List[Value], proofs, block_indices) -> Optional[VPBPair]:
         """
         Create a VPB (Verification Proof Balance) triplet.
 
         Args:
-            values: List of values
-            proofs: Proof information (list or object)
-            block_indices: Block index information (list or object)
+            values: List of values (注意：这里应该单个Value以符合VPB设计)
+            proofs: Proof information
+            block_indices: Block index information
 
         Returns:
-            VPBpair object if created successfully, otherwise None
+            VPBPair object if created successfully, otherwise None
         """
         try:
-            vpb = VPBpair(values, proofs, block_indices)
-            self._store_vpb(vpb)
-            self.last_activity = datetime.now()
-            print(f"Created VPB with {self._safe_component_length(values)} values")
-            return vpb
+            # VPB设计是一对一关系，应该只处理单个Value
+            if len(values) != 1:
+                print("Warning: VPB should be created for single Value only")
+                return None
+
+            value = values[0]
+
+            # 添加到ValueCollection（如果尚未添加）
+            if self.value_collection.get_value_by_id(value.begin_index) is None:
+                self.value_collection.add_value(value)
+
+            # 使用VPBPairs创建VPB
+            success = self.vpb_pairs.add_vpb(value, proofs, block_indices)
+            if success:
+                vpb = self.vpb_pairs.get_vpb(value)
+                self.last_activity = datetime.now()
+                print(f"Created VPB for value with {value.value_num} units")
+                return vpb
+            else:
+                print(f"Failed to create VPB through VPBPairs")
+                return None
 
         except Exception as e:
             print(f"Failed to create VPB: {e}")
             return None
 
-    def create_single_vpb(self, value: Value, proofs, block_indices) -> VPBpair:
+    def create_single_vpb(self, value: Value, proofs, block_indices) -> Optional[VPBPair]:
         """
-        Create a single VPB (Verification Proof Balance) triplet.
+        Create a single VPB (Verification Proof Balance) triplet through VPBPairs.
 
         Args:
             value: Value object
@@ -476,28 +517,30 @@ class Account:
             block_indices: BlockIndexList object
 
         Returns:
-            VPBpair object
+            VPBPair object
         """
         try:
-            if not self.value_collection.add_value(value):
+            # 通过VPBPairs统一创建，避免重复添加Value
+            success = self.vpb_pairs.add_value(value, proofs, block_indices)
+            if success:
+                vpb = self.vpb_pairs.get_vpb(value)
+                self.last_activity = datetime.now()
+                print(f"VPB created for value with {value.value_num} units")
+                return vpb
+            else:
+                print(f"Failed to create VPB through VPBPairs")
                 return None
-
-            vpb = VPBpair(value, proofs, block_indices)
-            self._store_vpb(vpb)
-            self.last_activity = datetime.now()
-            print(f"VPB created for value with {value.value_num} units")
-            return vpb
 
         except Exception as e:
             print(f"Failed to create VPB: {e}")
             return None
 
-    def update_vpb(self, vpb_id: str, proofs=None, block_index_lst=None) -> bool:
+    def update_vpb(self, value: Value, proofs=None, block_index_lst=None) -> bool:
         """
         Update an existing VPB entry.
 
         Args:
-            vpb_id: Identifier of the VPB to update
+            value: Value object whose VPB to update
             proofs: New proofs data (optional)
             block_index_lst: New block index list (optional)
 
@@ -505,91 +548,86 @@ class Account:
             True if update successful
         """
         try:
-            with self.vpb_lock:
-                vpb = self.local_vpbs.get(vpb_id)
-                if vpb is None:
-                    return False
-
-                if proofs is not None:
-                    setattr(vpb, "proofs", proofs)
-                if block_index_lst is not None:
-                    setattr(vpb, "block_index_lst", block_index_lst)
-
-            self.last_activity = datetime.now()
-            print(f"VPB {vpb_id} updated successfully")
-            return True
+            success = self.vpb_pairs.update_vpb(value, proofs, block_index_lst)
+            if success:
+                self.last_activity = datetime.now()
+                print(f"VPB updated for value {value.begin_index}")
+            return success
 
         except Exception as e:
             print(f"Failed to update VPB: {e}")
             return False
 
-    def remove_vpb(self, identifier) -> bool:
+    def remove_vpb(self, value: Value) -> bool:
         """
-        Remove VPB by identifier or value reference.
+        Remove VPB by value reference.
 
         Args:
-            identifier: VPB id string or Value object
+            value: Value object whose VPB to remove
 
         Returns:
             True if removal successful
         """
         try:
-            with self.vpb_lock:
-                if isinstance(identifier, str):
-                    removed = self.local_vpbs.pop(identifier, None)
-                else:
-                    removed = self._remove_vpb_by_value(identifier)
-
-            if removed:
-                print(f"VPB removed for identifier {identifier}")
+            success = self.vpb_pairs.remove_vpb(value)
+            if success:
+                print(f"VPB removed for value {value.begin_index}")
                 self.last_activity = datetime.now()
-                return True
-            return False
+            return success
 
         except Exception as e:
             print(f"Failed to remove VPB: {e}")
             return False
 
-    def get_vpb(self, identifier) -> Optional[VPBpair]:
+    def get_vpb(self, value: Value) -> Optional[VPBPair]:
         """
-        Get VPB by identifier or value reference.
+        Get VPB by value reference.
 
         Args:
-            identifier: VPB id string or Value object
+            value: Value object
 
         Returns:
-            VPBpair object or None if not found
+            VPBPair object or None if not found
         """
-        _, vpb = self._find_vpb_entry(identifier)
-        return vpb
+        return self.vpb_pairs.get_vpb(value)
 
-    def get_all_vpbs(self) -> Dict[str, VPBpair]:
+    def get_vpb_by_id(self, value_id: str) -> Optional[VPBPair]:
+        """
+        Get VPB by value ID.
+
+        Args:
+            value_id: Value ID string
+
+        Returns:
+            VPBPair object or None if not found
+        """
+        return self.vpb_pairs.get_vpb_by_id(value_id)
+
+    def get_all_vpbs(self) -> Dict[str, VPBPair]:
         """
         Get all VPBs managed by this account.
 
         Returns:
             Dictionary mapping value identifiers to VPB objects
         """
-        with self.vpb_lock:
-            return self.local_vpbs.copy()
+        return self.vpb_pairs.get_all_vpbs()
 
-    def validate_vpb(self, vpb: VPBpair) -> bool:
+    def validate_vpb(self, vpb: VPBPair) -> bool:
         """
         Validate a VPB triplet.
 
         Args:
-            vpb: VPBpair to validate
+            vpb: VPBPair to validate
 
         Returns:
             True if VPB is valid
         """
         try:
-            # Prefer VPBpair's validation if available and returns boolean
+            # 使用VPBPair内置的验证方法
             if hasattr(vpb, "is_valid_vpb"):
-                result = vpb.is_valid_vpb()
-                if isinstance(result, bool):
-                    return result
+                return vpb.is_valid_vpb()
 
+            # 备用验证逻辑
             components = [
                 getattr(vpb, "value", None),
                 getattr(vpb, "proofs", None),
@@ -624,9 +662,9 @@ class Account:
             True if all VPBs are valid
         """
         try:
-            with self.vpb_lock:
-                return all(self.validate_vpb(vpb) for vpb in self.local_vpbs.values())
-        except Exception:
+            return self.vpb_pairs.validate_all_vpbs()
+        except Exception as e:
+            print(f"Failed to validate all VPBs: {e}")
             return False
 
     def clear_all_vpbs(self) -> bool:
@@ -637,9 +675,7 @@ class Account:
             True if cleared successfully
         """
         try:
-            with self.vpb_lock:
-                self.local_vpbs.clear()
-
+            self.vpb_pairs.cleanup()
             print(f"All VPBs cleared for {self.name}")
             return True
 
@@ -647,36 +683,7 @@ class Account:
             print(f"Failed to clear VPBs: {e}")
             return False
 
-    def _store_vpb(self, vpb: VPBpair, vpb_id: Optional[str] = None) -> str:
-        """
-        Store VPB and return its identifier.
-        """
-        with self.vpb_lock:
-            identifier = vpb_id or self._generate_vpb_id()
-            self.local_vpbs[identifier] = vpb
-            return identifier
-
-    def _generate_vpb_id(self) -> str:
-        """Generate a unique VPB identifier."""
-        return f"vpb_{uuid.uuid4().hex}"
-
-    def _find_vpb_entry(self, identifier) -> Tuple[Optional[str], Optional[VPBpair]]:
-        with self.vpb_lock:
-            if isinstance(identifier, str):
-                return identifier, self.local_vpbs.get(identifier)
-
-            for vpb_id, vpb in self.local_vpbs.items():
-                if getattr(vpb, "value", None) is identifier:
-                    return vpb_id, vpb
-
-        return None, None
-
-    def _remove_vpb_by_value(self, value) -> Optional[VPBpair]:
-        vpb_id, vpb = self._find_vpb_entry(value)
-        if vpb_id is not None:
-            with self.vpb_lock:
-                return self.local_vpbs.pop(vpb_id, None)
-        return None
+    # VPB存储和管理已委托给VPBPairs，这些私有方法不再需要
 
     @staticmethod
     def _component_length(component: Any) -> Optional[int]:
@@ -768,11 +775,88 @@ class Account:
             'balances': self.get_all_balances(),
             'total_values': len(self.get_values()),
             'pending_transactions': len(self.get_pending_transactions()),
-            'local_vpbs': len(self.get_all_vpbs()),
+            'vpb_statistics': self.get_vpb_statistics(),
             'created_at': self.created_at.isoformat(),
             'last_activity': self.last_activity.isoformat(),
             'transaction_history_count': len(self.transaction_history)
         }
+
+    def get_vpb_statistics(self) -> Dict[str, int]:
+        """
+        Get VPB statistics using VPBPairs.
+
+        Returns:
+            VPB statistics dictionary
+        """
+        return self.vpb_pairs.get_statistics()
+
+    def get_vpbs_by_state(self, state: ValueState) -> List[VPBPair]:
+        """
+        Get VPBs by value state using VPBPairs.
+
+        Args:
+            state: Value state to filter by
+
+        Returns:
+            List of VPBPair objects with specified state
+        """
+        return self.vpb_pairs.get_vpbs_by_state(state)
+
+    def pick_values_for_transaction(self, required_amount: int, recipient: str,
+                                  nonce: Optional[int] = None, time: Optional[str] = None) -> Optional[Dict]:
+        """
+        Pick values for transaction using VPBPairs integrated AccountPickValues.
+
+        Args:
+            required_amount: Amount needed for transaction
+            recipient: Recipient address
+            nonce: Transaction nonce (optional)
+            time: Transaction timestamp (optional)
+
+        Returns:
+            Transaction result dictionary or None if failed
+        """
+        if nonce is None:
+            nonce = len(self.transaction_history)  # Simple nonce generation
+        if time is None:
+            time = datetime.now().isoformat()
+
+        return self.vpb_pairs.pick_values_for_transaction(
+            required_amount, self.address, recipient, nonce, time
+        )
+
+    def commit_transaction_values(self, selected_values: List[Value]) -> bool:
+        """
+        Commit transaction values using VPBPairs.
+
+        Args:
+            selected_values: List of selected values from the transaction
+
+        Returns:
+            True if commit successful
+        """
+        return self.vpb_pairs.commit_transaction(selected_values)
+
+    def rollback_transaction_values(self, selected_values: List[Value]) -> bool:
+        """
+        Rollback transaction values using VPBPairs.
+
+        Args:
+            selected_values: List of selected values to rollback
+
+        Returns:
+            True if rollback successful
+        """
+        return self.vpb_pairs.rollback_transaction(selected_values)
+
+    def export_vpb_data(self) -> Dict[str, Any]:
+        """
+        Export all VPB data using VPBPairs.
+
+        Returns:
+            Complete VPB data dictionary
+        """
+        return self.vpb_pairs.export_data()
 
     def validate_integrity(self) -> bool:
         """
@@ -926,8 +1010,8 @@ class Account:
             # Clear sensitive key material
             self.signature_handler.clear_key()
 
-            # Clear VPB data
-            self.clear_all_vpbs()
+            # Clear VPB data using VPBPairs
+            self.vpb_pairs.cleanup()
 
             # Clear transaction history
             with self.history_lock:
@@ -941,3 +1025,62 @@ class Account:
     def __del__(self):
         """Destructor to ensure cleanup."""
         self.cleanup()
+
+
+# ========== Account使用VPBPairs的示例 ==========
+
+"""
+# 基本使用示例：
+```python
+# 创建账户
+account = Account(
+    address="user_address_123",
+    private_key_pem=private_key_bytes,
+    public_key_pem=public_key_bytes,
+    name="TestAccount"
+)
+
+# 创建VPB三元组
+value = Value(100)  # 金额为100的Value
+proofs = Proofs("value_id_123")
+block_index_lst = BlockIndexList([1, 2, 3], owner="user_address_123")
+
+# 添加VPB（使用新的VPBPairs接口）
+success = account.add_value_with_vpb(value, proofs, block_index_lst)
+
+# 获取VPB
+vpb = account.get_vpb(value)
+
+# 获取统计信息
+stats = account.get_vpb_statistics()
+print(f"Available VPBs: {stats.get('AVAILABLE', 0)}")
+
+# 为交易选择值
+transaction_result = account.pick_values_for_transaction(
+    required_amount=50,
+    recipient="recipient_address_456"
+)
+
+if transaction_result:
+    # 提交交易
+    account.commit_transaction_values(transaction_result['selected_values'])
+
+    # 获取交易数据
+    main_txn = transaction_result['main_transaction']
+
+# 验证所有VPB
+is_valid = account.validate_all_vpbs()
+
+# 导出VPB数据
+exported_data = account.export_vpb_data()
+```
+
+主要改进：
+1. **统一接口**: 所有VPB操作通过self.vpb_pairs进行
+2. **持久化**: VPB数据自动保存到SQLite数据库
+3. **交易集成**: 值选择和提交功能直接集成
+4. **线程安全**: 共享锁机制确保并发安全
+5. **简化API**: Account中的VPB方法更简洁，逻辑委托给VPBPairs
+
+这样Account类完全符合最新的VPB设计要求，VPBPairs作为唯一的VPB管理入口。
+"""

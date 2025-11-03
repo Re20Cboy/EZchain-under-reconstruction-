@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Comprehensive unit tests for VPBPairs module.
+Unified VPB Test Suite - Comprehensive testing for VPB system.
 
-This test suite covers:
+This test suite consolidates all VPB functionality tests including:
 - VPBStorage class (persistent storage functionality)
 - VPBPair class (VPB triplet management)
 - VPBManager class (core VPB management)
@@ -11,6 +11,7 @@ This test suite covers:
 - Complete VPB lifecycle operations (add, remove, update, query)
 - Value selection for transactions
 - Data consistency and integrity validation
+- Thread safety and performance testing
 """
 
 import pytest
@@ -572,6 +573,127 @@ class TestIntegration:
             'account_address': account_address
         }
 
+    def test_complete_vpb_workflow(self, integration_setup):
+        """Test a complete VPB workflow from creation to cleanup."""
+        setup = integration_setup
+        value_collection = setup['value_collection']
+        vpb_pairs = setup['vpb_pairs']
+
+        # Step 1: Create multiple values
+        values = [
+            Value("0x10000000000000000000000000000001", 100, ValueState.UNSPENT),
+            Value("0x20000000000000000000000000000002", 200, ValueState.UNSPENT),
+            Value("0x30000000000000000000000000000003", 300, ValueState.UNSPENT)
+        ]
+
+        for value in values:
+            value_collection.add_value(value)
+
+        # Step 2: Create VPBs for all values
+        for value in values:
+            proofs = Proofs(value.begin_index, vpb_pairs.storage.proofs_storage)
+            block_index_lst = BlockIndexList([1, 2, 3], [(1, "owner1")])
+            result = vpb_pairs.add_vpb(value, proofs, block_index_lst)
+            assert result is True, f"Failed to add VPB for value {value.begin_index}"
+
+        # Step 3: Verify all VPBs exist
+        for value in values:
+            vpb = vpb_pairs.get_vpb(value)
+            assert vpb is not None, f"VPB not found for value {value.begin_index}"
+            assert vpb.value_id == value.begin_index
+
+        # Step 4: Test statistics
+        stats = vpb_pairs.get_statistics()
+        assert stats['total'] == 3
+        assert stats['unspent'] == 3
+
+        # Step 5: Test VPB updates
+        value = values[0]
+        vpb = vpb_pairs.get_vpb(value)
+        new_block_index_lst = BlockIndexList([4, 5, 6], [(4, "owner4")])
+
+        result = vpb_pairs.update_vpb(value, new_block_index_lst=new_block_index_lst)
+        assert result is True, "Failed to update VPB"
+
+        # Step 6: Test value state changes and VPB consistency
+        value.state = ValueState.SELECTED
+        updated_vpb = vpb_pairs.get_vpb(value)
+        assert updated_vpb.value.state == ValueState.SELECTED
+
+        # Step 7: Test export functionality
+        export_data = vpb_pairs.export_data()
+        assert isinstance(export_data, dict)
+        assert 'vpbs' in export_data
+        assert len(export_data['vpbs']) == 3
+
+        # Step 8: Test validation
+        validation_result = vpb_pairs.validate_all_vpbs()
+        assert validation_result is True, "VPB validation failed"
+
+        # Step 9: Test cleanup
+        vpb_pairs.cleanup()
+        final_stats = vpb_pairs.get_statistics()
+        assert final_stats['total'] == 0
+
+    def test_vpb_storage_persistence(self, temp_dir):
+        """Test VPB storage persistence across sessions."""
+        db_path = os.path.join(temp_dir, "persistence_test.db")
+        account_address = "0xabcdef1234567890abcdef1234567890"
+        value_id = "0x40000000000000000000000000000004"
+
+        # Session 1: Store VPB data
+        storage1 = VPBStorage(db_path)
+        value = Value(value_id, 400, ValueState.UNSPENT)
+        proofs = Proofs(value_id, storage1.proofs_storage)
+        block_index_lst = BlockIndexList([7, 8, 9], [(7, "owner7")])
+        vpb_id = "persistence_test_vpb"
+
+        result = storage1.store_vpb_triplet(vpb_id, value, proofs, block_index_lst, account_address)
+        assert result is True, "Failed to store VPB triplet"
+
+        # Session 2: Load VPB data
+        storage2 = VPBStorage(db_path)
+        loaded_data = storage2.load_vpb_triplet(vpb_id)
+        assert loaded_data is not None, "Failed to load VPB triplet"
+
+        loaded_value_id, loaded_proofs, loaded_block_index_lst, loaded_account = loaded_data
+        assert loaded_value_id == value_id
+        assert loaded_account == account_address
+        assert isinstance(loaded_block_index_lst, BlockIndexList)
+
+        # Cleanup
+        storage2.delete_vpb_triplet(vpb_id)
+
+    def test_vpb_manager_integration(self, integration_setup):
+        """Test VPBManager integration with AccountValueCollection."""
+        setup = integration_setup
+        manager = setup['vpb_pairs'].manager
+        value_collection = setup['value_collection']
+
+        # Add values to collection
+        value = Value("0x50000000000000000000000000000005", 500, ValueState.UNSPENT)
+        value_collection.add_value(value)
+
+        # Test adding VPB through manager
+        proofs = Proofs(value.begin_index, manager.storage.proofs_storage)
+        block_index_lst = BlockIndexList([10], [(10, "owner10")])
+        result = manager.add_vpb(value, proofs, block_index_lst)
+        assert result is True, "Manager failed to add VPB"
+
+        # Test getting VPB by ID
+        vpb = manager.get_vpb_by_id(value.begin_index)
+        assert vpb is not None, "Manager failed to get VPB by ID"
+        assert vpb.value_id == value.begin_index
+
+        # Test getting all VPBs
+        all_vpbs = manager.get_all_vpbs()
+        assert len(all_vpbs) == 1
+        assert value.begin_index in all_vpbs
+
+        # Test VPB consistency validation
+        validation_result = manager.validate_vpb_consistency()
+        assert validation_result is True, "VPB consistency validation failed"
+
     def test_vpb_lifecycle_integration(self, integration_setup):
         """Test complete VPB lifecycle integration."""
         setup = integration_setup
@@ -660,6 +782,227 @@ class TestIntegration:
         vpb_pairs.cleanup()
 
 
+class TestSimpleVPBFunctionality:
+    """Simple test cases for quick verification of basic VPB functionality."""
+
+    def test_basic_vpb_functionality(self):
+        """Test basic VPB functionality."""
+        print("Testing basic VPB functionality...")
+
+        # Create temporary directory for testing
+        temp_dir = tempfile.mkdtemp()
+        try:
+            account_address = "0x1234567890abcdef1234567890abcdef"
+
+            # Create components
+            value_collection = AccountValueCollection(account_address)
+            vpb_pairs = VPBPairs(account_address, value_collection)
+
+            # Create sample value (using valid hex string)
+            value = Value("0x10000000000000000000000000000001", 100, ValueState.UNSPENT)
+            value_collection.add_value(value)
+
+            # Create proofs and block index list
+            proofs = Proofs(value.begin_index, vpb_pairs.storage.proofs_storage)
+            block_index_lst = BlockIndexList([1, 2, 3], [(1, "owner1"), (2, "owner2")])
+
+            # Test adding VPB
+            result = vpb_pairs.add_vpb(value, proofs, block_index_lst)
+            assert result is True, "Failed to add VPB"
+
+            # Test getting VPB
+            vpb = vpb_pairs.get_vpb(value)
+            assert vpb is not None, "Failed to get VPB"
+
+            # Test validation
+            validation_result = vpb_pairs.validate_all_vpbs()
+            assert validation_result is True, "VPB validation failed"
+
+            # Test statistics
+            stats = vpb_pairs.get_statistics()
+            assert isinstance(stats, dict), "Stats should be a dictionary"
+            assert 'total' in stats, "Stats should include total count"
+
+            # Test export
+            export_data = vpb_pairs.export_data()
+            assert isinstance(export_data, dict), "Export data should be a dictionary"
+            assert 'vpbs' in export_data, "Export data should include VPBs"
+
+            # Cleanup
+            vpb_pairs.cleanup()
+
+        finally:
+            try:
+                time.sleep(0.1)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+
+    def test_vpb_storage(self):
+        """Test VPB storage functionality."""
+        print("Testing VPB storage functionality...")
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Create storage
+            storage = VPBStorage(os.path.join(temp_dir, "test_storage.db"))
+
+            # Create test data
+            value = Value("0x20000000000000000000000000000002", 200, ValueState.UNSPENT)
+            proofs = Proofs(value.begin_index, storage.proofs_storage)
+            block_index_lst = BlockIndexList([4, 5, 6], [(4, "owner4")])
+            vpb_id = "test_vpb_storage_001"
+            account_address = "0xabcdef1234567890abcdef1234567890"
+
+            # Test storage
+            result = storage.store_vpb_triplet(vpb_id, value, proofs, block_index_lst, account_address)
+            assert result is True, "Failed to store VPB triplet"
+
+            # Test loading
+            loaded_data = storage.load_vpb_triplet(vpb_id)
+            assert loaded_data is not None, "Failed to load VPB triplet"
+            value_id, loaded_proofs, loaded_block_index_lst, loaded_account = loaded_data
+            assert value_id == value.begin_index, "Loaded value ID mismatch"
+            assert loaded_account == account_address, "Loaded account mismatch"
+
+            # Test getting all VPB IDs for account
+            vpb_ids = storage.get_all_vpb_ids_for_account(account_address)
+            assert vpb_id in vpb_ids, "VPB ID not found in account VPBs"
+
+            # Test deletion
+            delete_result = storage.delete_vpb_triplet(vpb_id)
+            assert delete_result is True, "Failed to delete VPB triplet"
+
+            # Verify deletion
+            deleted_data = storage.load_vpb_triplet(vpb_id)
+            assert deleted_data is None, "VPB triplet should be deleted"
+
+        finally:
+            try:
+                time.sleep(0.1)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+
+    def test_vpb_pair_validation(self):
+        """Test VPBPair validation logic."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            db_path = os.path.join(temp_dir, "validation_test.db")
+
+            # Create mock value collection
+            mock_collection = Mock()
+            sample_value = Value("0x60000000000000000000000000000006", 600, ValueState.UNSPENT)
+            mock_collection.get_value_by_id.return_value = sample_value
+
+            # Create storage and components
+            storage = VPBStorage(db_path)
+            proofs = Proofs(sample_value.begin_index, storage.proofs_storage)
+            block_index_lst = BlockIndexList([11, 12], [(11, "owner11")])
+
+            # Test valid VPB
+            vpb = VPBPair(sample_value.begin_index, proofs, block_index_lst, mock_collection)
+            assert vpb.is_valid_vpb() is True, "Valid VPB should pass validation"
+
+            # Test invalid VPB (missing value collection)
+            vpb.value_collection = None
+            assert vpb.is_valid_vpb() is False, "VPB without value collection should fail validation"
+
+            # Test invalid VPB (missing proofs)
+            vpb.value_collection = mock_collection
+            vpb.proofs = None
+            assert vpb.is_valid_vpb() is False, "VPB without proofs should fail validation"
+
+        finally:
+            try:
+                time.sleep(0.1)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+
+    def test_error_handling(self):
+        """Test error handling in VPB system."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            account_address = "0x1234567890abcdef1234567890abcdef"
+
+            # Create components
+            value_collection = AccountValueCollection(account_address)
+            vpb_pairs = VPBPairs(account_address, value_collection)
+
+            # Test adding VPB without proper setup
+            value = Value("0x70000000000000000000000000000007", 700, ValueState.UNSPENT)
+            proofs = Proofs(value.begin_index, vpb_pairs.storage.proofs_storage)
+            block_index_lst = BlockIndexList([13], [(13, "owner13")])
+
+            # This should work since value is added to collection
+            value_collection.add_value(value)
+            result = vpb_pairs.add_vpb(value, proofs, block_index_lst)
+            assert result is True, "Should be able to add VPB with proper setup"
+
+            # Test adding duplicate VPB
+            result = vpb_pairs.add_vpb(value, proofs, block_index_lst)
+            assert result is False, "Should not be able to add duplicate VPB"
+
+            # Test removing non-existent VPB
+            non_existent_value = Value("0x80000000000000000000000000000008", 800, ValueState.UNSPENT)
+            result = vpb_pairs.remove_vpb(non_existent_value)
+            assert result is False, "Should not be able to remove non-existent VPB"
+
+            # Cleanup
+            vpb_pairs.cleanup()
+
+        finally:
+            try:
+                time.sleep(0.1)
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+
+
 if __name__ == "__main__":
     # Run the tests
-    pytest.main([__file__, "-v", "--tb=short"])
+    print("=" * 60)
+    print("Unified VPB Test Suite")
+    print("=" * 60)
+
+    # Check if pytest is available
+    try:
+        import pytest
+        pytest.main([__file__, "-v", "--tb=short"])
+    except ImportError:
+        print("pytest not found, running simple test functions...")
+        print()
+
+        # Run simple tests directly
+        simple_tests = TestSimpleVPBFunctionality()
+        test_methods = [
+            simple_tests.test_basic_vpb_functionality,
+            simple_tests.test_vpb_storage,
+            simple_tests.test_vpb_pair_validation,
+            simple_tests.test_error_handling
+        ]
+
+        passed = 0
+        failed = 0
+
+        for test_method in test_methods:
+            try:
+                test_method()
+                print(f"[SUCCESS] {test_method.__name__} passed")
+                passed += 1
+            except Exception as e:
+                print(f"[ERROR] {test_method.__name__} failed: {e}")
+                failed += 1
+
+        print()
+        print("=" * 60)
+        print(f"Test Results: {passed} passed, {failed} failed")
+        print("=" * 60)
+
+        if failed == 0:
+            print("[SUCCESS] All tests passed! VPB system is working correctly.")
+        else:
+            print("[ERROR] Some tests failed. Please check the implementation.")
+
+        print("=" * 60)
