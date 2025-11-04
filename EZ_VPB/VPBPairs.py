@@ -30,7 +30,7 @@ from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Value.AccountPickValues import AccountPickValues
 from EZ_Proof.Proofs import Proofs, ProofsStorage
 from EZ_BlockIndex.BlockIndexList import BlockIndexList
-
+from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 
 class VPBStorage:
     """VPB永久存储管理器，使用SQLite提供持久化存储
@@ -931,7 +931,6 @@ class VPBPairs:
 
         # 如果VPBManager没有直接暴露transaction_creator，我们需要创建一个新的
         if not hasattr(self, '_transaction_creator'):
-            from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
             self._transaction_creator = CreateMultiTransactions(
                 self.account_address,
                 self.manager._value_collection
