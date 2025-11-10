@@ -165,7 +165,7 @@ class VPBVerify:
             )
             handler.setFormatter(formatter)
             logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
+            logger.setLevel(logging.DEBUG)
         return logger
 
     def verify_vpb_pair(self, value: Value, proofs: Proofs, block_index_list: BlockIndexList,
@@ -411,26 +411,36 @@ class VPBVerify:
             Tuple[bool, str]: (是否一致, 错误信息)
         """
         if not vpb_slice.block_index_slice.index_lst:
-            # 如果没有需要验证的区块，认为验证通过
-            return True, ""
+            # 如果没有需要验证的区块，认为验证失败
+            return False, "VPB slice has empty block index list"
 
         # 提取owner信息
         owner_epochs = self._extract_owner_epochs(vpb_slice.block_index_slice)
 
         expected_block_indices = set()
+        # 找到最早的一个epoch_start_block
+        if owner_epochs:
+            # owner_epochs中的顺序已经排好，第一个item的epoch_blocks第一个元素就是earliest_block
+            first_owner = list(owner_epochs.keys())[0]
+            first_epoch_blocks = owner_epochs[first_owner]
+            if first_epoch_blocks:
+                expected_block_indices.add(first_epoch_blocks[0])
 
         # 对每个owner的epoch进行验证
         for owner_address, epoch_blocks in owner_epochs.items():
-            if len(epoch_blocks) < 2:
-                continue
 
             # epoch_start_block: 获得value的区块
-            # epoch_end_block: 花费value的区块
+            # epoch_end_block: 花费value的区块（注意，花费的区块index并非是此Owner的epoch的最后一个index，而是下一个owner的epoch_start_block）
             epoch_start_block = epoch_blocks[0]
-            epoch_end_block = epoch_blocks[-1]
 
-            # 将获得value的区块加入期望的索引
-            expected_block_indices.add(epoch_start_block)
+            # 找到下一个epoch的owner来确定epoch_end_block
+            next_epoch_owner = self._find_next_epoch_owner(owner_address, owner_epochs)
+            if next_epoch_owner and next_epoch_owner in owner_epochs:
+                # epoch_end_block是下一个owner的epoch_start_block
+                epoch_end_block = owner_epochs[next_epoch_owner][0]
+            else:
+                # 如果没有下一个owner，则使用当前epoch的最后一个区块
+                epoch_end_block = epoch_blocks[-1]
 
             # 通过布隆过滤器获取该owner在此期间提交交易的区块
             transaction_blocks = main_chain_info.get_owner_transaction_blocks(
@@ -442,10 +452,14 @@ class VPBVerify:
 
         # 将期望的区块索引转换为排序列表
         expected_indices = sorted(list(expected_block_indices))
-        actual_indices = sorted(vpb_slice.block_index_slice.index_lst)
+        actual_indices = vpb_slice.block_index_slice.index_lst
 
         # 比较期望的索引和实际的索引
         if expected_indices != actual_indices:
+            self.logger.debug(f"Bloom filter verification details:")
+            self.logger.debug(f"Owner epochs: {owner_epochs}")
+            self.logger.debug(f"Expected indices: {expected_indices}")
+            self.logger.debug(f"Actual indices: {actual_indices}")
             return False, (
                 f"Bloom filter verification failed. "
                 f"Expected block indices: {expected_indices}, "

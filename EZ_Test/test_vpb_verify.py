@@ -28,6 +28,70 @@ from EZ_Proof.Proofs import Proofs
 from EZ_Proof.ProofUnit import ProofUnit
 from EZ_BlockIndex.BlockIndexList import BlockIndexList
 from EZ_CheckPoint.CheckPoint import CheckPoint, CheckPointRecord
+from EZ_Units.Bloom import BloomFilter
+
+
+def create_realistic_bloom_filters(block_heights, owner_data, additional_transactions=None):
+    """
+    创建真实的布隆过滤器模拟
+
+    布隆过滤器的正确逻辑：
+    - 记录在区块中提交交易的sender地址，而不是value的所有者地址
+    - 如果A在区块H提交交易将value转移给B，则布隆过滤器记录的是A而不是B
+    - B成为区块H中该value的所有者，但不会记录在该区块的布隆过滤器中
+
+    Args:
+        block_heights: 区块高度列表
+        owner_data: dict {block_height: owner_address} - 记录每个区块中value的所有者
+        additional_transactions: dict {block_height: [sender_addresses]} - 记录在每个区块提交交易的地址
+
+    Returns:
+        dict {block_height: BloomFilter}
+    """
+    bloom_filters = {}
+
+    for height in block_heights:
+        bloom_filter = BloomFilter(size=1024, hash_count=3)
+
+        # 关键修复：只添加在该区块提交交易的sender地址，不添加owner地址
+        # owner_address是value的接收者，而sender_address是交易的提交者
+        if additional_transactions and height in additional_transactions:
+            for sender_address in additional_transactions[height]:
+                bloom_filter.add(sender_address)
+
+        bloom_filters[height] = bloom_filter
+
+    return bloom_filters
+
+
+def create_valid_vpb_bloom_filters():
+    """
+    为valid_vpb_data创建标准的布隆过滤器配置
+
+    正确的逻辑说明：
+    - owner_data: 记录每个区块中value的所有者
+    - additional_transactions: 记录在每个区块提交交易的sender地址（会被加入布隆过滤器）
+    - 例如：0xalice在区块15提交交易，将value转移给0xbob
+      则owner_data[15] = "0xbob", additional_transactions[15] = ["0xalice"]
+
+    Returns:
+        tuple: (owner_data, additional_transactions)
+    """
+    owner_data = {
+        0: "0xalice",      # 创世块：alice是初始value的所有者
+        15: "0xbob",       # 区块15：bob从alice处接收value
+        27: "0xcharlie",   # 区块27：charlie从bob处接收value
+        56: "0xcharlie"    # 区块56：charlie仍然持有value（可能有其他交易）
+    }
+
+    # 记录在每个区块提交交易的sender地址（这些地址会被加入布隆过滤器）
+    additional_transactions = {
+        15: ["0xalice"],        # alice在区块15提交交易，将value转移给bob
+        27: ["0xbob"],          # bob在区块27提交交易，将value转移给charlie
+        56: ["0xcharlie"]       # charlie在区块56有交易（可能不是转移此value）
+    }
+
+    return owner_data, additional_transactions
 
 
 class TestMainChainInfo:
@@ -342,7 +406,7 @@ class TestVPBVerifyBloomFilter:
         """创建VPB切片对象"""
         block_index_slice = BlockIndexList(
             index_lst=[15, 27, 56, 67, 98],
-            owner=[(15, "0x8360c"), (56, "0x14860")]
+            owner=[(15, "0x8360c"), (27, "0x8360c"), (56, "0x14860"), (67, "0x14860"), (98, "0x14860")]
         )
 
         return VPBSlice(
@@ -365,20 +429,47 @@ class TestVPBVerifyBloomFilter:
 
         is_valid, error_msg = vpb_verifier._verify_bloom_filter_consistency(empty_slice, main_chain_info)
 
-        assert is_valid == True
-        assert error_msg == ""
+        assert is_valid == False
+        assert error_msg == "VPB slice has empty block index list"
 
     def test_verify_bloom_filter_consistency_mock(self, vpb_verifier, main_chain_info, vpb_slice):
-        """测试布隆过滤器验证（使用Mock）"""
-        # Mock the get_owner_transaction_blocks method
-        def mock_get_owner_transactions(owner, start, end):
-            if owner == "0x8360c" and start == 16 and end == 56:
-                return [27, 56]
-            elif owner == "0x14860" and start == 57 and end == 98:
-                return [67, 98]
-            return []
+        """测试布隆过滤器验证（使用真实Bloom模拟）"""
+        from EZ_Units.Bloom import BloomFilter
 
-        main_chain_info.get_owner_transaction_blocks = mock_get_owner_transactions
+        # 创建真实的布隆过滤器来模拟区块链状态
+        bloom_filters = {}
+
+        # 为每个区块创建布隆过滤器并添加相应的owner地址
+        # 区块15: value属于"0x8360c"
+        bloom_15 = BloomFilter(size=1024, hash_count=3)
+        bloom_15.add("0X418ab")  # 0X418ab在区块15有交易，将Value转移给0x8360c
+        bloom_filters[15] = bloom_15
+
+        # 区块27: value属于"0x8360c"
+        bloom_27 = BloomFilter(size=1024, hash_count=3)
+        bloom_27.add("0x8360c")  # 0x8360c在区块27有交易，但值不是Value。
+        bloom_filters[27] = bloom_27
+
+        # 区块56: value属于"0x14860"，但0x8360c也可能有交易
+        bloom_56 = BloomFilter(size=1024, hash_count=3)
+        bloom_56.add("0x8360c")  # 0x8360c在区块56有交易，将Value转移给0x14860
+        bloom_filters[56] = bloom_56
+
+        # 区块67: value属于"0x14860"
+        bloom_67 = BloomFilter(size=1024, hash_count=3)
+        bloom_67.add("0x14860")  # 0x14860在区块67有交易，但值不是Value。
+        bloom_filters[67] = bloom_67
+
+        # 区块98: value属于"0x14860"
+        bloom_98 = BloomFilter(size=1024, hash_count=3)
+        bloom_98.add("0x14860")  # 0x14860在区块98有交易，但值不是Value。
+        bloom_filters[98] = bloom_98
+
+        # 更新main_chain_info使用真实的布隆过滤器
+        main_chain_info.bloom_filters = bloom_filters
+
+        # 使用真实的get_owner_transaction_blocks方法，它会查询布隆过滤器
+        # 不再需要mock，让VPBVerify使用真实的布隆过滤器逻辑
 
         is_valid, error_msg = vpb_verifier._verify_bloom_filter_consistency(vpb_slice, main_chain_info)
 
@@ -438,7 +529,7 @@ class TestVPBVerifyComplete:
         # BlockIndexList
         block_index_list = BlockIndexList(
             index_lst=[0, 15, 27, 56],
-            owner=[(0, "0xalice"), (15, "0xbob"), (27, "0xcharlie")]
+            owner=[(0, "0xalice"), (15, "0xbob"), (27, "0xcharlie"), (56, "0xdave")]
         )
 
         return value, proofs, block_index_list
@@ -447,8 +538,10 @@ class TestVPBVerifyComplete:
         """测试成功验证VPB对"""
         value, proofs, block_index_list = valid_vpb_data
 
-        # Mock the bloom filter and transaction detection
-        main_chain_info.get_owner_transaction_blocks = Mock(return_value=[15, 27, 56])
+        # 创建真实的布隆过滤器模拟
+        owner_data, additional_transactions = create_valid_vpb_bloom_filters()
+        bloom_filters = create_realistic_bloom_filters([0, 15, 27, 56], owner_data, additional_transactions)
+        main_chain_info.bloom_filters = bloom_filters
 
         # Mock the find_proof_unit_for_block method
         vpb_verifier._find_proof_unit_for_block = Mock(side_effect=lambda proofs, height, block_index_slice=None: proofs[0] if proofs else None)
@@ -457,7 +550,7 @@ class TestVPBVerifyComplete:
         vpb_verifier._find_value_spend_transactions = Mock(return_value=[])
 
         report = vpb_verifier.verify_vpb_pair(
-            value, proofs, block_index_list, main_chain_info, "0xalice"
+            value, proofs, block_index_list, main_chain_info, "0xeve"
         )
 
         assert report.result == VerificationResult.SUCCESS
@@ -491,8 +584,12 @@ class TestVPBVerifyComplete:
         # 创建检查点
         checkpoint.create_checkpoint(value, "0xalice", 14)
 
-        # Mock dependencies
-        main_chain_info.get_owner_transaction_blocks = Mock(return_value=[15, 27, 56])
+        # 创建真实的布隆过滤器模拟
+        owner_data, additional_transactions = create_valid_vpb_bloom_filters()
+        bloom_filters = create_realistic_bloom_filters([0, 15, 27, 56], owner_data, additional_transactions)
+        main_chain_info.bloom_filters = bloom_filters
+
+        # Mock other dependencies
         verifier._find_proof_unit_for_block = Mock(side_effect=lambda proofs, height, block_index_slice=None: proofs[0] if proofs else None)
         verifier._find_value_spend_transactions = Mock(return_value=[])
 
@@ -508,8 +605,12 @@ class TestVPBVerifyComplete:
         """测试验证统计信息"""
         value, proofs, block_index_list = valid_vpb_data
 
-        # Mock dependencies
-        main_chain_info.get_owner_transaction_blocks = Mock(return_value=[15, 27, 56])
+        # 创建真实的布隆过滤器模拟
+        owner_data, additional_transactions = create_valid_vpb_bloom_filters()
+        bloom_filters = create_realistic_bloom_filters([0, 15, 27, 56], owner_data, additional_transactions)
+        main_chain_info.bloom_filters = bloom_filters
+
+        # Mock other dependencies
         vpb_verifier._find_proof_unit_for_block = Mock(side_effect=lambda proofs, height, block_index_slice=None: proofs[0] if proofs else None)
         vpb_verifier._find_value_spend_transactions = Mock(return_value=[])
 
@@ -532,8 +633,12 @@ class TestVPBVerifyComplete:
         """测试重置统计信息"""
         value, proofs, block_index_list = valid_vpb_data
 
-        # Mock dependencies
-        main_chain_info.get_owner_transaction_blocks = Mock(return_value=[15, 27, 56])
+        # 创建真实的布隆过滤器模拟
+        owner_data, additional_transactions = create_valid_vpb_bloom_filters()
+        bloom_filters = create_realistic_bloom_filters([0, 15, 27, 56], owner_data, additional_transactions)
+        main_chain_info.bloom_filters = bloom_filters
+
+        # Mock other dependencies
         vpb_verifier._find_proof_unit_for_block = Mock(side_effect=lambda proofs, height, block_index_slice=None: proofs[0] if proofs else None)
         vpb_verifier._find_value_spend_transactions = Mock(return_value=[])
 
@@ -773,6 +878,260 @@ class TestVPBVerificationReport:
         assert report_dict['checkpoint_used'] is not None
         assert report_dict['verification_time_ms'] == 100.0
         assert report_dict['checkpoint_used']['owner_address'] == "0xowner1"
+
+
+def create_complex_test_scenario_1():
+    """
+    复杂测试场景1：多链式转移
+
+    描述：value经过多次转移，涉及多个参与者
+    路径：genesis(0xgenesis) -> 0xalice -> 0xbob -> 0xcharlie -> 0xdave -> 0xeve
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {
+        0: "0xgenesis",     # 创世块：genesis创建初始value
+        10: "0xalice",      # 区块10：alice从genesis处接收value
+        25: "0xbob",        # 区块25：bob从alice处接收value
+        40: "0xcharlie",    # 区块40：charlie从bob处接收value
+        55: "0xdave",       # 区块55：dave从charlie处接收value
+        70: "0xeve",        # 区块70：eve从dave处接收value
+    }
+
+    # 记录交易提交者（会被加入布隆过滤器）
+    additional_transactions = {
+        10: ["0xgenesis"],      # genesis在区块10提交交易，转移value给alice
+        25: ["0xalice"],        # alice在区块25提交交易，转移value给bob
+        40: ["0xbob"],          # bob在区块40提交交易，转移value给charlie
+        55: ["0xcharlie"],      # charlie在区块55提交交易，转移value给dave
+        70: ["0xdave"],         # dave在区块70提交交易，转移value给eve
+    }
+
+    description = """
+    复杂测试场景1：多链式转移
+    - 路径：genesis -> alice -> bob -> charlie -> dave -> eve
+    - 特点：每次转移都有明确的交易提交者和接收者
+    - 验证点：布隆过滤器应该记录交易提交者，而不是value所有者
+    """
+
+    return owner_data, additional_transactions, description
+
+
+def create_complex_test_scenario_2():
+    """
+    复杂测试场景2：分叉与合并
+
+    描述：一个value分裂成多个部分，然后在后续重新合并
+    注意：这是高级场景，可能需要特殊的value处理逻辑
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {
+        0: "0xgenesis",         # 创世块
+        15: ["0xalice", "0xbob"],  # 区块15：value分裂，alice和bob各持有一部分
+        30: "0xcharlie",        # 区块30：alice和bob的部分都转移给charlie（合并）
+        45: "0xdave",          # 区块45：charlie转移给dave
+    }
+
+    # 记录交易提交者
+    additional_transactions = {
+        15: ["0xgenesis"],         # genesis在区块15提交分裂交易
+        30: ["0xalice", "0xbob"],  # alice和bob都在区块30提交交易，将各自部分转移给charlie
+        45: ["0xcharlie"],         # charlie在区块45提交交易，转移给dave
+    }
+
+    description = """
+    复杂测试场景2：分叉与合并
+    - 路径：genesis -> {alice, bob} -> charlie -> dave
+    - 特点：value在区块15分裂，在区块30重新合并
+    - 验证点：测试布隆过滤器对复杂value结构的处理能力
+    """
+
+    return owner_data, additional_transactions, description
+
+
+def create_complex_test_scenario_3():
+    """
+    复杂测试场景3：高频交易与噪声
+
+    描述：在目标value交易的同时，有大量其他交易作为噪声
+    测试布隆过滤器的准确性和抗干扰能力
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {
+        0: "0xgenesis",
+        20: "0xalice",      # 目标value：genesis -> alice
+        50: "0xbob",        # 目标value：alice -> bob
+        80: "0xcharlie",    # 目标value：bob -> charlie
+    }
+
+    # 大量噪声交易 + 目标交易
+    additional_transactions = {}
+
+    # 添加噪声交易：每个区块都有多个不相关的交易
+    noise_addresses = ["0xnoise1", "0xnoise2", "0xnoise3", "0xnoise4", "0xnoise5"]
+
+    for height in range(10, 90, 5):  # 每5个区块一批噪声交易
+        additional_transactions[height] = noise_addresses.copy()
+
+    # 在噪声中插入目标交易
+    additional_transactions[20] = ["0xgenesis"] + noise_addresses  # genesis转移value给alice
+    additional_transactions[50] = ["0xalice"] + noise_addresses   # alice转移value给bob
+    additional_transactions[80] = ["0xbob"] + noise_addresses     # bob转移value给charlie
+
+    description = """
+    复杂测试场景3：高频交易与噪声
+    - 路径：genesis -> alice -> bob -> charlie（在大量噪声交易中）
+    - 特点：每个区块都有5个噪声地址，测试布隆过滤器的抗干扰能力
+    - 验证点：确保系统能在噪声中准确识别目标交易
+    """
+
+    return owner_data, additional_transactions, description
+
+
+def create_complex_test_scenario_4():
+    """
+    复杂测试场景4：并发交易与双花尝试
+
+    描述：同一用户在多个区块尝试花费同一个value（测试双花检测）
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {
+        0: "0xgenesis",
+        25: "0xalice",      # 区块25：alice从genesis接收value
+        40: "0xbob",        # 区块40：alice成功将value转移给bob
+        # 注意：alice在区块35和45也尝试转移value，但这些应该是无效的双花尝试
+    }
+
+    # 记录交易提交者（包含双花尝试）
+    additional_transactions = {
+        25: ["0xgenesis"],      # genesis转移value给alice
+        35: ["0xalice"],        # alice第一次双花尝试（应该失败）
+        40: ["0xalice"],        # alice有效的value转移（成功）
+        45: ["0xalice"],        # alice第二次双花尝试（应该失败）
+    }
+
+    description = """
+    复杂测试场景4：并发交易与双花尝试
+    - 路径：genesis -> alice -> bob（alice在区块35和45尝试双花）
+    - 特点：测试双花检测机制的有效性
+    - 验证点：只有区块40的交易应该被认为是有效的
+    """
+
+    return owner_data, additional_transactions, description
+
+
+def create_complex_test_scenario_5():
+    """
+    复杂测试场景5：跨合约交易
+
+    描述：value通过智能合约进行转移，涉及合约地址
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {
+        0: "0xgenesis",
+        30: "0xcontract",      # 区块30：value转移到智能合约
+        60: "0xalice",         # 区块60：合约执行，value转移给alice
+        90: "0xbob",           # 区块90：alice转移给bob
+    }
+
+    # 记录交易提交者（包括合约交互）
+    additional_transactions = {
+        30: ["0xgenesis"],            # genesis调用合约，转移value到合约地址
+        60: ["0xcontract"],           # 合约自动执行，转移value给alice
+        90: ["0xalice"],              # alice正常转移给bob
+    }
+
+    description = """
+    复杂测试场景5：跨合约交易
+    - 路径：genesis -> 合约 -> alice -> bob
+    - 特点：涉及智能合约地址的特殊交易场景
+    - 验证点：测试系统对合约地址的处理能力
+    """
+
+    return owner_data, additional_transactions, description
+
+
+def create_stress_test_scenario():
+    """
+    压力测试场景：大量区块和交易
+
+    描述：模拟真实区块链环境的大量数据
+
+    Returns:
+        tuple: (owner_data, additional_transactions, scenario_description)
+    """
+    owner_data = {}
+    additional_transactions = {}
+
+    # 生成1000个区块的测试数据
+    current_height = 0
+    current_owner = "0xgenesis"
+    owner_data[current_height] = current_owner
+
+    # 模拟value在1000个区块中的转移
+    participants = [f"0xuser{i}" for i in range(1, 101)]  # 100个参与者
+
+    for i in range(100):
+        # 每10个区块发生一次转移
+        transfer_height = (i + 1) * 10
+        next_owner = participants[i % len(participants)]
+
+        owner_data[transfer_height] = next_owner
+        additional_transactions[transfer_height] = [current_owner]
+
+        # 添加随机噪声交易
+        if i % 3 == 0:  # 每3次转移添加一些噪声
+            noise_count = 5
+            noise_addresses = [f"0xnoise{j}" for j in range(noise_count)]
+            additional_transactions[transfer_height].extend(noise_addresses)
+
+        current_owner = next_owner
+        current_height = transfer_height
+
+    description = f"""
+    压力测试场景：{len(owner_data)}个区块的大规模测试
+    - 参与者：{len(participants)} + 1个
+    - 转移次数：{len([h for h in owner_data.keys() if h > 0])}
+    - 噪声交易：包含多个噪声地址
+    - 验证点：测试系统在大数据量下的性能和准确性
+    """
+
+    return owner_data, additional_transactions, description
+
+
+# 测试用例选择器
+def get_test_scenario(scenario_id):
+    """
+    根据ID获取测试场景
+
+    Args:
+        scenario_id: 测试场景ID (1-6)
+
+    Returns:
+        tuple: (owner_data, additional_transactions, description)
+    """
+    scenarios = {
+        1: create_complex_test_scenario_1,
+        2: create_complex_test_scenario_2,
+        3: create_complex_test_scenario_3,
+        4: create_complex_test_scenario_4,
+        5: create_complex_test_scenario_5,
+        6: create_stress_test_scenario,
+    }
+
+    if scenario_id in scenarios:
+        return scenarios[scenario_id]()
+    else:
+        raise ValueError(f"Invalid scenario ID: {scenario_id}. Available: 1-{len(scenarios)}")
 
 
 if __name__ == "__main__":
