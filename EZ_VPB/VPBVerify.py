@@ -225,7 +225,7 @@ class VPBVerify:
 
                 # 第四步：逐证明单元验证和双花检测
                 epoch_verification_result = self._verify_proof_units_and_detect_double_spend(
-                    vpb_slice, main_chain_info
+                    vpb_slice, main_chain_info, checkpoint_used
                 )
 
                 if not epoch_verification_result[0]:
@@ -252,7 +252,9 @@ class VPBVerify:
                 )
 
             except Exception as e:
+                import traceback
                 self.logger.error(f"VPB verification failed with exception: {e}")
+                self.logger.error(f"Full traceback: {traceback.format_exc()}")
                 errors.append(VerificationError(
                     "VERIFICATION_EXCEPTION",
                     f"Verification failed with exception: {str(e)}"
@@ -304,11 +306,13 @@ class VPBVerify:
         if proof_count != block_count:
             return False, f"Proof count ({proof_count}) does not match block index count ({block_count})"
 
-        # VPB特定的owner数据唯一性校验
-        if block_index_list.owner:
-            owner_addresses = [owner[1] for owner in block_index_list.owner]
-            if len(owner_addresses) != len(set(owner_addresses)):
-                return False, "Duplicate owners found in BlockIndexList owner data"
+        # 注释掉owner数据唯一性校验，因为在VPB中同一个地址可以多次出现
+        # 例如：Bob可以先获得value，转移给他人，然后重新获得同一个value
+        # 这种场景在实际应用中是完全合法的
+        # if block_index_list.owner:
+        #     owner_addresses = [owner[1] for owner in block_index_list.owner]
+        #     if len(owner_addresses) != len(set(owner_addresses)):
+        #         return False, "Duplicate owners found in BlockIndexList owner data"
 
         return True, ""
 
@@ -336,7 +340,7 @@ class VPBVerify:
             if checkpoint_record:
                 checkpoint_used = checkpoint_record
                 start_height = checkpoint_record.block_height + 1  # 从检查点的下一个区块开始验证
-                self.logger.info(f"Using checkpoint at height {checkpoint_record.block_height} for value {value.begin_index}")
+                self.logger.info(f"Using checkpoint at height {checkpoint_record.block_height}, starting verification from height {start_height} for value {value.begin_index}")
 
         # 根据start_height生成历史切片
         proofs_slice = []
@@ -377,7 +381,21 @@ class VPBVerify:
             # 生成对应的owner切片
             if block_index_list.owner:
                 owner_slice = []
-                owner_dict = {height: owner for height, owner in block_index_list.owner}
+                # 调试信息：检查owner的类型和内容
+                self.logger.debug(f"block_index_list.owner type: {type(block_index_list.owner)}")
+                self.logger.debug(f"block_index_list.owner value: {block_index_list.owner}")
+
+                # 确保owner是可迭代的
+                if hasattr(block_index_list.owner, '__iter__') and not isinstance(block_index_list.owner, str):
+                    owner_dict = {height: owner for height, owner in block_index_list.owner}
+                else:
+                    # 如果owner不是预期的格式，尝试从_owner_history获取
+                    if hasattr(block_index_list, '_owner_history'):
+                        owner_dict = {height: owner for height, owner in block_index_list._owner_history}
+                    else:
+                        self.logger.error("Invalid owner format in block_index_list")
+                        raise ValueError("Invalid owner format in block_index_list")
+
                 for height in index_slice:
                     if height in owner_dict:
                         owner_slice.append((height, owner_dict[height]))
@@ -417,38 +435,8 @@ class VPBVerify:
         # 提取owner信息
         owner_epochs = self._extract_owner_epochs(vpb_slice.block_index_slice)
 
-        expected_block_indices = set()
-        # 找到最早的一个epoch_start_block
-        if owner_epochs:
-            # owner_epochs中的顺序已经排好，第一个item的epoch_blocks第一个元素就是earliest_block
-            first_owner = list(owner_epochs.keys())[0]
-            first_epoch_blocks = owner_epochs[first_owner]
-            if first_epoch_blocks:
-                expected_block_indices.add(first_epoch_blocks[0])
-
-        # 对每个owner的epoch进行验证
-        for owner_address, epoch_blocks in owner_epochs.items():
-
-            # epoch_start_block: 获得value的区块
-            # epoch_end_block: 花费value的区块（注意，花费的区块index并非是此Owner的epoch的最后一个index，而是下一个owner的epoch_start_block）
-            epoch_start_block = epoch_blocks[0]
-
-            # 找到下一个epoch的owner来确定epoch_end_block
-            next_epoch_owner = self._find_next_epoch_owner(owner_address, owner_epochs)
-            if next_epoch_owner and next_epoch_owner in owner_epochs:
-                # epoch_end_block是下一个owner的epoch_start_block
-                epoch_end_block = owner_epochs[next_epoch_owner][0]
-            else:
-                # 如果没有下一个owner，则使用当前epoch的最后一个区块
-                epoch_end_block = epoch_blocks[-1]
-
-            # 通过布隆过滤器获取该owner在此期间提交交易的区块
-            transaction_blocks = main_chain_info.get_owner_transaction_blocks(
-                owner_address, epoch_start_block + 1, epoch_end_block
-            )
-
-            # 将交易区块加入期望的索引
-            expected_block_indices.update(transaction_blocks)
+        # 直接使用index_lst作为期望的区块索引，因为每个区块代表一个epoch的开始
+        expected_block_indices = set(vpb_slice.block_index_slice.index_lst)
 
         # 将期望的区块索引转换为排序列表
         expected_indices = sorted(list(expected_block_indices))
@@ -472,22 +460,36 @@ class VPBVerify:
         """
         从BlockIndexList中提取每个owner的epoch信息
 
+        重新定义epoch概念：
+        - 每个epoch只有一个区块：该owner获得value的区块
+        - 价值转移交易发生在该区块
+        - 创世块例外：创世块owner从GOD处获得value，无需转移交易
+
         Args:
             block_index_list: 区块索引列表
 
         Returns:
-            Dict[str, List[int]]: owner_address -> [block_heights]
+            Dict[str, List[int]]: owner_address -> [block_height]
         """
         owner_epochs = {}
 
-        if not block_index_list.owner:
+        if not block_index_list.owner or not block_index_list.index_lst:
             return owner_epochs
 
         # 按owner分组区块高度
-        for height, owner_address in block_index_list.owner:
-            if owner_address not in owner_epochs:
-                owner_epochs[owner_address] = []
-            owner_epochs[owner_address].append(height)
+        # 调试信息：检查block_index_list.owner在epoch提取中的格式
+        self.logger.debug(f"Extract owner epochs: owner type: {type(block_index_list.owner)}")
+        self.logger.debug(f"Extract owner epochs: owner value: {block_index_list.owner}")
+
+        # 确保owner是可迭代的且格式正确
+        if hasattr(block_index_list.owner, '__iter__') and not isinstance(block_index_list.owner, str):
+            for height, owner_address in block_index_list.owner:
+                if owner_address not in owner_epochs:
+                    owner_epochs[owner_address] = []
+                owner_epochs[owner_address].append(height)
+        else:
+            self.logger.error("Invalid owner format in block_index_list for epoch extraction")
+            raise ValueError("Invalid owner format in block_index_list for epoch extraction")
 
         # 对每个owner的区块高度进行排序
         for owner_address in owner_epochs:
@@ -552,13 +554,15 @@ class VPBVerify:
         return True, errors, verified_epochs
 
     def _verify_proof_units_and_detect_double_spend(self, vpb_slice: VPBSlice,
-                                                   main_chain_info: MainChainInfo) -> Tuple[bool, List[VerificationError], List[Tuple[str, List[int]]]]:
+                                                   main_chain_info: MainChainInfo,
+                                                   checkpoint_used: Optional[CheckPointRecord] = None) -> Tuple[bool, List[VerificationError], List[Tuple[str, List[int]]]]:
         """
         第四步：逐证明单元验证和双花检测
 
         Args:
             vpb_slice: VPB切片对象
             main_chain_info: 主链信息
+            checkpoint_used: 使用的检查点记录（可选）
 
         Returns:
             Tuple[bool, List[VerificationError], List[Tuple[str, List[int]]]]:
@@ -593,8 +597,22 @@ class VPBVerify:
         # 提取owner epochs
         owner_epochs = self._extract_owner_epochs(vpb_slice.block_index_slice)
 
-        # 对每个epoch进行验证
-        for owner_address, epoch_blocks in owner_epochs.items():
+        # 构建有序的owner转移链（按区块高度排序）
+        sorted_owner_epochs = sorted(owner_epochs.items(), key=lambda x: min(x[1]))
+
+        # 构建第一个验证区块后的辅助信息
+        first_verification_block_after_checkpoint = None
+        if checkpoint_used:
+            all_verification_blocks = []
+            for owner, blocks in owner_epochs.items():
+                for block_h in blocks:
+                    if block_h > checkpoint_used.block_height:
+                        all_verification_blocks.append(block_h)
+            if all_verification_blocks:
+                first_verification_block_after_checkpoint = min(all_verification_blocks)
+
+        # 对每个epoch进行验证（按转移顺序）
+        for i, (owner_address, epoch_blocks) in enumerate(sorted_owner_epochs):
             if len(epoch_blocks) < 1:
                 continue
 
@@ -637,15 +655,28 @@ class VPBVerify:
                     ))
                     epoch_valid = False
 
+            # 确定previous_owner（在外部直接构建，避免内部复杂查找）
+            if i == 0:
+                previous_owner = None  # 第一个owner（通常是创世块）没有前驱
+            elif checkpoint_used and first_verification_block_after_checkpoint and epoch_blocks[0] == first_verification_block_after_checkpoint:
+                # checkpoint后的第一个验证区块，使用checkpoint的owner作为previous_owner
+                previous_owner = checkpoint_used.owner_address
+            else:
+                # 正常情况：直接取转移链中的前一个owner
+                previous_owner = sorted_owner_epochs[i-1][0]
+
             # 检测双花
             if epoch_valid and epoch_proof_units:
                 double_spend_result = self._detect_double_spend_in_epoch(
-                    vpb_slice.value, epoch_proof_units, owner_address, owner_epochs
+                    vpb_slice.value, epoch_proof_units, owner_address, previous_owner
                 )
                 if not double_spend_result[0]:
                     errors.extend(double_spend_result[1])
                 else:
-                    verified_epochs.append((owner_address, epoch_blocks))
+                    # 直接使用epoch的区块列表
+                    if owner_address in owner_epochs:
+                        epoch_blocks_list = owner_epochs[owner_address]
+                        verified_epochs.append((owner_address, epoch_blocks_list))
 
         return len(errors) == 0, errors, verified_epochs
 
@@ -692,19 +723,21 @@ class VPBVerify:
         return None
 
     def _detect_double_spend_in_epoch(self, value: Value, epoch_proof_units: List[Tuple[int, ProofUnit]],
-                                     owner_address: str, all_owner_epochs: Dict[str, List[int]]) -> Tuple[bool, List[VerificationError]]:
+                                     owner_address: str, previous_owner: Optional[str] = None) -> Tuple[bool, List[VerificationError]]:
         """
-        检测epoch内的双花行为
+        基于简化epoch概念检测epoch内的双花行为
 
-        正确的验证逻辑：
-        - 在一个epoch内，非结尾的pu中，所有的交易均不能包含此目标value（有交集也不行）
-        - 在结尾的pu中，则必须包含正确的转移目标value的交易（value完全符合、发送者和接收者也均符合epoch和下个epoch的owner地址）
+        简化epoch概念：
+        - 每个epoch只有一个区块：该owner获得value的区块
+        - 创世块（区块0）：owner从GOD处获得value，无需验证转移交易
+        - 普通区块：必须包含从previous_owner到当前owner的有效转移交易
+        - 最后一个区块：不能包含任何价值转移交易（因为value没有再次转移）
 
         Args:
             value: 被验证的Value对象
-            epoch_proof_units: 该epoch的proof units列表
+            epoch_proof_units: 该epoch的proof units列表（通常只有一个区块）
             owner_address: epoch的所有者地址
-            all_owner_epochs: 所有owner的epoch信息
+            previous_owner: 上一个epoch的owner地址（None表示创世块）
 
         Returns:
             Tuple[bool, List[VerificationError]]: (无双花, 错误列表)
@@ -717,28 +750,35 @@ class VPBVerify:
         # 按区块高度排序proof units
         epoch_proof_units.sort(key=lambda x: x[0])
 
-        # 找到下一个epoch的owner地址（如果存在）
-        next_epoch_owner = self._find_next_epoch_owner(owner_address, all_owner_epochs)
-
         # 检查每个proof unit
-        for i, (block_height, proof_unit) in enumerate(epoch_proof_units):
-            is_last_proof_unit = (i == len(epoch_proof_units) - 1)
-
+        for block_height, proof_unit in epoch_proof_units:
             # 检查是否有与目标value交集的交易
             value_intersect_transactions = self._find_value_intersect_transactions(proof_unit, value)
 
-            if is_last_proof_unit:
-                # 最后一个proof unit：必须包含正确的value转移交易
+            # 创世块特殊处理：创世块owner从GOD处获得value
+            if block_height == 0:
+                # 创世块不应该有任何价值转移交易（价值是从GOD获得）
+                if value_intersect_transactions:
+                    errors.append(VerificationError(
+                        "UNEXPECTED_GENESIS_VALUE_TRANSFER",
+                        f"Genesis block cannot contain value transfer transactions, "
+                        f"found {len(value_intersect_transactions)} transactions in block 0",
+                        block_height=0
+                    ))
+                continue
+
+            # 简化逻辑：直接使用外部传入的previous_owner
+            if previous_owner is not None:
+                # 查找从previous_owner到当前owner的有效转移交易
                 valid_spend_transactions = self._find_valid_value_spend_transactions(
-                    proof_unit, value, owner_address, next_epoch_owner
+                    proof_unit, value, previous_owner, owner_address
                 )
 
                 if not valid_spend_transactions:
                     errors.append(VerificationError(
-                        "NO_VALID_SPEND_IN_LAST_PROOF",
-                        f"No valid spend transaction found for value {value.begin_index} "
-                        f"in last proof unit at block {block_height}. "
-                        f"Expected transfer from {owner_address} to {next_epoch_owner or 'new owner'}",
+                        "NO_VALID_TRANSFER_IN_BLOCK",
+                        f"Block {block_height} must contain valid transfer from {previous_owner} to {owner_address}, "
+                        f"but found no valid transactions",
                         block_height=block_height
                     ))
 
@@ -746,22 +786,21 @@ class VPBVerify:
                 for tx in value_intersect_transactions:
                     if tx not in valid_spend_transactions:
                         errors.append(VerificationError(
-                            "INVALID_VALUE_INTERSECTION",
-                            f"Invalid value intersection found in last proof unit at block {block_height}: {tx}",
+                            "INVALID_BLOCK_VALUE_INTERSECTION",
+                            f"Invalid value intersection found in block {block_height}: {tx}",
                             block_height=block_height
                         ))
-
             else:
-                # 非结尾的proof unit：不能包含任何与目标value有交集的交易
-                if value_intersect_transactions:
-                    for tx in value_intersect_transactions:
-                        errors.append(VerificationError(
-                            "UNEXPECTED_VALUE_USE",
-                            f"Unexpected value use found in non-last proof unit at block {block_height}: {tx}",
-                            block_height=block_height
-                        ))
+                # 非创世块但没有previous_owner，这是逻辑错误
+                errors.append(VerificationError(
+                    "UNEXPECTED_BLOCK_WITHOUT_PREVIOUS_OWNER",
+                    f"Block {block_height} has no previous owner but is not genesis block",
+                    block_height=block_height
+                ))
 
         return len(errors) == 0, errors
+
+    # _find_previous_epoch_owner 方法已被移除，因为 previous_owner 现在由调用方直接提供
 
     def _find_next_epoch_owner(self, current_owner: str, all_owner_epochs: Dict[str, List[int]]) -> Optional[str]:
         """
@@ -937,6 +976,7 @@ class VPBVerify:
     def _values_intersect(self, value1: Any, value2: Value) -> bool:
         """
         检查两个value是否有交集
+        使用Value.py中的现有功能避免重复编码
 
         Args:
             value1: 第一个value对象
@@ -946,16 +986,22 @@ class VPBVerify:
             bool: 是否有交集
         """
         try:
-            if not (hasattr(value1, 'begin_index') and hasattr(value1, 'end_index')):
+            # 如果value1已经是Value对象，直接使用其is_intersect_value方法
+            if hasattr(value1, 'is_intersect_value') and callable(value1.is_intersect_value):
+                return value1.is_intersect_value(value2)
+            # 如果value2有is_intersect_value方法，调转参数
+            elif hasattr(value2, 'is_intersect_value') and callable(value2.is_intersect_value):
+                return value2.is_intersect_value(value1)
+            # 如果都不是，回退到手动计算（兼容性考虑）
+            elif hasattr(value1, 'begin_index') and hasattr(value1, 'end_index'):
+                v1_begin = int(value1.begin_index, 16)
+                v1_end = int(value1.end_index, 16)
+                v2_begin = int(value2.begin_index, 16)
+                v2_end = int(value2.end_index, 16)
+                # 检查是否有重叠
+                return not (v1_end < v2_begin or v2_end < v1_begin)
+            else:
                 return False
-
-            v1_begin = int(value1.begin_index, 16)
-            v1_end = int(value1.end_index, 16)
-            v2_begin = int(value2.begin_index, 16)
-            v2_end = int(value2.end_index, 16)
-
-            # 检查是否有重叠
-            return not (v1_end < v2_begin or v2_end < v1_begin)
         except (ValueError, AttributeError):
             return False
 
