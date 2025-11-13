@@ -19,8 +19,8 @@ class BlockIndexList:
     index_lst和owner的逻辑关系如下: 
     1)index_lst是一个整数列表, 里面的元素均为整数(本质上是部分区块的区块号)。
     2)owner表示在某个区块号的区块中, 此value属于哪个节点(owner), 因此owner是(区块号, owner用户地址)的一个二元列表。
-    3)举个例子: index_lst= [0,2,7,14,15,27,56]
-    owner=[(0, 0X418ab...), (15, 0X8360c...), (56, 0X14860...)]。
+    3)举个例子: index_lst= [0,2,7,14,15,27,56]（这是一个严格递增序列，不存在重复区块号）
+    owner=[(0, 0X418ab...), (15, 0X8360c...), (56, 0X14860...)]。（标记了目标value的所有权变更历史，其第一个数字也是递增无重复的序列，且必然是index_lst的子集）
     其表示节点(0X418ab..)在Block#0时获得(拥有)此value, 即, 节点(0X418ab..)在Block#0时是此value的owner;
     节点(0X418ab..)在Block#15时交易了此value给节点(0X8360c...), 即, 节点(0X8360c...)在Block#15时成为了此value的owner;
     节点(0X8360c...)在Block#56时交易了此value给节点(0X14860...), 即, 节点(0X14860...)在Block#56时成为了此value的owner;
