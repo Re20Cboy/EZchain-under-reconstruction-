@@ -1,8 +1,7 @@
 """
 VPB Validator Main Interface
 
-This module provides the main VPBValidator class that orchestrates
-the entire VPB validation process using modular steps.
+Refactored modular VPB validation system with streamlined step integration.
 """
 
 import threading
@@ -12,18 +11,17 @@ from typing import Dict, Any, Optional
 
 from .core.types import VerificationResult, VerificationError, VPBVerificationReport, VPBSlice
 from .core.validator_base import ValidatorBase
-from .steps.data_structure_validator import DataStructureValidator
-from .steps.slice_generator import VPBSliceGenerator
-from .steps.bloom_filter_validator import BloomFilterValidator
-from .steps.proof_validator import ProofValidator
+from .steps.data_structure_validator_01 import DataStructureValidator
+from .steps.slice_generator_02 import VPBSliceGenerator
+from .steps.bloom_filter_validator_03 import BloomFilterValidator
+from .steps.proof_validator_04 import ProofValidator
 
 
 class VPBValidator(ValidatorBase):
     """
-    EZChain VPB验证器 - 模块化版本
+    EZChain VPB验证器 - 精简重构版本
 
-    实现完整的VPB验证算法，支持检查点优化和内存高效的分块验证。
-    采用模块化设计，将复杂的验证流程分解为独立的步骤。
+    实现完整的VPB验证算法，采用模块化设计，确保各步骤无缝连接。
     """
 
     def __init__(self, checkpoint=None, logger: Optional[logging.Logger] = None):
@@ -42,12 +40,12 @@ class VPBValidator(ValidatorBase):
         self.bloom_filter_validator = BloomFilterValidator(logger)
         self.proof_validator = ProofValidator(logger)
 
-        # 验证统计信息
+        # 精简的验证统计信息
         self.verification_stats = {
-            'total_verifications': 0,
-            'successful_verifications': 0,
-            'failed_verifications': 0,
-            'checkpoint_hits': 0
+            'total': 0,
+            'successful': 0,
+            'failed': 0,
+            'checkpoint_used': 0
         }
 
     def verify_vpb_pair(self, value, proofs, block_index_list, main_chain_info, account_address: str) -> VPBVerificationReport:
@@ -65,104 +63,91 @@ class VPBValidator(ValidatorBase):
             VPBVerificationReport: 详细的验证报告
         """
         start_time = time.time()
+        errors = []
+        verified_epochs = []
+        checkpoint_used = None
 
         with self._lock:
-            self.verification_stats['total_verifications'] += 1
-
-            errors = []
-            verified_epochs = []
-            checkpoint_used = None
+            self.verification_stats['total'] += 1
 
             try:
-                # 第一步：基础数据结构合法性验证
-                self.logger.info("Step 1: Validating basic data structure...")
-                validation_result = self.data_structure_validator.validate_basic_data_structure(
+                # Step 1: 基础数据结构验证
+                self.logger.info("Step 1: Basic data structure validation")
+                is_valid, error_msg = self.data_structure_validator.validate_basic_data_structure(
                     value, proofs, block_index_list
                 )
-                if not validation_result[0]:
-                    errors.append(VerificationError(
-                        "DATA_STRUCTURE_VALIDATION_FAILED",
-                        validation_result[1]
-                    ))
-                    report_time = (time.time() - start_time) * 1000
-                    self.verification_stats['failed_verifications'] += 1
-                    return VPBVerificationReport(
-                        VerificationResult.FAILURE, False, errors,
-                        verified_epochs, checkpoint_used, report_time
-                    )
+                if not is_valid:
+                    errors.append(VerificationError("DATA_STRUCTURE_VALIDATION_FAILED", error_msg))
+                    return self._create_failure_report(errors, verified_epochs, checkpoint_used, start_time)
 
-                # 第二步：检查点匹配和历史切片生成
-                self.logger.info("Step 2: Generating VPB slice...")
+                # Step 2: VPB切片生成（含检查点处理）
+                self.logger.info("Step 2: VPB slice generation")
                 vpb_slice, checkpoint_used = self.slice_generator.generate_vpb_slice(
                     value, proofs, block_index_list, account_address
                 )
 
-                # 第三步：布隆过滤器验证
-                self.logger.info("Step 3: Verifying bloom filter consistency...")
-                bloom_validation_result = self.bloom_filter_validator.verify_bloom_filter_consistency(
+                # Step 3: 布隆过滤器一致性验证
+                self.logger.info("Step 3: Bloom filter consistency verification")
+                is_valid, error_msg = self.bloom_filter_validator.verify_bloom_filter_consistency(
                     vpb_slice, main_chain_info
                 )
-                if not bloom_validation_result[0]:
-                    errors.append(VerificationError(
-                        "BLOOM_FILTER_VALIDATION_FAILED",
-                        bloom_validation_result[1]
-                    ))
+                if not is_valid:
+                    errors.append(VerificationError("BLOOM_FILTER_VALIDATION_FAILED", error_msg))
 
-                # 第四步：逐证明单元验证和双花检测
-                self.logger.info("Step 4: Verifying proof units and detecting double spend...")
-                epoch_verification_result = self.proof_validator.verify_proof_units_and_detect_double_spend(
+                # Step 4: 证明单元验证和双花检测
+                self.logger.info("Step 4: Proof verification and double-spend detection")
+                is_valid, proof_errors, verified_epochs = self.proof_validator.verify_proof_units_and_detect_double_spend(
                     vpb_slice, main_chain_info, checkpoint_used
                 )
+                if not is_valid:
+                    errors.extend(proof_errors)
 
-                if not epoch_verification_result[0]:
-                    errors.extend(epoch_verification_result[1])
-                else:
-                    verified_epochs = epoch_verification_result[2]
-
-                # 生成最终验证结果
-                is_valid = len(errors) == 0
-                result = VerificationResult.SUCCESS if is_valid else VerificationResult.FAILURE
-
-                if is_valid:
-                    self.verification_stats['successful_verifications'] += 1
-                    self.logger.info("VPB validation completed successfully")
-                else:
-                    self.verification_stats['failed_verifications'] += 1
-                    self.logger.warning(f"VPB validation failed with {len(errors)} errors")
-
+                # 统计检查点使用情况
                 if checkpoint_used:
-                    self.verification_stats['checkpoint_hits'] += 1
+                    self.verification_stats['checkpoint_used'] += 1
 
-                report_time = (time.time() - start_time) * 1000
-
-                return VPBVerificationReport(
-                    result, is_valid, errors, verified_epochs, checkpoint_used, report_time
-                )
+                # 生成最终验证报告
+                return self._create_final_report(errors, verified_epochs, checkpoint_used, start_time)
 
             except Exception as e:
-                import traceback
-                self.logger.error(f"VPB verification failed with exception: {e}")
-                self.logger.error(f"Full traceback: {traceback.format_exc()}")
-                errors.append(VerificationError(
-                    "VERIFICATION_EXCEPTION",
-                    f"Verification failed with exception: {str(e)}"
-                ))
+                self.logger.error(f"VPB verification exception: {e}")
+                errors.append(VerificationError("VERIFICATION_EXCEPTION", str(e)))
+                return self._create_failure_report(errors, verified_epochs, checkpoint_used, start_time)
 
-                self.verification_stats['failed_verifications'] += 1
-                report_time = (time.time() - start_time) * 1000
+    def _create_failure_report(self, errors, verified_epochs, checkpoint_used, start_time) -> VPBVerificationReport:
+        """创建失败报告的辅助方法"""
+        with self._lock:
+            self.verification_stats['failed'] += 1
+        report_time = (time.time() - start_time) * 1000
+        return VPBVerificationReport(
+            VerificationResult.FAILURE, False, errors, verified_epochs, checkpoint_used, report_time
+        )
 
-                return VPBVerificationReport(
-                    VerificationResult.FAILURE, False, errors,
-                    verified_epochs, checkpoint_used, report_time
-                )
+    def _create_final_report(self, errors, verified_epochs, checkpoint_used, start_time) -> VPBVerificationReport:
+        """创建最终验证报告的辅助方法"""
+        is_valid = len(errors) == 0
+        result = VerificationResult.SUCCESS if is_valid else VerificationResult.FAILURE
+
+        with self._lock:
+            if is_valid:
+                self.verification_stats['successful'] += 1
+                self.logger.info("VPB validation completed successfully")
+            else:
+                self.verification_stats['failed'] += 1
+                self.logger.warning(f"VPB validation failed with {len(errors)} errors")
+
+        report_time = (time.time() - start_time) * 1000
+        return VPBVerificationReport(
+            result, is_valid, errors, verified_epochs, checkpoint_used, report_time
+        )
 
     def get_verification_stats(self) -> Dict[str, Any]:
         """获取验证统计信息"""
         with self._lock:
             stats = self.verification_stats.copy()
-            if stats['total_verifications'] > 0:
-                stats['success_rate'] = stats['successful_verifications'] / stats['total_verifications']
-                stats['checkpoint_hit_rate'] = stats['checkpoint_hits'] / stats['total_verifications']
+            if stats['total'] > 0:
+                stats['success_rate'] = stats['successful'] / stats['total']
+                stats['checkpoint_hit_rate'] = stats['checkpoint_used'] / stats['total']
             else:
                 stats['success_rate'] = 0.0
                 stats['checkpoint_hit_rate'] = 0.0
@@ -172,8 +157,8 @@ class VPBValidator(ValidatorBase):
         """重置验证统计信息"""
         with self._lock:
             self.verification_stats = {
-                'total_verifications': 0,
-                'successful_verifications': 0,
-                'failed_verifications': 0,
-                'checkpoint_hits': 0
+                'total': 0,
+                'successful': 0,
+                'failed': 0,
+                'checkpoint_used': 0
             }

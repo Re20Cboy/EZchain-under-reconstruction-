@@ -18,7 +18,7 @@ from typing import List, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from EZ_VPB_Validator.steps.slice_generator import VPBSliceGenerator
+from EZ_VPB_Validator.steps.slice_generator_02 import VPBSliceGenerator
 from EZ_VPB_Validator.core.types import VPBSlice
 
 

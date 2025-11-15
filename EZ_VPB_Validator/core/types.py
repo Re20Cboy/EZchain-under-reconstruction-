@@ -96,19 +96,21 @@ class MainChainInfo:
             except (TypeError, AttributeError):
                 return False
 
-
 @dataclass
 class VPBSlice:
     """VPB历史切片"""
     from EZ_Value.Value import Value
     from EZ_Proof.ProofUnit import ProofUnit
     from EZ_BlockIndex.BlockIndexList import BlockIndexList
+    from EZ_CheckPoint.CheckPoint import CheckPointRecord
 
     value: Value
     proofs_slice: List[ProofUnit]
     block_index_slice: BlockIndexList
     start_block_height: int
     end_block_height: int
+    checkpoint_used: Optional[CheckPointRecord] = None
+    previous_owner: Optional[str] = None  # checkpoint触发时的owner地址
 
 
 class ValueIntersectionError(Exception):

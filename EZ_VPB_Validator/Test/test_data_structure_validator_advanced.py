@@ -18,7 +18,7 @@ import hashlib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from EZ_VPB_Validator.steps.data_structure_validator import DataStructureValidator
+from EZ_VPB_Validator.steps.data_structure_validator_01 import DataStructureValidator
 from EZ_Value.Value import Value, ValueState
 from EZ_Proof.Proofs import Proofs
 from EZ_Proof.ProofUnit import ProofUnit

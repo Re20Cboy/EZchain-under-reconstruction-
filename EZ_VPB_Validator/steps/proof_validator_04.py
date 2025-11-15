@@ -127,6 +127,7 @@ class ProofValidator(ValidatorBase):
             )
             if not double_spend_result[0]:
                 errors.extend(double_spend_result[1])
+                # 即使检测到双花错误，也继续验证后续区块以收集更多错误信息
             else:
                 # 添加到已验证的epoch列表
                 verified_epochs.append((owner_address, [block_height]))
@@ -232,13 +233,12 @@ class ProofValidator(ValidatorBase):
 
     def _detect_double_spend_in_epoch(self, value, epoch_proof_units: List[Tuple[int, any]], owner_address: str, previous_owner: Optional[str] = None) -> Tuple[bool, List[VerificationError]]:
         """
-        基于简化epoch概念检测epoch内的双花行为
+        基于详细需求检测epoch内的双花行为
 
-        简化epoch概念：
-        - 每个epoch只有一个区块：该owner获得value的区块
-        - 创世块（区块0）：owner从GOD处获得value，无需验证转移交易
-        - 普通区块：必须包含从previous_owner到当前owner的有效转移交易
-        - 最后一个区块：不能包含任何价值转移交易（因为value没有再次转移）
+        根据proof_validator_demo.md的要求：
+        - 目标value交易区块：必须包含与目标value完全重合的交易，且符合转移路径
+        - 非目标value交易区块：必须与目标value完全无交集
+        - 创世块：必须包含GOD->owner的派发交易
 
         Args:
             value: 被验证的Value对象
@@ -262,47 +262,94 @@ class ProofValidator(ValidatorBase):
             # 检查是否有与目标value交集的交易
             value_intersect_transactions = self.value_detector.find_value_intersect_transactions(proof_unit, value)
 
-            # 创世块特殊处理：创世块owner从GOD处获得value
+            # 创世块特殊处理：必须包含GOD->owner的派发交易
             if block_height == 0:
-                # 创世块不应该有任何价值转移交易（价值是从GOD获得）
-                if value_intersect_transactions:
+                # 创世块必须包含与目标value完全重合的交易（GOD->owner）
+                valid_spend_transactions = self.value_detector.find_valid_value_spend_transactions(
+                    proof_unit, value, "GOD", owner_address  # 创世交易是GOD->owner
+                )
+
+                if not valid_spend_transactions:
                     errors.append(VerificationError(
-                        "UNEXPECTED_GENESIS_VALUE_TRANSFER",
-                        f"Genesis block cannot contain value transfer transactions, "
-                        f"found {len(value_intersect_transactions)} transactions in block 0",
+                        "MISSING_GENESIS_VALUE_DISTRIBUTION",
+                        f"Genesis block must contain GOD->{owner_address} value distribution, but found no valid transactions",
                         block_height=0
                     ))
+
+                # 检查是否有不合法的交集交易（非GOD->sender的value交集）
+                for tx in value_intersect_transactions:
+                    if tx not in valid_spend_transactions:
+                        errors.append(VerificationError(
+                            "INVALID_GENESIS_VALUE_INTERSECTION",
+                            f"Invalid value intersection in genesis block {block_height}: {tx}. Only GOD->{owner_address} distribution allowed.",
+                            block_height=0
+                        ))
                 continue
 
-            # 简化逻辑：直接使用外部传入的previous_owner
-            if previous_owner is not None:
-                # 查找从previous_owner到当前owner的有效转移交易
+            # 非创世块：需要判断这是目标value交易区块还是非目标value交易区块
+            is_target_value_block = self._is_target_value_transfer_block(block_height, owner_address, previous_owner)
+
+            if is_target_value_block:
+                # 目标value交易区块：必须包含从previous_owner到当前owner的有效转移交易
                 valid_spend_transactions = self.value_detector.find_valid_value_spend_transactions(
                     proof_unit, value, previous_owner, owner_address
                 )
 
                 if not valid_spend_transactions:
                     errors.append(VerificationError(
-                        "NO_VALID_TRANSFER_IN_BLOCK",
-                        f"Block {block_height} must contain valid transfer from {previous_owner} to {owner_address}, "
+                        "NO_VALID_TARGET_VALUE_TRANSFER",
+                        f"Block {block_height} must contain valid target value transfer from {previous_owner} to {owner_address}, "
                         f"but found no valid transactions",
                         block_height=block_height
                     ))
 
-                # 检查是否有不合法的交集交易
+                # 检查是否有不合法的交集交易（不应该是目标value转移的其他交易）
                 for tx in value_intersect_transactions:
                     if tx not in valid_spend_transactions:
                         errors.append(VerificationError(
-                            "INVALID_BLOCK_VALUE_INTERSECTION",
-                            f"Invalid value intersection found in block {block_height}: {tx}",
+                            "INVALID_TARGET_VALUE_INTERSECTION",
+                            f"Invalid target value intersection found in block {block_height}: {tx}. "
+                            f"Only {previous_owner}->{owner_address} target value transfer allowed.",
                             block_height=block_height
                         ))
             else:
-                # 非创世块但没有previous_owner，这是逻辑错误
-                errors.append(VerificationError(
-                    "UNEXPECTED_BLOCK_WITHOUT_PREVIOUS_OWNER",
-                    f"Block {block_height} has no previous owner but is not genesis block",
-                    block_height=block_height
-                ))
+                # 非目标value交易区块：必须与目标value完全无交集（双花检测）
+                if value_intersect_transactions:
+                    errors.append(VerificationError(
+                        "DOUBLE_SPEND_DETECTED",
+                        f"Block {block_height} contains transactions intersecting with target value "
+                        f"({len(value_intersect_transactions)} transactions), indicating double spend",
+                        block_height=block_height
+                    ))
+                    for tx in value_intersect_transactions:
+                        errors.append(VerificationError(
+                            "DOUBLE_SPEND_TRANSACTION",
+                            f"Double spend transaction in block {block_height}: {tx}",
+                            block_height=block_height
+                        ))
 
         return len(errors) == 0, errors
+
+    def _is_target_value_transfer_block(self, block_height: int, owner_address: str, previous_owner: Optional[str]) -> bool:
+        """
+        判断指定区块是否应该是目标value转移区块
+
+        根据需求文档，目标value转移区块的特征：
+        - 该区块的owner地址发生了变化（从previous_owner到owner_address）
+        - 区块中应该包含目标value的转移交易
+
+        Args:
+            block_height: 区块高度
+            owner_address: 该区块的owner地址
+            previous_owner: 前一个区块的owner地址
+
+        Returns:
+            bool: True表示是目标value转移区块，False表示是非目标value交易区块
+        """
+        # 如果有前驱owner且owner地址发生变化，说明是目标value转移区块
+        if previous_owner is not None and previous_owner != owner_address:
+            return True
+
+        # 如果没有前驱owner（创世块已经在其他地方处理），默认认为是目标value转移区块
+        # 这种情况在正常流程中不应该出现，但为了安全起见
+        return False

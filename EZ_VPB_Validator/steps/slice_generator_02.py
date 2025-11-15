@@ -83,15 +83,25 @@ class VPBSliceGenerator(ValidatorBase):
             self.logger.debug(f"Original index_lst: {block_index_list.index_lst}")
             self.logger.debug(f"Will include indices from: {block_index_list.index_lst[start_index:]}")
 
-            # 特殊处理：如果包含创世块且start_height > 0，需要包含创世块的proof unit
-            # 因为创世块的验证逻辑不同
+            # 创世块特殊处理说明：
+            # 根据slice_generator_demo.md，如果start_height > 0（有checkpoint），
+            # 且创世块高度小于start_height，则创世块会被正常截断掉
+            # 不需要额外包含创世块，因为checkpoint已经保证了之前的验证状态
             if genesis_index >= 0 and start_height > 0 and genesis_index < start_index:
-                # 创世块需要特殊处理，但我们暂时不包含在切片中
-                pass
+                self.logger.debug(f"Genesis block at index {genesis_index} will be truncated due to checkpoint at {start_height-1}")
 
             # 生成切片
             proofs_slice = proofs.proof_units[start_index:] if start_index < len(proofs.proof_units) else []
             index_slice = block_index_list.index_lst[start_index:] if start_index < len(block_index_list.index_lst) else []
+
+            # 检查截断后是否出现空数组的情况
+            if checkpoint_used and not proofs_slice and not index_slice:
+                # 有checkpoint但截断后为空，说明VPB数据异常
+                raise ValueError(
+                    f"Invalid VPB data: checkpoint at height {checkpoint_used.block_height} "
+                    f"results in empty slice. This indicates the checkpoint height is too high "
+                    f"or the VPB data is incomplete/invalid."
+                )
 
             # 生成对应的owner切片
             if block_index_list.owner:
@@ -119,14 +129,28 @@ class VPBSliceGenerator(ValidatorBase):
         from EZ_BlockIndex.BlockIndexList import BlockIndexList
         sliced_block_index_list = BlockIndexList(index_slice, owner_slice)
 
+        # 获取checkpoint的owner信息
+        previous_owner = None
+        if checkpoint_used:
+            # checkpoint_record应该包含owner信息，这里需要从checkpoint中获取
+            # 假设checkpoint有account_address字段表示当时验证的owner
+            if hasattr(checkpoint_used, 'account_address'):
+                previous_owner = checkpoint_used.account_address
+            elif hasattr(checkpoint_used, 'owner'):
+                previous_owner = checkpoint_used.owner
+            else:
+                self.logger.warning("Checkpoint record doesn't contain owner information")
+
         # 创建VPB切片对象
         vpb_slice = VPBSlice(
             value=value,
             proofs_slice=proofs_slice,
             block_index_slice=sliced_block_index_list,
             start_block_height=start_height,
-            end_block_height=index_slice[-1] if index_slice else start_height
+            end_block_height=index_slice[-1] if index_slice else start_height,
+            checkpoint_used=checkpoint_used,
+            previous_owner=previous_owner
         )
 
-        self.logger.debug(f"Generated VPB slice: start_height={start_height}, end_height={vpb_slice.end_block_height}, proof_units={len(proofs_slice)}")
+        self.logger.debug(f"Generated VPB slice: start_height={start_height}, end_height={vpb_slice.end_block_height}, proof_units={len(proofs_slice)}, previous_owner={previous_owner}")
         return vpb_slice, checkpoint_used

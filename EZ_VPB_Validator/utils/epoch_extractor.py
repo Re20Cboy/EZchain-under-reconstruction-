@@ -13,12 +13,13 @@ class EpochExtractor(ValidatorBase):
 
     def extract_owner_epochs(self, block_index_list) -> List[Tuple[int, str]]:
         """
-        从BlockIndexList中提取epoch信息（重构版本）
+        从BlockIndexList中提取epoch信息（修复版本）
 
         新的epoch概念：
         - 每个区块代表一个独立的epoch
         - 每个epoch包含：区块高度、该区块的owner、前驱owner
         - 按照转移链的时间顺序组织epoch
+        - 对于没有owner记录的区块，使用上一个已知owner
 
         Args:
             block_index_list: 区块索引列表
@@ -46,12 +47,24 @@ class EpochExtractor(ValidatorBase):
         # 按区块高度排序构建epoch列表
         sorted_blocks = sorted(block_index_list.index_lst)
 
+        # 修复：为每个区块确定owner，包括没有显式记录的区块
+        current_owner = None
         for block_height in sorted_blocks:
             if block_height in block_to_owner:
                 owner = block_to_owner[block_height]
-                epochs.append((block_height, owner))
+                current_owner = owner
+                self.logger.debug(f"Found explicit owner for block {block_height}: {owner}")
             else:
-                self.logger.warning(f"No owner found for block {block_height}")
+                # 如果该区块没有owner记录，使用上一个owner
+                if current_owner is None:
+                    # 第一个区块但没有owner记录，这是数据结构问题
+                    # 根据前面步骤的保证，这种情况不应该发生
+                    self.logger.error(f"No owner available for block {block_height} and no previous owner")
+                    continue
+                owner = current_owner
+                self.logger.debug(f"Using previous owner for block {block_height}: {owner}")
+
+            epochs.append((block_height, owner))
 
         self.logger.debug(f"Extracted epochs: {epochs}")
         return epochs

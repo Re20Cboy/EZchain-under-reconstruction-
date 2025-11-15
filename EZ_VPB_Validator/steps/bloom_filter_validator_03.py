@@ -84,8 +84,36 @@ class BloomFilterValidator(ValidatorBase):
             self.logger.debug(f"Genesis block detected: {first_owner} receives value from GOD at block {first_start_block}")
         else:
             # 非创世块：验证第一个epoch的前一个owner确实被记录在index_lst第一个块的布隆过滤器中
-            #TODO 这里需要从其他信息推断前一个owner，暂时跳过这个验证，因为需要更多的上下文信息
-            self.logger.debug(f"First epoch starts at block {first_start_block}, owner: {first_owner}")
+            # 从vpb_slice中获取checkpoint提供的previous_owner信息
+            previous_owner = getattr(vpb_slice, 'previous_owner', None)
+
+            if previous_owner:
+                # 验证前一个owner是否确实在first_start_block的布隆过滤器中被记录
+                self.logger.debug(f"Non-genesis block detected: previous_owner={previous_owner}, first_owner={first_owner}")
+
+                if first_start_block in main_chain_info.bloom_filters:
+                    first_block_bloom_filter = main_chain_info.bloom_filters[first_start_block]
+                    previous_owner_recorded = self._check_bloom_filter(first_block_bloom_filter, previous_owner)
+
+                    if previous_owner_recorded:
+                        self.logger.debug(f"Previous owner {previous_owner} correctly recorded in bloom filter at block {first_start_block}")
+                    else:
+                        self.logger.error(
+                            f"SECURITY THREAT: Previous owner {previous_owner} not found in bloom filter "
+                            f"at block {first_start_block}. Checkpoint data may be inconsistent."
+                        )
+                        return False, (
+                            f"SECURITY THREAT DETECTED: Checkpoint previous owner {previous_owner} "
+                            f"not recorded in bloom filter at block {first_start_block}. "
+                            f"Potential checkpoint tampering detected."
+                        )
+                else:
+                    self.logger.warning(f"No bloom filter available for block {first_start_block}, cannot verify previous owner")
+            else:
+                self.logger.warning(
+                    f"Non-genesis block detected but no previous owner information available. "
+                    f"First epoch starts at block {first_start_block}, owner: {first_owner}"
+                )
 
         # 核心验证逻辑：按照注释中的场景1要求进行验证
         # 对每个owner（除最后一个）验证其epoch期间作为sender的交易记录
