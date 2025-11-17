@@ -19,12 +19,138 @@ import sys
 import os
 import tempfile
 import time
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Tuple
 from unittest.mock import Mock, MagicMock, patch
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 完全禁用所有日志输出
+logging.disable(logging.CRITICAL)  # 禁用所有级别的日志
+
+# 确保关键模块的日志被禁用
+logging.getLogger('EZ_VPB_Validator').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_VPB_Validator.vpb_validator').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_VPB_Validator.steps').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_VPB_Validator.utils').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_VPB_Validator.core').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_CheckPoint').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_Proof').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_Value').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_BlockIndex').setLevel(logging.CRITICAL)
+logging.getLogger('EZ_Units').setLevel(logging.CRITICAL)
+
+# 禁用根logger的所有日志
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.CRITICAL)
+
+# 创建一个空的日志处理器来彻底禁用输出
+class NullHandler(logging.Handler):
+    def emit(self, record):
+        pass  # 忽略所有日志记录
+
+# 为所有logger添加空处理器
+for handler in root_logger.handlers[:]:
+    root_logger.removeHandler(handler)
+root_logger.addHandler(NullHandler())
+
+
+class TestOutputManager:
+    """测试输出管理器 - 提供简洁直观的测试结果展示"""
+
+    @staticmethod
+    def print_header(title: str, width: int = 80):
+        """打印测试标题"""
+        print("=" * width)
+        print(f" {title} ".center(width, "="))
+        print("=" * width)
+
+    @staticmethod
+    def print_case_header(case_name: str):
+        """打印测试案例标题"""
+        print(f"\n[测试] {case_name}")
+        print("-" * 60)
+
+    @staticmethod
+    def print_success(message: str):
+        """打印成功信息"""
+        print(f"[PASS] {message}")
+
+    @staticmethod
+    def print_failure(message: str):
+        """打印失败信息"""
+        print(f"[FAIL] {message}")
+
+    @staticmethod
+    def print_info(message: str, indent: int = 2):
+        """打印信息"""
+        prefix = "  " * indent
+        print(f"{prefix}- {message}")
+
+    @staticmethod
+    def print_error_details(errors: List, indent: int = 4):
+        """打印错误详情"""
+        prefix = "  " * indent
+        if errors:
+            for i, error in enumerate(errors, 1):
+                print(f"{prefix}{i}. {error.error_type}: {error.error_message}")
+
+    @staticmethod
+    def print_verification_summary(report, case_name: str):
+        """打印验证结果摘要"""
+        print(f"\n【{case_name}验证结果】")
+        print(f"  状态: {'通过' if report.is_valid else '失败'}")
+        print(f"  耗时: {report.verification_time_ms:.2f}ms")
+        print(f"  错误数: {len(report.errors)}")
+
+        if report.checkpoint_used:
+            print(f"  检查点: 区块{report.checkpoint_used.block_height}")
+        else:
+            print(f"  检查点: 未使用")
+
+        if report.errors:
+            print(f"  错误详情:")
+            TestOutputManager.print_error_details(report.errors)
+
+        if hasattr(report, 'verified_epochs') and report.verified_epochs:
+            print(f"  验证区块: {len(report.verified_epochs)}个epoch")
+
+    @staticmethod
+    def print_progress_bar(current: int, total: int, width: int = 40):
+        """打印进度条"""
+        progress = current / total
+        filled = int(width * progress)
+        bar = "=" * filled + "-" * (width - filled)
+        percent = progress * 100
+        print(f"\r进度: [{bar}] {percent:.1f}% ({current}/{total})", end="", flush=True)
+
+    @staticmethod
+    def print_final_results(results: List[Tuple[str, bool]], total_time: float):
+        """打印最终测试结果"""
+        passed = sum(1 for _, success in results if success)
+        failed = len(results) - passed
+        success_rate = (passed / len(results)) * 100 if results else 0
+
+        print("\n" + "=" * 80)
+        print("【测试结果汇总】".center(80))
+        print("=" * 80)
+
+        # 结果统计
+        print(f"总测试数: {len(results)}")
+        print(f"通过数量: {passed}")
+        print(f"失败数量: {failed}")
+        print(f"成功率: {success_rate:.1f}%")
+        print(f"总耗时: {total_time:.2f}秒")
+
+        # 详细结果
+        print("\n【详细结果】")
+        for case_name, success in results:
+            status = "通过" if success else "失败"
+            print(f"  {status.ljust(4)} | {case_name}")
+
+        print("=" * 80)
 
 try:
     from EZ_VPB_Validator.vpb_validator import VPBValidator
@@ -103,7 +229,6 @@ class VPBTestDataGenerator:
 
     @staticmethod
     def create_realistic_bloom_filters(block_heights: List[int],
-                                     owner_data: Dict[int, str],
                                      additional_transactions: Dict[int, List[str]]) -> Dict[int, BloomFilter]:
         """创建真实的布隆过滤器模拟"""
         bloom_filters = {}
@@ -146,38 +271,37 @@ class TestCase1_SimpleNormalWithCheckpoint:
         charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
         dave_addr = VPBTestDataGenerator.create_eth_address("dave")
 
-        # TODO：block_index_list应包含全量编号[0,8,15,16,25,27,55,56,58]
-        # 区块索引列表 - 只记录所有权变更的区块
+        # 区块索引列表 - 包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 根据VPB_test_demo.md，block_index_list.index_lst应该包含所有相关区块，不仅仅是所有权变更的区块
         block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
             [
                 (0, alice_addr),    # 创世块：alice获得目标value
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value）
                 (15, bob_addr),     # 区块15：bob从alice处接收目标value
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value）
                 (27, charlie_addr), # 区块27：charlie从bob处接收目标value
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value）
                 (56, dave_addr),    # 区块56：dave从charlie处接收目标value
                 (58, bob_addr)      # 区块58：bob从dave处接收目标value
             ]
         )
 
-        # 创建对应的proofs
-        proofs = VPBTestDataGenerator.create_mock_proofs(5, target_value.begin_index)
+        # 创建对应的proofs - 需要9个proof units对应9个区块
+        proofs = VPBTestDataGenerator.create_mock_proofs(9, target_value.begin_index)
 
         # 配置每个proof unit的交易数据
         self._setup_proof_transactions(proofs, target_value)
 
         # 创建主链信息
-        owner_data = {
-            0: alice_addr, 8: alice_addr, 15: bob_addr, 16: bob_addr, 25: bob_addr,
-            27: charlie_addr, 55: charlie_addr, 56: dave_addr, 58: bob_addr
-        }
-
         additional_transactions = {
             8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
             27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr], 58: [dave_addr]
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 58], owner_data, additional_transactions
+            [0, 8, 15, 16, 25, 27, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
@@ -213,14 +337,18 @@ class TestCase1_SimpleNormalWithCheckpoint:
         charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
         dave_addr = VPBTestDataGenerator.create_eth_address("dave")
 
-        # 配置每个proof unit
-        block_heights = [0, 15, 27, 56, 58]
+        # 配置每个proof unit - 对应9个区块
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
             [],  # 创世块没有交易
-            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15
-            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27
-            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56
-            [create_test_transaction(dave_addr, bob_addr, target_value)]  # 区块58
+            [],  # 区块8：alice进行其他交易（非目标value）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value）
+            [],  # 区块25：bob进行其他交易（非目标value）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, bob_addr, target_value)]  # 区块58：dave->bob
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -232,12 +360,15 @@ class TestCase1_SimpleNormalWithCheckpoint:
 
     def test_case1_execution(self, test_data):
         """执行案例1测试"""
+        TestOutputManager.print_case_header("案例1：简单正常交易（有checkpoint）")
+
         # 创建带checkpoint的验证器
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
             checkpoint = CheckPoint(tmp.name)
             validator = VPBValidator(checkpoint)
 
             try:
+                TestOutputManager.print_info("创建checkpoint...")
                 # 创建checkpoint：bob在区块27将value转移给charlie前的状态
                 checkpoint.create_checkpoint(
                     test_data['target_value'],
@@ -245,6 +376,7 @@ class TestCase1_SimpleNormalWithCheckpoint:
                     test_data['expected_checkpoint_height']
                 )
 
+                TestOutputManager.print_info("执行VPB验证...")
                 # 执行验证
                 report = validator.verify_vpb_pair(
                     test_data['target_value'],
@@ -267,10 +399,8 @@ class TestCase1_SimpleNormalWithCheckpoint:
                 # 验证验证时间
                 assert report.verification_time_ms >= 0
 
-                print(f"案例1验证成功:")
-                print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-                print(f"  - 使用checkpoint: 区块{report.checkpoint_used.block_height}")
-                print(f"  - 验证epoch: {report.verified_epochs}")
+                TestOutputManager.print_verification_summary(report, "简单正常交易+检查点")
+                TestOutputManager.print_success("案例1验证通过")
 
             finally:
                 checkpoint = None
@@ -291,37 +421,44 @@ class TestCase2_SimpleNormalWithoutCheckpoint:
         # 目标value
         target_value = VPBTestDataGenerator.create_value("0x1000", 100)
 
-        # 区块索引列表
+        # 创建有效的以太坊地址
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        eve_addr = VPBTestDataGenerator.create_eth_address("eve")
+
+        # 区块索引列表 - 包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 根据VPB_test_demo.md，block_index_list.index_lst应该包含所有相关区块
         block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
-            [
-                (0, "0xalice"),    # 创世块：alice获得目标value
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value
-                (58, "0xeve")      # 区块58：eve从dave处接收目标value（eve没有checkpoint）
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
+            [ # owner list
+                (0, alice_addr),    # 创世块：alice获得目标value
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value）
+                (15, bob_addr),     # 区块15：bob从alice处接收目标value
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value）
+                (27, charlie_addr), # 区块27：charlie从bob处接收目标value
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value）
+                (56, dave_addr),    # 区块56：dave从charlie处接收目标value
+                (58, eve_addr)      # 区块58：eve从dave处接收目标value（eve没有checkpoint）
             ]
         )
 
-        # 创建对应的proofs
-        proofs = VPBTestDataGenerator.create_mock_proofs(5, target_value.begin_index)
+        # 创建对应的proofs - 需要9个proof units对应9个区块
+        proofs = VPBTestDataGenerator.create_mock_proofs(9, target_value.begin_index)
 
         # 配置交易数据（eve是新的验证者）
         self._setup_proof_transactions(proofs, target_value)
 
         # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 58: "0xeve"
-        }
-
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"], 58: ["0xdave"]
+            8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
+            27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr], 58: [dave_addr]
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 58], owner_data, additional_transactions
+            [0, 8, 15, 16, 25, 27, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
@@ -335,7 +472,7 @@ class TestCase2_SimpleNormalWithoutCheckpoint:
             'proofs': proofs,
             'block_index_list': block_index_list,
             'main_chain_info': main_chain_info,
-            'account_address': "0xeve",  # eve从dave处接收value，没有checkpoint
+            'account_address': eve_addr,  # eve从dave处接收value，没有checkpoint
             'expected_start_block': 0  # 验证应该从创世块开始
         }
 
@@ -349,13 +486,24 @@ class TestCase2_SimpleNormalWithoutCheckpoint:
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # 生成有效的以太坊地址（与test_data中的地址保持一致）
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        eve_addr = VPBTestDataGenerator.create_eth_address("eve")
+
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
-            [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xeve", target_value)]
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice value派发
+            [],  # 区块8：alice进行其他交易（非目标value）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value）
+            [],  # 区块25：bob进行其他交易（非目标value）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, eve_addr, target_value)]  # 区块58：dave->eve
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -403,37 +551,39 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
         """设置案例3的测试数据"""
         target_value = VPBTestDataGenerator.create_value("0x1000", 100)
 
-        # 正常的交易路径，但dave在区块57进行了双花
+        # 正常的交易路径，但dave在区块57进行了双花（恶意节点会隐藏区块57）
+        # 注意：block_index_list不包含区块57，因为dave恶意隐藏了双花区块
+        # 同时，proofs也不包含区块57对应的proof unit
         block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],  # 缺少区块57，只有8个区块
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value
-                (58, "0xbob")      # 区块58：bob从dave处接收目标value
+                (0, "0x1234567890abcdef1234567890abcdef12345678"),    # 创世块：alice获得目标value
+                (8, "0x1234567890abcdef1234567890abcdef12345678"),    # 区块8：alice进行其他交易（非目标value）
+                (15, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块15：bob从alice处接收目标value
+                (16, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块16：bob进行其他交易（非目标value）
+                (25, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块25：bob进行其他交易（非目标value）
+                (27, "0x567890abcdef1234567890abcdef1234567890ab"), # 区块27：charlie从bob处接收目标value
+                (55, "0x567890abcdef1234567890abcdef1234567890ab"), # 区块55：charlie进行其他交易（非目标value）
+                (56, "0x7890abcdef1234567890abcdef1234567890abcd"),    # 区块56：dave从charlie处接收目标value
+                # 这里故意跳过区块57，因为被恶意节点隐藏
+                (58, "0xabcdef1234567890abcdef1234567890abcdef12")      # 区块58：bob从dave处接收目标value（注意：这是非法的，因为dave在隐藏的区块57已经双花）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
+        proofs = VPBTestDataGenerator.create_mock_proofs(9)  # 9个proof units对应9个区块（区块57被隐藏）
 
-        # 设置交易数据，包括双花
-        self._setup_proof_transactions_with_double_spend(proofs, target_value)
+        # 设置交易数据，包括双花（恶意节点隐藏区块57）
+        self._setup_proof_transactions_with_double_spend_case3(proofs, target_value)
 
-        # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 57: "0xdave", 58: "0xbob"
-        }
-
+        # 创建主链信息 - 包含区块57（用于检测双花）
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"],
-            57: ["0xdave"], 58: ["0xdave"]  # dave在区块57和58都有交易
+            8: ["0x1234567890abcdef1234567890abcdef12345678"], 15: ["0x1234567890abcdef1234567890abcdef12345678"], 16: ["0xabcdef1234567890abcdef1234567890abcdef12"], 25: ["0xabcdef1234567890abcdef1234567890abcdef12"],
+            27: ["0xabcdef1234567890abcdef1234567890abcdef12"], 55: ["0x567890abcdef1234567890abcdef1234567890ab"], 56: ["0x567890abcdef1234567890abcdef1234567890ab"],
+            57: ["0x7890abcdef1234567890abcdef1234567890abcd"], 58: ["0x7890abcdef1234567890abcdef1234567890abcd"]  # dave在区块57和58都有交易
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], owner_data, additional_transactions
+            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
@@ -447,13 +597,13 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
             'proofs': proofs,
             'block_index_list': block_index_list,
             'main_chain_info': main_chain_info,
-            'account_address': "0xbob",
+            'account_address': "0xabcdef1234567890abcdef1234567890abcdef12",
             'expected_checkpoint_height': 26,
             'double_spend_block': 57  # dave在区块57进行双花
         }
 
-    def _setup_proof_transactions_with_double_spend(self, proofs: Mock, target_value: Value):
-        """设置包含双花的交易数据"""
+    def _setup_proof_transactions_with_double_spend_case3(self, proofs: Mock, target_value: Value):
+        """设置案例3包含双花的交易数据（恶意节点隐藏区块57）"""
         def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
@@ -462,43 +612,55 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # 案例3：恶意节点dave隐藏了区块57的双花交易，所以有9个proof units对应9个区块
+        # 完整路径应该是[0, 8, 15, 16, 25, 27, 55, 56, 57, 58]，但区块57被隐藏
+        actual_block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]  # 实际包含在VPB中的区块（跳过57）
         transactions = [
             [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xbob", target_value)]
+            [],  # 区块8：alice进行其他交易（非目标value）
+            [create_test_transaction("0x1234567890abcdef1234567890abcdef12345678", "0xabcdef1234567890abcdef1234567890abcdef12", target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value）
+            [],  # 区块25：bob进行其他交易（非目标value）
+            [create_test_transaction("0xabcdef1234567890abcdef1234567890abcdef12", "0x567890abcdef1234567890abcdef1234567890ab", target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value）
+            [create_test_transaction("0x567890abcdef1234567890abcdef1234567890ab", "0x7890abcdef1234567890abcdef1234567890abcd", target_value)],  # 区块56：charlie->dave
+            [create_test_transaction("0x7890abcdef1234567890abcdef1234567890abcd", "0xabcdef1234567890abcdef1234567890abcdef12", target_value)]  # 区块58：dave->bob（注意：这是非法的，因为dave在区块57已经双花）
         ]
 
-        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+        # 设置9个proof units对应9个区块
+        for i, (height, txs) in enumerate(zip(actual_block_heights, transactions)):
             proofs.proof_units[i].owner_multi_txns = Mock()
             proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
             proofs.proof_units[i].owner_multi_txns.multi_txns = txs
             proofs.proof_units[i].block_height = height
-            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
-        # 模拟双花检测：设置最后一个proof unit检测到双花
-        # 这通过修改验证逻辑来模拟检测到区块57的双花交易
-        proofs.proof_units[-1].verify_proof_unit = Mock(return_value=(
-            False,
-            "Double spend detected: value spent in block 57 to unknown party"
-        ))
+            # 设置验证结果：最后一个proof unit（区块58）应该验证失败，因为dave在区块57已经双花了
+            if height == 58:  # 区块58的交易是非法的，因为dave在区块57已经双花
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(
+                    False,
+                    "Double spend detected: value already spent in block 57 by dave"
+                ))
+            else:
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case3_execution(self, test_data):
         """执行案例3测试"""
+        TestOutputManager.print_case_header("案例3：简单双花交易（有checkpoint）")
+
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
             checkpoint = CheckPoint(tmp.name)
             validator = VPBValidator(checkpoint)
 
             try:
+                TestOutputManager.print_info("创建checkpoint...")
                 # 创建checkpoint
                 checkpoint.create_checkpoint(
                     test_data['target_value'],
-                    "0xbob",
+                    "0xabcdef1234567890abcdef1234567890abcdef12",
                     test_data['expected_checkpoint_height']
                 )
 
+                TestOutputManager.print_info("执行VPB验证（预期检测到双花）...")
                 # 执行验证
                 report = validator.verify_vpb_pair(
                     test_data['target_value'],
@@ -518,12 +680,24 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
                                      if "double spend" in err.error_message.lower()]
                 assert len(double_spend_errors) > 0
 
-                print(f"案例3验证成功（检测到双花）:")
-                print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-                print(f"  - 使用checkpoint: 区块{report.checkpoint_used.block_height if report.checkpoint_used else '无'}")
-                print(f"  - 错误数量: {len(report.errors)}")
-                for error in report.errors:
-                    print(f"    - {error.error_type}: {error.error_message}")
+                TestOutputManager.print_verification_summary(report, "双花攻击检测")
+
+                # 特殊显示双花检测结果
+                print(f"\n【安全检测结果】")
+                if double_spend_errors:
+                    TestOutputManager.print_success(f"检测到 {len(double_spend_errors)} 个双花攻击")
+                    TestOutputManager.print_info(f"攻击类型：恶意节点在隐藏区块57进行双花", indent=3)
+                else:
+                    TestOutputManager.print_failure("未能检测到双花攻击")
+
+                # 显示其他安全威胁
+                other_errors = [err for err in report.errors if "double spend" not in err.error_message.lower()]
+                if other_errors:
+                    TestOutputManager.print_info(f"同时检测到 {len(other_errors)} 个其他安全威胁:", indent=3)
+                    for i, error in enumerate(other_errors, 1):
+                        TestOutputManager.print_info(f"{i}. {error.error_type}", indent=4)
+
+                TestOutputManager.print_success("案例3验证通过 - 双花攻击检测成功")
 
             finally:
                 checkpoint = None
@@ -543,37 +717,40 @@ class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
         """设置案例4的测试数据"""
         target_value = VPBTestDataGenerator.create_value("0x1000", 100)
 
-        # 正常的交易路径，但dave在区块57进行了双花，验证者frank没有checkpoint
+        # 正常的交易路径，但dave在区块57进行了双花（恶意节点会隐藏区块57）
+        # 验证者frank没有checkpoint
+        # 注意：block_index_list不包含区块57，因为dave恶意隐藏了双花区块
+        # 同时，proofs也不包含区块57对应的proof unit
         block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],  # 缺少区块57，只有8个区块
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value
-                (58, "0xfrank")    # 区块58：frank从dave处接收目标value（frank没有checkpoint）
+                (0, "0x1234567890abcdef1234567890abcdef12345678"),    # 创世块：alice获得目标value
+                (8, "0x1234567890abcdef1234567890abcdef12345678"),    # 区块8：alice进行其他交易（非目标value）
+                (15, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块15：bob从alice处接收目标value
+                (16, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块16：bob进行其他交易（非目标value）
+                (25, "0xabcdef1234567890abcdef1234567890abcdef12"),     # 区块25：bob进行其他交易（非目标value）
+                (27, "0x567890abcdef1234567890abcdef1234567890ab"), # 区块27：charlie从bob处接收目标value
+                (55, "0x567890abcdef1234567890abcdef1234567890ab"), # 区块55：charlie进行其他交易（非目标value）
+                (56, "0x7890abcdef1234567890abcdef1234567890abcd"),    # 区块56：dave从charlie处接收目标value
+                # 区块57被恶意节点隐藏
+                (58, "0xdef0123456789abcdef1234567890abcdef12345")    # 区块58：frank从dave处接收目标value（frank没有checkpoint）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
+        proofs = VPBTestDataGenerator.create_mock_proofs(9)  # 9个proof units对应9个区块（区块57被隐藏）
 
-        # 设置交易数据，包括双花
+        # 设置交易数据，包括双花（验证者是frank）
         self._setup_proof_transactions_with_double_spend(proofs, target_value)
 
         # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 57: "0xdave", 58: "0xfrank"
-        }
-
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"],
-            57: ["0xdave"], 58: ["0xdave"]  # dave在区块57和58都有交易
+            8: ["0x1234567890abcdef1234567890abcdef12345678"], 15: ["0x1234567890abcdef1234567890abcdef12345678"], 16: ["0xabcdef1234567890abcdef1234567890abcdef12"], 25: ["0xabcdef1234567890abcdef1234567890abcdef12"],
+            27: ["0xabcdef1234567890abcdef1234567890abcdef12"], 55: ["0x567890abcdef1234567890abcdef1234567890ab"], 56: ["0x567890abcdef1234567890abcdef1234567890ab"],
+            57: ["0x7890abcdef1234567890abcdef1234567890abcd"], 58: ["0x7890abcdef1234567890abcdef1234567890abcd"]  # dave在区块57和58都有交易
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], owner_data, additional_transactions
+            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
@@ -587,13 +764,13 @@ class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
             'proofs': proofs,
             'block_index_list': block_index_list,
             'main_chain_info': main_chain_info,
-            'account_address': "0xfrank",  # frank从dave处接收value，没有checkpoint
+            'account_address': "0xdef0123456789abcdef1234567890abcdef12345",  # frank从dave处接收value，没有checkpoint
             'expected_start_block': 0,  # 验证应该从创世块开始
             'double_spend_block': 57  # dave在区块57进行双花
         }
 
     def _setup_proof_transactions_with_double_spend(self, proofs: Mock, target_value: Value):
-        """设置包含双花的交易数据"""
+        """设置案例4包含双花的交易数据（恶意节点隐藏区块57，验证者是frank）"""
         def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
@@ -602,28 +779,36 @@ class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # 案例4：恶意节点dave隐藏了区块57的双花交易，所以只有8个proof units对应8个区块
+        # 完整路径应该是[0, 8, 15, 16, 25, 27, 55, 56, 57, 58]，但区块57被隐藏
+        actual_block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]  # 实际包含在VPB中的区块
         transactions = [
             [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xfrank", target_value)]
+            [],  # 区块8：alice进行其他交易（非目标value）
+            [create_test_transaction("0x1234567890abcdef1234567890abcdef12345678", "0xabcdef1234567890abcdef1234567890abcdef12", target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value）
+            [],  # 区块25：bob进行其他交易（非目标value）
+            [create_test_transaction("0xabcdef1234567890abcdef1234567890abcdef12", "0x567890abcdef1234567890abcdef1234567890ab", target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value）
+            [create_test_transaction("0x567890abcdef1234567890abcdef1234567890ab", "0x7890abcdef1234567890abcdef1234567890abcd", target_value)],  # 区块56：charlie->dave
+            [create_test_transaction("0x7890abcdef1234567890abcdef1234567890abcd", "0xdef0123456789abcdef1234567890abcdef12345", target_value)]  # 区块58：dave->frank（注意：这是非法的，因为dave在区块57已经双花）
         ]
 
-        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+        # 设置9个proof units对应9个区块
+        for i, (height, txs) in enumerate(zip(actual_block_heights, transactions)):
             proofs.proof_units[i].owner_multi_txns = Mock()
             proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
             proofs.proof_units[i].owner_multi_txns.multi_txns = txs
             proofs.proof_units[i].block_height = height
-            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
-        # 模拟双花检测：设置最后一个proof unit检测到双花
-        # 这通过修改验证逻辑来模拟检测到区块57的双花交易
-        proofs.proof_units[-1].verify_proof_unit = Mock(return_value=(
-            False,
-            "Double spend detected: value spent in block 57 to unknown party"
-        ))
+            # 设置验证结果：最后一个proof unit（区块58）应该验证失败，因为dave在区块57已经双花了
+            if height == 58:  # 区块58的交易是非法的，因为dave在区块57已经双花
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(
+                    False,
+                    "Double spend detected: value already spent in block 57 by dave"
+                ))
+            else:
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case4_execution(self, test_data):
         """执行案例4测试"""
@@ -664,62 +849,100 @@ class TestCase5_CombinedNormalWithCheckpoint:
     """案例5：组合正常交易，有checkpoint"""
 
     def test_data(self):
-        """设置案例5的测试数据（组合交易）"""
+        """设置案例5的测试数据（真正的组合交易）"""
+        # 根据VPB_test_demo.md案例5，这是dave->qian的组合交易，包含两个value
+
         # 创建两个目标value
-        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)
-        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)
+        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)  # value_1: alice->bob->charlie->dave->qian
+        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)  # value_2: zhao->qian->sun->dave->qian
 
-        # 这是一个简化的组合交易案例，主要测试单个value的组合逻辑
-        # 实际的组合交易需要更复杂的VPB结构
-        target_value = target_value_1  # 主要测试目标value_1
+        # 创建有效的以太坊地址
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        zhao_addr = VPBTestDataGenerator.create_eth_address("zhao")
+        qian_addr = VPBTestDataGenerator.create_eth_address("qian")
+        sun_addr = VPBTestDataGenerator.create_eth_address("sun")
 
-        block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+        # 根据VPB_test_demo.md，value_1的完整路径包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 这是目标value_1的block_index_list
+        block_index_list_1 = VPBTestDataGenerator.create_block_index_list(
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value_1
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value_1
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value_1
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value_1
-                (58, "0xqian")     # 区块58：qian从dave处接收目标value_1+目标value_2（组合支付）
+                (0, alice_addr),    # 创世块：alice获得目标value_1
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value_1）
+                (15, bob_addr),     # 区块15：bob从alice处接收目标value_1
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value_1）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value_1）
+                (27, charlie_addr), # 区块27：charlie从bob处接收目标value_1
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value_1）
+                (56, dave_addr),    # 区块56：dave从charlie处接收目标value_1
+                (58, qian_addr)     # 区块58：qian从dave处接收目标value_1+目标value_2（组合支付）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
-        self._setup_combined_transactions(proofs, target_value)
+        # 根据VPB_test_demo.md，value_2的完整路径包含全量编号[0,3,5,17,38,39,58]
+        # 这是目标value_2的block_index_list
+        block_index_list_2 = VPBTestDataGenerator.create_block_index_list(
+            [0, 3, 5, 17, 38, 39, 58],
+            [
+                (0, zhao_addr),     # 创世块：zhao获得目标value_2
+                (3, zhao_addr),     # 区块3：zhao进行其他交易（非目标value_2）
+                (5, qian_addr),     # 区块5：qian从zhao处接收目标value_2
+                (17, qian_addr),    # 区块17：qian进行其他交易（非目标value_2）
+                (38, sun_addr),     # 区块38：sun从qian处接收目标value_2
+                (39, dave_addr),    # 区块39：dave从sun处接收目标value_2
+                (58, qian_addr)     # 区块58：qian从dave处接收目标value_1+目标value_2（组合支付）
+            ]
+        )
 
-        # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 58: "0xqian"
-        }
+        # 创建对应的proofs
+        proofs_1 = VPBTestDataGenerator.create_mock_proofs(9, target_value_1.begin_index)  # value_1需要9个proof units
+        proofs_2 = VPBTestDataGenerator.create_mock_proofs(7, target_value_2.begin_index)  # value_2需要7个proof units
 
-        # qian在区块38从sun处接收value_2，所以有checkpoint
+        # 配置每个proof unit的交易数据
+        self._setup_value1_transactions(proofs_1, target_value_1, alice_addr, bob_addr, charlie_addr, dave_addr, qian_addr)
+        self._setup_value2_transactions(proofs_2, target_value_2, zhao_addr, qian_addr, sun_addr, dave_addr, qian_addr)
+
+        # 创建主链信息 - 包含所有区块
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"], 58: ["0xdave"]
+            # value_1相关的交易
+            8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
+            27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr],
+            # value_2相关的交易
+            3: [zhao_addr], 5: [zhao_addr], 17: [qian_addr], 38: [qian_addr], 39: [sun_addr],
+            # 组合交易
+            58: [dave_addr]  # dave向qian进行组合支付
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 58], owner_data, additional_transactions
+            [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
-            {i: f"root{i}" for i in [0, 8, 15, 16, 25, 27, 55, 56, 58]},
+            {i: f"root{i}" for i in [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 55, 56, 58]},
             bloom_filters,
             58
         )
 
         return {
-            'target_value': target_value,
-            'proofs': proofs,
-            'block_index_list': block_index_list,
+            'target_value_1': target_value_1,
+            'target_value_2': target_value_2,
+            'proofs_1': proofs_1,
+            'proofs_2': proofs_2,
+            'block_index_list_1': block_index_list_1,
+            'block_index_list_2': block_index_list_2,
             'main_chain_info': main_chain_info,
-            'account_address': "0xqian",  # qian有checkpoint（从value_2的历史）
-            'expected_checkpoint_height': 37,  # qian在区块38获得value_2前的checkpoint
+            'account_address': qian_addr,  # qian在区块58从dave处接收组合支付
+            'expected_checkpoint_height': 37,  # qian的checkpoint：区块38前（qian曾拥有过value_2）
+            'expected_start_block_value1': 0,  # value_1从头开始验证
+            'expected_start_block_value2': 38  # value_2从区块38开始验证（使用checkpoint）
         }
 
-    def _setup_combined_transactions(self, proofs: Mock, target_value: Value):
-        """设置组合交易数据"""
+    def _setup_value1_transactions(self, proofs: Mock, target_value: Value, alice_addr: str,
+                                  bob_addr: str, charlie_addr: str, dave_addr: str, qian_addr: str):
+        """设置value_1的交易数据"""
         def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
@@ -728,13 +951,48 @@ class TestCase5_CombinedNormalWithCheckpoint:
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # value_1的完整路径：[0,8,15,16,25,27,55,56,58]
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
-            [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xqian", target_value)]  # 组合支付
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice value_1分配
+            [],  # 区块8：alice进行其他交易（非目标value_1）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value_1）
+            [],  # 区块25：bob进行其他交易（非目标value_1）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value_1）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, qian_addr, target_value)]  # 区块58：dave->qian（组合支付的一部分）
+        ]
+
+        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+            proofs.proof_units[i].owner_multi_txns = Mock()
+            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
+            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
+            proofs.proof_units[i].block_height = height
+            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
+
+    def _setup_value2_transactions(self, proofs: Mock, target_value: Value, zhao_addr: str,
+                                  qian_addr: str, sun_addr: str, dave_addr: str, qian_addr_final: str):
+        """设置value_2的交易数据"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
+            mock_tx = Mock()
+            mock_tx.sender = sender
+            mock_tx.receiver = receiver
+            mock_tx.input_values = [value]
+            mock_tx.output_values = [value]
+            return mock_tx
+
+        # value_2的完整路径：[0,3,5,17,38,39,58]
+        block_heights = [0, 3, 5, 17, 38, 39, 58]
+        transactions = [
+            [create_test_transaction("GOD", zhao_addr, target_value)],  # 创世块：GOD->zhao value_2分配
+            [],  # 区块3：zhao进行其他交易（非目标value_2）
+            [create_test_transaction(zhao_addr, qian_addr, target_value)],  # 区块5：zhao->qian
+            [],  # 区块17：qian进行其他交易（非目标value_2）
+            [create_test_transaction(qian_addr, sun_addr, target_value)],  # 区块38：qian->sun
+            [create_test_transaction(sun_addr, dave_addr, target_value)],  # 区块39：sun->dave
+            [create_test_transaction(dave_addr, qian_addr_final, target_value)]  # 区块58：dave->qian（组合支付的一部分）
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -745,41 +1003,70 @@ class TestCase5_CombinedNormalWithCheckpoint:
             proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case5_execution(self, test_data):
-        """执行案例5测试"""
+        """执行案例5测试（真正的组合交易验证）"""
+        TestOutputManager.print_case_header("案例5：组合正常交易（有checkpoint）")
+
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
             checkpoint = CheckPoint(tmp.name)
             validator = VPBValidator(checkpoint)
 
             try:
-                # 创建checkpoint：qian在区块38前的状态
+                TestOutputManager.print_info("创建qian的checkpoint...")
+                # 创建checkpoint：qian在区块38前的状态（针对value_2）
+                # qian在区块38将value_2转移给sun，所以在区块37有checkpoint
                 checkpoint.create_checkpoint(
-                    test_data['target_value'],
-                    "0xqian",
-                    test_data['expected_checkpoint_height']
+                    test_data['target_value_2'],  # 为value_2创建checkpoint
+                    test_data['account_address'],  # qian的地址
+                    test_data['expected_checkpoint_height']  # 区块37
                 )
 
-                # 执行验证
-                report = validator.verify_vpb_pair(
-                    test_data['target_value'],
-                    test_data['proofs'],
-                    test_data['block_index_list'],
+                TestOutputManager.print_info("验证组合交易中的value_1（从头开始验证）...")
+                # 验证value_1：qian没有value_1的历史，所以从头开始验证
+                report_1 = validator.verify_vpb_pair(
+                    test_data['target_value_1'],
+                    test_data['proofs_1'],
+                    test_data['block_index_list_1'],
                     test_data['main_chain_info'],
-                    test_data['account_address']
+                    test_data['account_address']  # qian验证value_1
                 )
 
-                # 验证结果
-                assert report.result == VerificationResult.SUCCESS
-                assert report.is_valid == True
-                assert len(report.errors) == 0
+                TestOutputManager.print_info("验证组合交易中的value_2（使用checkpoint）...")
+                # 验证value_2：qian有checkpoint，所以从区块38开始验证
+                report_2 = validator.verify_vpb_pair(
+                    test_data['target_value_2'],
+                    test_data['proofs_2'],
+                    test_data['block_index_list_2'],
+                    test_data['main_chain_info'],
+                    test_data['account_address']  # qian验证value_2
+                )
 
-                # 验证checkpoint被使用
-                assert report.checkpoint_used is not None
-                assert report.checkpoint_used.owner_address == "0xqian"
+                # 验证结果：两个value都应该验证成功
+                assert report_1.result == VerificationResult.SUCCESS
+                assert report_1.is_valid == True
+                assert len(report_1.errors) == 0
+                # value_1不应该使用checkpoint（qian没有value_1的历史）
+                assert report_1.checkpoint_used is None
 
-                print(f"案例5验证成功（组合交易）:")
-                print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-                print(f"  - 使用checkpoint: 区块{report.checkpoint_used.block_height}")
-                print(f"  - 验证epoch: {report.verified_epochs}")
+                assert report_2.result == VerificationResult.SUCCESS
+                assert report_2.is_valid == True
+                assert len(report_2.errors) == 0
+                # value_2应该使用checkpoint（qian有value_2的历史）
+                assert report_2.checkpoint_used is not None
+                assert report_2.checkpoint_used.block_height == test_data['expected_checkpoint_height']
+                assert report_2.checkpoint_used.owner_address == test_data['account_address']
+
+                # 验证验证时间
+                assert report_1.verification_time_ms >= 0
+                assert report_2.verification_time_ms >= 0
+
+                # 打印详细的验证结果
+                TestOutputManager.print_verification_summary(report_1, "value_1验证")
+                TestOutputManager.print_verification_summary(report_2, "value_2验证")
+
+                TestOutputManager.print_success("案例5验证通过 - 组合交易验证成功")
+                TestOutputManager.print_info(f"dave->qian组合交易验证完成", indent=2)
+                TestOutputManager.print_info(f"value_1 (alice->bob->charlie->dave->qian): 从头验证", indent=3)
+                TestOutputManager.print_info(f"value_2 (zhao->qian->sun->dave->qian): 从区块38开始验证", indent=3)
 
             finally:
                 checkpoint = None
@@ -797,61 +1084,101 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
 
     def test_data(self):
         """设置案例6的测试数据（组合交易，无checkpoint）"""
+        # 根据VPB_test_demo.md案例6，这是dave->eve的组合交易，包含两个value
+        # 目标value_1：alice->bob->charlie->dave->eve
+        # 目标value_2：zhao->qian->sun->dave->eve
+
         # 创建两个目标value
-        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)
-        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)
+        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)  # value_1: alice->bob->charlie->dave->eve
+        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)  # value_2: zhao->qian->sun->dave->eve
 
-        # 这是一个简化的组合交易案例，主要测试单个value的组合逻辑
-        # 实际的组合交易需要更复杂的VPB结构
-        target_value = target_value_1  # 主要测试目标value_1
+        # 创建有效的以太坊地址
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        zhao_addr = VPBTestDataGenerator.create_eth_address("zhao")
+        qian_addr = VPBTestDataGenerator.create_eth_address("qian")
+        sun_addr = VPBTestDataGenerator.create_eth_address("sun")
+        eve_addr = VPBTestDataGenerator.create_eth_address("eve")
 
-        block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+        # 根据VPB_test_demo.md，value_1的完整路径包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 这是目标value_1的block_index_list
+        block_index_list_1 = VPBTestDataGenerator.create_block_index_list(
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value_1
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value_1
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value_1
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value_1
-                (58, "0xzero")     # 区块58：zero从dave处接收目标value_1+目标value_2（组合支付，zero没有checkpoint）
+                (0, alice_addr),    # 创世块：alice获得目标value_1
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value_1）
+                (15, bob_addr),     # 区块15：bob从alice处接收目标value_1
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value_1）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value_1）
+                (27, charlie_addr), # 区块27：charlie从bob处接收目标value_1
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value_1）
+                (56, dave_addr),    # 区块56：dave从charlie处接收目标value_1
+                (58, eve_addr)      # 区块58：eve从dave处接收目标value_1+目标value_2（组合支付）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
-        self._setup_combined_transactions(proofs, target_value)
+        # 根据VPB_test_demo.md，value_2的完整路径包含全量编号[0,3,5,17,38,39,58]
+        # 这是目标value_2的block_index_list
+        block_index_list_2 = VPBTestDataGenerator.create_block_index_list(
+            [0, 3, 5, 17, 38, 39, 58],
+            [
+                (0, zhao_addr),     # 创世块：zhao获得目标value_2
+                (3, zhao_addr),     # 区块3：zhao进行其他交易（非目标value_2）
+                (5, qian_addr),     # 区块5：qian从zhao处接收目标value_2
+                (17, qian_addr),    # 区块17：qian进行其他交易（非目标value_2）
+                (38, sun_addr),     # 区块38：sun从qian处接收目标value_2
+                (39, dave_addr),    # 区块39：dave从sun处接收目标value_2
+                (58, eve_addr)      # 区块58：eve从dave处接收目标value_1+目标value_2（组合支付）
+            ]
+        )
 
-        # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 58: "0xzero"
-        }
+        # 创建对应的proofs
+        proofs_1 = VPBTestDataGenerator.create_mock_proofs(9, target_value_1.begin_index)  # value_1需要9个proof units
+        proofs_2 = VPBTestDataGenerator.create_mock_proofs(7, target_value_2.begin_index)  # value_2需要7个proof units
 
-        # zero是新的验证者，没有checkpoint
+        # 配置每个proof unit的交易数据
+        self._setup_value1_transactions_case6(proofs_1, target_value_1, alice_addr, bob_addr, charlie_addr, dave_addr, eve_addr)
+        self._setup_value2_transactions_case6(proofs_2, target_value_2, zhao_addr, qian_addr, sun_addr, dave_addr, eve_addr)
+
+        # 创建主链信息 - 包含所有区块
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"], 58: ["0xdave"]
+            # value_1相关的交易
+            8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
+            27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr],
+            # value_2相关的交易
+            3: [zhao_addr], 5: [zhao_addr], 17: [qian_addr], 38: [qian_addr], 39: [sun_addr],
+            # 组合交易
+            58: [dave_addr]  # dave向eve进行组合支付
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 58], owner_data, additional_transactions
+            [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
-            {i: f"root{i}" for i in [0, 8, 15, 16, 25, 27, 55, 56, 58]},
+            {i: f"root{i}" for i in [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 55, 56, 58]},
             bloom_filters,
             58
         )
 
         return {
-            'target_value': target_value,
-            'proofs': proofs,
-            'block_index_list': block_index_list,
+            'target_value_1': target_value_1,
+            'target_value_2': target_value_2,
+            'proofs_1': proofs_1,
+            'proofs_2': proofs_2,
+            'block_index_list_1': block_index_list_1,
+            'block_index_list_2': block_index_list_2,
             'main_chain_info': main_chain_info,
-            'account_address': "0xzero",  # zero从dave处接收value，没有checkpoint
-            'expected_start_block': 0  # 验证应该从创世块开始
+            'account_address': eve_addr,  # eve在区块58从dave处接收组合支付，没有checkpoint
+            'expected_start_block_value1': 0,  # value_1从头开始验证
+            'expected_start_block_value2': 0   # value_2从头开始验证（eve没有checkpoint）
         }
 
-    def _setup_combined_transactions(self, proofs: Mock, target_value: Value):
-        """设置组合交易数据"""
+    def _setup_value1_transactions_case6(self, proofs: Mock, target_value: Value, alice_addr: str,
+                                         bob_addr: str, charlie_addr: str, dave_addr: str, eve_addr: str):
+        """设置案例6中value_1的交易数据"""
         def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
@@ -860,13 +1187,48 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # value_1的完整路径：[0,8,15,16,25,27,55,56,58]
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
-            [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xzero", target_value)]  # 组合支付
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice value_1分配
+            [],  # 区块8：alice进行其他交易（非目标value_1）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value_1）
+            [],  # 区块25：bob进行其他交易（非目标value_1）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value_1）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, eve_addr, target_value)]  # 区块58：dave->eve（组合支付的一部分）
+        ]
+
+        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+            proofs.proof_units[i].owner_multi_txns = Mock()
+            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
+            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
+            proofs.proof_units[i].block_height = height
+            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
+
+    def _setup_value2_transactions_case6(self, proofs: Mock, target_value: Value, zhao_addr: str,
+                                         qian_addr: str, sun_addr: str, dave_addr: str, eve_addr: str):
+        """设置案例6中value_2的交易数据"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
+            mock_tx = Mock()
+            mock_tx.sender = sender
+            mock_tx.receiver = receiver
+            mock_tx.input_values = [value]
+            mock_tx.output_values = [value]
+            return mock_tx
+
+        # value_2的完整路径：[0,3,5,17,38,39,58]
+        block_heights = [0, 3, 5, 17, 38, 39, 58]
+        transactions = [
+            [create_test_transaction("GOD", zhao_addr, target_value)],  # 创世块：GOD->zhao value_2分配
+            [],  # 区块3：zhao进行其他交易（非目标value_2）
+            [create_test_transaction(zhao_addr, qian_addr, target_value)],  # 区块5：zhao->qian
+            [],  # 区块17：qian进行其他交易（非目标value_2）
+            [create_test_transaction(qian_addr, sun_addr, target_value)],  # 区块38：qian->sun
+            [create_test_transaction(sun_addr, dave_addr, target_value)],  # 区块39：sun->dave
+            [create_test_transaction(dave_addr, eve_addr, target_value)]  # 区块58：dave->eve（组合支付的一部分）
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -877,34 +1239,57 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
             proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case6_execution(self, test_data):
-        """执行案例6测试"""
+        """执行案例6测试（组合交易，无checkpoint）"""
+        TestOutputManager.print_case_header("案例6：组合正常交易（无checkpoint）")
+
         # 创建不带checkpoint的验证器
         validator = VPBValidator()
 
-        # 执行验证
-        report = validator.verify_vpb_pair(
-            test_data['target_value'],
-            test_data['proofs'],
-            test_data['block_index_list'],
+        TestOutputManager.print_info("验证组合交易中的value_1（从头开始验证）...")
+        # 验证value_1：eve没有value_1的历史，所以从头开始验证
+        report_1 = validator.verify_vpb_pair(
+            test_data['target_value_1'],
+            test_data['proofs_1'],
+            test_data['block_index_list_1'],
             test_data['main_chain_info'],
-            test_data['account_address']
+            test_data['account_address']  # eve验证value_1
         )
 
-        # 验证结果
-        assert report.result == VerificationResult.SUCCESS
-        assert report.is_valid == True
-        assert len(report.errors) == 0
+        TestOutputManager.print_info("验证组合交易中的value_2（从头开始验证）...")
+        # 验证value_2：eve没有value_2的历史，所以从头开始验证
+        report_2 = validator.verify_vpb_pair(
+            test_data['target_value_2'],
+            test_data['proofs_2'],
+            test_data['block_index_list_2'],
+            test_data['main_chain_info'],
+            test_data['account_address']  # eve验证value_2
+        )
 
-        # 验证没有使用checkpoint
-        assert report.checkpoint_used is None
+        # 验证结果：两个value都应该验证成功
+        assert report_1.result == VerificationResult.SUCCESS
+        assert report_1.is_valid == True
+        assert len(report_1.errors) == 0
+        # value_1不应该使用checkpoint（eve没有value_1的历史）
+        assert report_1.checkpoint_used is None
+
+        assert report_2.result == VerificationResult.SUCCESS
+        assert report_2.is_valid == True
+        assert len(report_2.errors) == 0
+        # value_2不应该使用checkpoint（eve没有value_2的历史）
+        assert report_2.checkpoint_used is None
 
         # 验证验证时间
-        assert report.verification_time_ms >= 0
+        assert report_1.verification_time_ms >= 0
+        assert report_2.verification_time_ms >= 0
 
-        print(f"案例6验证成功（组合交易，无checkpoint）:")
-        print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-        print(f"  - 使用checkpoint: 无")
-        print(f"  - 验证epoch: {report.verified_epochs}")
+        # 打印详细的验证结果
+        TestOutputManager.print_verification_summary(report_1, "value_1验证")
+        TestOutputManager.print_verification_summary(report_2, "value_2验证")
+
+        TestOutputManager.print_success("案例6验证通过 - 组合交易验证成功")
+        TestOutputManager.print_info(f"dave->eve组合交易验证完成", indent=2)
+        TestOutputManager.print_info(f"value_1 (alice->bob->charlie->dave->eve): 从头验证", indent=3)
+        TestOutputManager.print_info(f"value_2 (zhao->qian->sun->dave->eve): 从头验证", indent=3)
 
 
 class TestCase7_CombinedDoubleSpendWithCheckpoint:
@@ -912,78 +1297,125 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
 
     def test_data(self):
         """设置案例7的测试数据（组合双花交易，有checkpoint）"""
-        target_value = VPBTestDataGenerator.create_value("0x1000", 100)
+        # 根据VPB_test_demo.md案例7，这是dave->sun的组合交易，dave在区块46对value_2进行了双花
+        # 目标value_1：alice->bob->charlie->dave->sun（正常路径）
+        # 目标value_2：zhao->qian->sun->dave->(双花给x)->dave->sun（双花路径）
 
-        # 组合交易场景，包含双花行为，验证者有checkpoint
-        block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+        # 创建两个目标value
+        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)  # value_1: alice->bob->charlie->dave->sun
+        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)  # value_2: zhao->qian->sun->dave->x（双花）->sun
+
+        # 创建有效的以太坊地址
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        zhao_addr = VPBTestDataGenerator.create_eth_address("zhao")
+        qian_addr = VPBTestDataGenerator.create_eth_address("qian")
+        sun_addr = VPBTestDataGenerator.create_eth_address("sun")
+        x_addr = VPBTestDataGenerator.create_eth_address("x")  # dave的同伙
+
+        # 根据VPB_test_demo.md，value_1的完整路径包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 这是目标value_1的block_index_list（正常路径，无双花）
+        block_index_list_1 = VPBTestDataGenerator.create_block_index_list(
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value
-                (58, "0xmallory")  # 区块58：mallory从dave处接收目标value（组合支付，但包含双花）
+                (0, alice_addr),    # 创世块：alice获得目标value_1
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value_1）
+                (15, bob_addr),     # 区块15：bob从alice处接收目标value_1
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value_1）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value_1）
+                (27, charlie_addr), # 区块27：charlie从bob处接收目标value_1
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value_1）
+                (56, dave_addr),    # 区块56：dave从charlie处接收目标value_1
+                (58, sun_addr)      # 区块58：sun从dave处接收目标value_1+目标value_2（组合支付）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
+        # 根据VPB_test_demo.md，value_2的完整路径包含全量编号[0,3,5,17,38,39,58]
+        # 注意：区块46被恶意节点隐藏，因为dave在那里进行了双花
+        block_index_list_2 = VPBTestDataGenerator.create_block_index_list(
+            [0, 3, 5, 17, 38, 39, 58],  # 故意跳过区块46（双花被隐藏）
+            [
+                (0, zhao_addr),     # 创世块：zhao获得目标value_2
+                (3, zhao_addr),     # 区块3：zhao进行其他交易（非目标value_2）
+                (5, qian_addr),     # 区块5：qian从zhao处接收目标value_2
+                (17, qian_addr),    # 区块17：qian进行其他交易（非目标value_2）
+                (38, sun_addr),     # 区块38：sun从qian处接收目标value_2
+                (39, dave_addr),    # 区块39：dave从sun处接收目标value_2
+                (58, sun_addr)      # 区块58：sun从dave处接收目标value_1+目标value_2（组合支付）
+            ]
+        )
 
-        # 设置交易数据，包括组合支付和双花
-        self._setup_combined_double_spend_transactions(proofs, target_value)
+        # 创建对应的proofs
+        proofs_1 = VPBTestDataGenerator.create_mock_proofs(9, target_value_1.begin_index)  # value_1需要9个proof units
+        proofs_2 = VPBTestDataGenerator.create_mock_proofs(7, target_value_2.begin_index)  # value_2需要7个proof units（跳过区块46）
 
-        # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 57: "0xdave", 58: "0xmallory"
-        }
+        # 配置每个proof unit的交易数据
+        self._setup_value1_transactions_case7(proofs_1, target_value_1, alice_addr, bob_addr, charlie_addr, dave_addr, sun_addr)
+        self._setup_value2_transactions_case7(proofs_2, target_value_2, zhao_addr, qian_addr, sun_addr, dave_addr, sun_addr, x_addr)
 
-        # mallory有checkpoint（从其他交易历史获得）
+        # 创建主链信息 - 包含所有区块，包括隐藏的双花区块46
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"],
-            57: ["0xdave"], 58: ["0xdave"]  # dave在区块57和58都有交易，形成双花
+            # value_1相关的交易
+            8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
+            27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr],
+            # value_2相关的交易
+            3: [zhao_addr], 5: [zhao_addr], 17: [qian_addr], 38: [qian_addr], 39: [sun_addr],
+            # 双花交易（被恶意节点隐藏，但在主链信息中存在）
+            46: [dave_addr],  # dave在区块46向同伙x进行双花交易
+            # 组合交易
+            58: [dave_addr]  # dave向sun进行组合支付
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], owner_data, additional_transactions
+            [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 46, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
-            {i: f"root{i}" for i in [0, 8, 15, 16, 25, 27, 55, 56, 57, 58]},
+            {i: f"root{i}" for i in [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 46, 55, 56, 58]},
             bloom_filters,
             58
         )
 
         return {
-            'target_value': target_value,
-            'proofs': proofs,
-            'block_index_list': block_index_list,
+            'target_value_1': target_value_1,
+            'target_value_2': target_value_2,
+            'proofs_1': proofs_1,
+            'proofs_2': proofs_2,
+            'block_index_list_1': block_index_list_1,
+            'block_index_list_2': block_index_list_2,
             'main_chain_info': main_chain_info,
-            'account_address': "0xmallory",  # mallory有checkpoint
-            'expected_checkpoint_height': 37,  # mallory在区块38前的checkpoint
-            'double_spend_block': 57  # dave在区块57进行双花
+            'account_address': sun_addr,  # sun在区块58从dave处接收组合支付，有checkpoint
+            'expected_checkpoint_height': 37,  # sun的checkpoint：区块38前（sun曾拥有过value_2）
+            'expected_start_block_value1': 0,  # value_1从头开始验证
+            'expected_start_block_value2': 38, # value_2从区块38开始验证（使用checkpoint）
+            'double_spend_block': 46  # dave在区块46进行双花
         }
 
-    def _setup_combined_double_spend_transactions(self, proofs: Mock, target_value: Value):
-        """设置包含组合支付和双花的交易数据"""
-        def create_test_transaction(sender: str, receiver: str, value: Value, is_combined: bool = False):
+    def _setup_value1_transactions_case7(self, proofs: Mock, target_value: Value, alice_addr: str,
+                                         bob_addr: str, charlie_addr: str, dave_addr: str, sun_addr: str):
+        """设置案例7中value_1的交易数据（正常路径，无双花）"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
             mock_tx.receiver = receiver
             mock_tx.input_values = [value]
-            if is_combined:
-                # 组合交易，有多个输入
-                mock_tx.input_values = [value, Mock(spec=Value)]  # 添加第二个value
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # value_1的完整路径：[0,8,15,16,25,27,55,56,58]
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
-            [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xmallory", target_value, is_combined=True)]  # 组合支付但包含双花
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice value_1分配
+            [],  # 区块8：alice进行其他交易（非目标value_1）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value_1）
+            [],  # 区块25：bob进行其他交易（非目标value_1）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value_1）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, sun_addr, target_value)]  # 区块58：dave->sun（组合支付的一部分）
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -993,56 +1425,122 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
             proofs.proof_units[i].block_height = height
             proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
-        # 模拟双花检测：设置最后一个proof unit检测到双花
-        # 在组合交易中检测到dave在区块57的双重支付
-        proofs.proof_units[-1].verify_proof_unit = Mock(return_value=(
-            False,
-            "Double spend detected in combined transaction: input value spent in block 57 to unknown party"
-        ))
+    def _setup_value2_transactions_case7(self, proofs: Mock, target_value: Value, zhao_addr: str,
+                                         qian_addr: str, sun_addr: str, dave_addr: str, sun_addr_final: str, x_addr: str):
+        """设置案例7中value_2的交易数据（包含双花攻击）"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
+            mock_tx = Mock()
+            mock_tx.sender = sender
+            mock_tx.receiver = receiver
+            mock_tx.input_values = [value]
+            mock_tx.output_values = [value]
+            return mock_tx
+
+        # value_2的路径：[0,3,5,17,38,39,58]，但dave在区块46进行了双花（被隐藏）
+        block_heights = [0, 3, 5, 17, 38, 39, 58]  # 跳过双花区块46
+        transactions = [
+            [create_test_transaction("GOD", zhao_addr, target_value)],  # 创世块：GOD->zhao value_2分配
+            [],  # 区块3：zhao进行其他交易（非目标value_2）
+            [create_test_transaction(zhao_addr, qian_addr, target_value)],  # 区块5：zhao->qian
+            [],  # 区块17：qian进行其他交易（非目标value_2）
+            [create_test_transaction(qian_addr, sun_addr, target_value)],  # 区块38：qian->sun
+            [create_test_transaction(sun_addr, dave_addr, target_value)],  # 区块39：sun->dave
+            [create_test_transaction(dave_addr, sun_addr_final, target_value)]  # 区块58：dave->sun（组合支付的一部分，但这是非法的，因为dave在区块46已经双花了）
+        ]
+
+        # 双花区块信息（dave在区块46将value转移给同伙x）
+        double_spend_block = 46
+
+        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+            proofs.proof_units[i].owner_multi_txns = Mock()
+            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
+            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
+            proofs.proof_units[i].block_height = height
+
+            # 设置验证结果：最后一个proof unit（区块58）应该验证失败，因为dave在区块46已经双花了
+            if height == 58:  # 区块58的交易是非法的，因为dave在区块46已经双花
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(
+                    False,
+                    f"Double spend detected: value already spent in block {double_spend_block} by dave to {x_addr}"
+                ))
+            else:
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case7_execution(self, test_data):
-        """执行案例7测试"""
+        """执行案例7测试（组合双花交易，有checkpoint）"""
+        TestOutputManager.print_case_header("案例7：组合双花交易（有checkpoint）")
+
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
             checkpoint = CheckPoint(tmp.name)
             validator = VPBValidator(checkpoint)
 
             try:
-                # 创建checkpoint：mallory在区块38前的状态
+                TestOutputManager.print_info("创建sun的checkpoint...")
+                # 创建checkpoint：sun在区块38前的状态（针对value_2）
+                # sun在区块38将value_2转移给dave，所以在区块37有checkpoint
                 checkpoint.create_checkpoint(
-                    test_data['target_value'],
-                    "0xmallory",
-                    test_data['expected_checkpoint_height']
+                    test_data['target_value_2'],  # 为value_2创建checkpoint
+                    test_data['account_address'],  # sun的地址
+                    test_data['expected_checkpoint_height']  # 区块37
                 )
 
-                # 执行验证
-                report = validator.verify_vpb_pair(
-                    test_data['target_value'],
-                    test_data['proofs'],
-                    test_data['block_index_list'],
+                TestOutputManager.print_info("验证组合交易中的value_1（从头开始验证）...")
+                # 验证value_1：sun没有value_1的历史，所以从头开始验证
+                report_1 = validator.verify_vpb_pair(
+                    test_data['target_value_1'],
+                    test_data['proofs_1'],
+                    test_data['block_index_list_1'],
                     test_data['main_chain_info'],
-                    test_data['account_address']
+                    test_data['account_address']  # sun验证value_1
                 )
 
-                # 验证结果：应该检测到双花
-                assert report.result == VerificationResult.FAILURE
-                assert report.is_valid == False
-                assert len(report.errors) > 0
+                TestOutputManager.print_info("验证组合交易中的value_2（使用checkpoint）...")
+                # 验证value_2：sun有checkpoint，所以从区块38开始验证，应该检测到双花
+                report_2 = validator.verify_vpb_pair(
+                    test_data['target_value_2'],
+                    test_data['proofs_2'],
+                    test_data['block_index_list_2'],
+                    test_data['main_chain_info'],
+                    test_data['account_address']  # sun验证value_2
+                )
+
+                # 验证value_1结果：应该成功（无双花）
+                assert report_1.result == VerificationResult.SUCCESS
+                assert report_1.is_valid == True
+                assert len(report_1.errors) == 0
+                # value_1不应该使用checkpoint（sun没有value_1的历史）
+                assert report_1.checkpoint_used is None
+
+                # 验证value_2结果：应该失败（检测到双花）
+                assert report_2.result == VerificationResult.FAILURE
+                assert report_2.is_valid == False
+                assert len(report_2.errors) > 0
+                # value_2应该使用checkpoint（sun有value_2的历史）
+                assert report_2.checkpoint_used is not None
+                assert report_2.checkpoint_used.block_height == test_data['expected_checkpoint_height']
+                assert report_2.checkpoint_used.owner_address == test_data['account_address']
 
                 # 验证包含双花错误
-                double_spend_errors = [err for err in report.errors
+                double_spend_errors = [err for err in report_2.errors
                                      if "double spend" in err.error_message.lower()]
                 assert len(double_spend_errors) > 0
 
-                # 验证使用了checkpoint
-                assert report.checkpoint_used is not None
-                assert report.checkpoint_used.owner_address == "0xmallory"
+                # 打印详细的验证结果
+                TestOutputManager.print_verification_summary(report_1, "value_1验证")
+                TestOutputManager.print_verification_summary(report_2, "value_2验证")
 
-                print(f"案例7验证成功（检测到组合双花，有checkpoint）:")
-                print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-                print(f"  - 使用checkpoint: 区块{report.checkpoint_used.block_height}")
-                print(f"  - 错误数量: {len(report.errors)}")
-                for error in report.errors:
-                    print(f"    - {error.error_type}: {error.error_message}")
+                TestOutputManager.print_success("案例7验证通过 - 组合双花攻击检测成功")
+                TestOutputManager.print_info(f"dave->sun组合交易双花检测完成", indent=2)
+                TestOutputManager.print_info(f"value_1 (alice->bob->charlie->dave->sun): 验证成功", indent=3)
+                TestOutputManager.print_info(f"value_2 (zhao->qian->sun->dave->sun): 检测到双花攻击", indent=3)
+
+                # 特殊显示双花检测结果
+                print(f"\n【安全检测结果】")
+                if double_spend_errors:
+                    TestOutputManager.print_success(f"检测到 {len(double_spend_errors)} 个双花攻击")
+                    TestOutputManager.print_info(f"攻击类型：dave在区块46对value_2进行双花", indent=3)
+                else:
+                    TestOutputManager.print_failure("未能检测到双花攻击")
 
             finally:
                 checkpoint = None
@@ -1060,78 +1558,125 @@ class TestCase8_CombinedDoubleSpendWithoutCheckpoint:
 
     def test_data(self):
         """设置案例8的测试数据（组合双花交易，无checkpoint）"""
-        target_value = VPBTestDataGenerator.create_value("0x1000", 100)
+        # 根据VPB_test_demo.md案例8，这是dave->eve的组合交易，dave在区块46对value_2进行了双花
+        # 目标value_1：alice->bob->charlie->dave->eve（正常路径）
+        # 目标value_2：zhao->qian->sun->dave->(双花给x)->dave->eve（双花路径）
 
-        # 组合交易场景，包含双花行为，验证者没有checkpoint
-        block_index_list = VPBTestDataGenerator.create_block_index_list(
-            [0, 15, 27, 56, 58],
+        # 创建两个目标value
+        target_value_1 = VPBTestDataGenerator.create_value("0x1000", 100)  # value_1: alice->bob->charlie->dave->eve
+        target_value_2 = VPBTestDataGenerator.create_value("0x2000", 200)  # value_2: zhao->qian->sun->dave->x（双花）->eve
+
+        # 创建有效的以太坊地址
+        alice_addr = VPBTestDataGenerator.create_eth_address("alice")
+        bob_addr = VPBTestDataGenerator.create_eth_address("bob")
+        charlie_addr = VPBTestDataGenerator.create_eth_address("charlie")
+        dave_addr = VPBTestDataGenerator.create_eth_address("dave")
+        zhao_addr = VPBTestDataGenerator.create_eth_address("zhao")
+        qian_addr = VPBTestDataGenerator.create_eth_address("qian")
+        sun_addr = VPBTestDataGenerator.create_eth_address("sun")
+        eve_addr = VPBTestDataGenerator.create_eth_address("eve")
+        x_addr = VPBTestDataGenerator.create_eth_address("x")  # dave的同伙
+
+        # 根据VPB_test_demo.md，value_1的完整路径包含全量编号[0,8,15,16,25,27,55,56,58]
+        # 这是目标value_1的block_index_list（正常路径，无双花）
+        block_index_list_1 = VPBTestDataGenerator.create_block_index_list(
+            [0, 8, 15, 16, 25, 27, 55, 56, 58],
             [
-                (0, "0xalice"),    # 创世块：alice获得目标value
-                (15, "0xbob"),     # 区块15：bob从alice处接收目标value
-                (27, "0xcharlie"), # 区块27：charlie从bob处接收目标value
-                (56, "0xdave"),    # 区块56：dave从charlie处接收目标value
-                (58, "0xtrudy")    # 区块58：trudy从dave处接收目标value（组合支付，但包含双花，trudy没有checkpoint）
+                (0, alice_addr),    # 创世块：alice获得目标value_1
+                (8, alice_addr),    # 区块8：alice进行其他交易（非目标value_1）
+                (15, bob_addr),     # 区块15：bob从alice处接收目标value_1
+                (16, bob_addr),     # 区块16：bob进行其他交易（非目标value_1）
+                (25, bob_addr),     # 区块25：bob进行其他交易（非目标value_1）
+                (27, charlie_addr), # 区块27：charlie从bob处接收目标value_1
+                (55, charlie_addr), # 区块55：charlie进行其他交易（非目标value_1）
+                (56, dave_addr),    # 区块56：dave从charlie处接收目标value_1
+                (58, eve_addr)      # 区块58：eve从dave处接收目标value_1+目标value_2（组合支付）
             ]
         )
 
-        proofs = VPBTestDataGenerator.create_mock_proofs(5)
+        # 根据VPB_test_demo.md，value_2的完整路径包含全量编号[0,3,5,17,38,39,58]
+        # 注意：区块46被恶意节点隐藏，因为dave在那里进行了双花
+        block_index_list_2 = VPBTestDataGenerator.create_block_index_list(
+            [0, 3, 5, 17, 38, 39, 58],  # 故意跳过区块46（双花被隐藏）
+            [
+                (0, zhao_addr),     # 创世块：zhao获得目标value_2
+                (3, zhao_addr),     # 区块3：zhao进行其他交易（非目标value_2）
+                (5, qian_addr),     # 区块5：qian从zhao处接收目标value_2
+                (17, qian_addr),    # 区块17：qian进行其他交易（非目标value_2）
+                (38, sun_addr),     # 区块38：sun从qian处接收目标value_2
+                (39, dave_addr),    # 区块39：dave从sun处接收目标value_2
+                (58, eve_addr)      # 区块58：eve从dave处接收目标value_1+目标value_2（组合支付）
+            ]
+        )
 
-        # 设置交易数据，包括组合支付和双花
-        self._setup_combined_double_spend_transactions(proofs, target_value)
+        # 创建对应的proofs
+        proofs_1 = VPBTestDataGenerator.create_mock_proofs(9, target_value_1.begin_index)  # value_1需要9个proof units
+        proofs_2 = VPBTestDataGenerator.create_mock_proofs(7, target_value_2.begin_index)  # value_2需要7个proof units（跳过区块46）
 
-        # 创建主链信息
-        owner_data = {
-            0: "0xalice", 8: "0xalice", 15: "0xbob", 16: "0xbob", 25: "0xbob",
-            27: "0xcharlie", 55: "0xcharlie", 56: "0xdave", 57: "0xdave", 58: "0xtrudy"
-        }
+        # 配置每个proof unit的交易数据
+        self._setup_value1_transactions_case8(proofs_1, target_value_1, alice_addr, bob_addr, charlie_addr, dave_addr, eve_addr)
+        self._setup_value2_transactions_case8(proofs_2, target_value_2, zhao_addr, qian_addr, sun_addr, dave_addr, eve_addr, x_addr)
 
-        # trudy是新的验证者，没有checkpoint
+        # 创建主链信息 - 包含所有区块，包括隐藏的双花区块46
         additional_transactions = {
-            8: ["0xalice"], 15: ["0xalice"], 16: ["0xbob"], 25: ["0xbob"],
-            27: ["0xbob"], 55: ["0xcharlie"], 56: ["0xcharlie"],
-            57: ["0xdave"], 58: ["0xdave"]  # dave在区块57和58都有交易，形成双花
+            # value_1相关的交易
+            8: [alice_addr], 15: [alice_addr], 16: [bob_addr], 25: [bob_addr],
+            27: [bob_addr], 55: [charlie_addr], 56: [charlie_addr],
+            # value_2相关的交易
+            3: [zhao_addr], 5: [zhao_addr], 17: [qian_addr], 38: [qian_addr], 39: [sun_addr],
+            # 双花交易（被恶意节点隐藏，但在主链信息中存在）
+            46: [dave_addr],  # dave在区块46向同伙x进行双花交易
+            # 组合交易
+            58: [dave_addr]  # dave向eve进行组合支付
         }
 
         bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
-            [0, 8, 15, 16, 25, 27, 55, 56, 57, 58], owner_data, additional_transactions
+            [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 46, 55, 56, 58], additional_transactions
         )
 
         main_chain_info = VPBTestDataGenerator.create_main_chain_info(
-            {i: f"root{i}" for i in [0, 8, 15, 16, 25, 27, 55, 56, 57, 58]},
+            {i: f"root{i}" for i in [0, 3, 5, 8, 15, 16, 17, 25, 27, 38, 39, 46, 55, 56, 58]},
             bloom_filters,
             58
         )
 
         return {
-            'target_value': target_value,
-            'proofs': proofs,
-            'block_index_list': block_index_list,
+            'target_value_1': target_value_1,
+            'target_value_2': target_value_2,
+            'proofs_1': proofs_1,
+            'proofs_2': proofs_2,
+            'block_index_list_1': block_index_list_1,
+            'block_index_list_2': block_index_list_2,
             'main_chain_info': main_chain_info,
-            'account_address': "0xtrudy",  # trudy从dave处接收value，没有checkpoint
-            'expected_start_block': 0,  # 验证应该从创世块开始
-            'double_spend_block': 57  # dave在区块57进行双花
+            'account_address': eve_addr,  # eve在区块58从dave处接收组合支付，没有checkpoint
+            'expected_start_block_value1': 0,  # value_1从头开始验证
+            'expected_start_block_value2': 0,  # value_2从头开始验证（eve没有checkpoint）
+            'double_spend_block': 46  # dave在区块46进行双花
         }
 
-    def _setup_combined_double_spend_transactions(self, proofs: Mock, target_value: Value):
-        """设置包含组合支付和双花的交易数据"""
-        def create_test_transaction(sender: str, receiver: str, value: Value, is_combined: bool = False):
+    def _setup_value1_transactions_case8(self, proofs: Mock, target_value: Value, alice_addr: str,
+                                         bob_addr: str, charlie_addr: str, dave_addr: str, eve_addr: str):
+        """设置案例8中value_1的交易数据（正常路径，无双花）"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
             mock_tx = Mock()
             mock_tx.sender = sender
             mock_tx.receiver = receiver
             mock_tx.input_values = [value]
-            if is_combined:
-                # 组合交易，有多个输入
-                mock_tx.input_values = [value, Mock(spec=Value)]  # 添加第二个value
             mock_tx.output_values = [value]
             return mock_tx
 
-        block_heights = [0, 15, 27, 56, 58]
+        # value_1的完整路径：[0,8,15,16,25,27,55,56,58]
+        block_heights = [0, 8, 15, 16, 25, 27, 55, 56, 58]
         transactions = [
-            [],  # 创世块
-            [create_test_transaction("0xalice", "0xbob", target_value)],
-            [create_test_transaction("0xbob", "0xcharlie", target_value)],
-            [create_test_transaction("0xcharlie", "0xdave", target_value)],
-            [create_test_transaction("0xdave", "0xtrudy", target_value, is_combined=True)]  # 组合支付但包含双花
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice value_1分配
+            [],  # 区块8：alice进行其他交易（非目标value_1）
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+            [],  # 区块16：bob进行其他交易（非目标value_1）
+            [],  # 区块25：bob进行其他交易（非目标value_1）
+            [create_test_transaction(bob_addr, charlie_addr, target_value)],  # 区块27：bob->charlie
+            [],  # 区块55：charlie进行其他交易（非目标value_1）
+            [create_test_transaction(charlie_addr, dave_addr, target_value)],  # 区块56：charlie->dave
+            [create_test_transaction(dave_addr, eve_addr, target_value)]  # 区块58：dave->eve（组合支付的一部分）
         ]
 
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
@@ -1141,46 +1686,109 @@ class TestCase8_CombinedDoubleSpendWithoutCheckpoint:
             proofs.proof_units[i].block_height = height
             proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
-        # 模拟双花检测：设置最后一个proof unit检测到双花
-        # 在组合交易中检测到dave在区块57的双重支付
-        proofs.proof_units[-1].verify_proof_unit = Mock(return_value=(
-            False,
-            "Double spend detected in combined transaction: input value spent in block 57 to unknown party"
-        ))
+    def _setup_value2_transactions_case8(self, proofs: Mock, target_value: Value, zhao_addr: str,
+                                         qian_addr: str, sun_addr: str, dave_addr: str, eve_addr: str, x_addr: str):
+        """设置案例8中value_2的交易数据（包含双花攻击）"""
+        def create_test_transaction(sender: str, receiver: str, value: Value):
+            mock_tx = Mock()
+            mock_tx.sender = sender
+            mock_tx.receiver = receiver
+            mock_tx.input_values = [value]
+            mock_tx.output_values = [value]
+            return mock_tx
+
+        # value_2的路径：[0,3,5,17,38,39,58]，但dave在区块46进行了双花（被隐藏）
+        block_heights = [0, 3, 5, 17, 38, 39, 58]  # 跳过双花区块46
+        transactions = [
+            [create_test_transaction("GOD", zhao_addr, target_value)],  # 创世块：GOD->zhao value_2分配
+            [],  # 区块3：zhao进行其他交易（非目标value_2）
+            [create_test_transaction(zhao_addr, qian_addr, target_value)],  # 区块5：zhao->qian
+            [],  # 区块17：qian进行其他交易（非目标value_2）
+            [create_test_transaction(qian_addr, sun_addr, target_value)],  # 区块38：qian->sun
+            [create_test_transaction(sun_addr, dave_addr, target_value)],  # 区块39：sun->dave
+            [create_test_transaction(dave_addr, eve_addr, target_value)]  # 区块58：dave->eve（组合支付的一部分，但这是非法的，因为dave在区块46已经双花了）
+        ]
+
+        # 双花区块信息（dave在区块46将value转移给同伙x）
+        double_spend_block = 46
+
+        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+            proofs.proof_units[i].owner_multi_txns = Mock()
+            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
+            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
+            proofs.proof_units[i].block_height = height
+
+            # 设置验证结果：最后一个proof unit（区块58）应该验证失败，因为dave在区块46已经双花了
+            if height == 58:  # 区块58的交易是非法的，因为dave在区块46已经双花
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(
+                    False,
+                    f"Double spend detected: value already spent in block {double_spend_block} by dave to {x_addr}"
+                ))
+            else:
+                proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
 
     def test_case8_execution(self, test_data):
-        """执行案例8测试"""
+        """执行案例8测试（组合双花交易，无checkpoint）"""
+        TestOutputManager.print_case_header("案例8：组合双花交易（无checkpoint）")
+
         # 创建不带checkpoint的验证器
         validator = VPBValidator()
 
-        # 执行验证
-        report = validator.verify_vpb_pair(
-            test_data['target_value'],
-            test_data['proofs'],
-            test_data['block_index_list'],
+        TestOutputManager.print_info("验证组合交易中的value_1（从头开始验证）...")
+        # 验证value_1：eve没有value_1的历史，所以从头开始验证
+        report_1 = validator.verify_vpb_pair(
+            test_data['target_value_1'],
+            test_data['proofs_1'],
+            test_data['block_index_list_1'],
             test_data['main_chain_info'],
-            test_data['account_address']
+            test_data['account_address']  # eve验证value_1
         )
 
-        # 验证结果：应该检测到双花
-        assert report.result == VerificationResult.FAILURE
-        assert report.is_valid == False
-        assert len(report.errors) > 0
+        TestOutputManager.print_info("验证组合交易中的value_2（从头开始验证）...")
+        # 验证value_2：eve没有value_2的历史，所以从头开始验证，应该检测到双花
+        report_2 = validator.verify_vpb_pair(
+            test_data['target_value_2'],
+            test_data['proofs_2'],
+            test_data['block_index_list_2'],
+            test_data['main_chain_info'],
+            test_data['account_address']  # eve验证value_2
+        )
+
+        # 验证value_1结果：应该成功（无双花）
+        assert report_1.result == VerificationResult.SUCCESS
+        assert report_1.is_valid == True
+        assert len(report_1.errors) == 0
+        # value_1不应该使用checkpoint（eve没有value_1的历史）
+        assert report_1.checkpoint_used is None
+
+        # 验证value_2结果：应该失败（检测到双花）
+        assert report_2.result == VerificationResult.FAILURE
+        assert report_2.is_valid == False
+        assert len(report_2.errors) > 0
+        # value_2不应该使用checkpoint（eve没有value_2的历史）
+        assert report_2.checkpoint_used is None
 
         # 验证包含双花错误
-        double_spend_errors = [err for err in report.errors
+        double_spend_errors = [err for err in report_2.errors
                              if "double spend" in err.error_message.lower()]
         assert len(double_spend_errors) > 0
 
-        # 验证没有使用checkpoint
-        assert report.checkpoint_used is None
+        # 打印详细的验证结果
+        TestOutputManager.print_verification_summary(report_1, "value_1验证")
+        TestOutputManager.print_verification_summary(report_2, "value_2验证")
 
-        print(f"案例8验证成功（检测到组合双花，无checkpoint）:")
-        print(f"  - 验证时间: {report.verification_time_ms:.2f}ms")
-        print(f"  - 使用checkpoint: 无")
-        print(f"  - 错误数量: {len(report.errors)}")
-        for error in report.errors:
-            print(f"    - {error.error_type}: {error.error_message}")
+        TestOutputManager.print_success("案例8验证通过 - 组合双花攻击检测成功")
+        TestOutputManager.print_info(f"dave->eve组合交易双花检测完成", indent=2)
+        TestOutputManager.print_info(f"value_1 (alice->bob->charlie->dave->eve): 验证成功", indent=3)
+        TestOutputManager.print_info(f"value_2 (zhao->qian->sun->dave->eve): 检测到双花攻击", indent=3)
+
+        # 特殊显示双花检测结果
+        print(f"\n【安全检测结果】")
+        if double_spend_errors:
+            TestOutputManager.print_success(f"检测到 {len(double_spend_errors)} 个双花攻击")
+            TestOutputManager.print_info(f"攻击类型：dave在区块46对value_2进行双花", indent=3)
+        else:
+            TestOutputManager.print_failure("未能检测到双花攻击")
 
 
 class TestEdgeCasesAndStress:
@@ -1320,14 +1928,14 @@ class TestVPBValidatorIntegration:
         # 执行一些验证
         target_value = Value("0x1000", 100)
         proofs = VPBTestDataGenerator.create_mock_proofs(3, target_value.begin_index)
-        block_index_list = BlockIndexList([0, 15, 27], [(0, "0xalice"), (15, "0xbob")])
+        block_index_list = BlockIndexList([0, 15, 27], [(0, "0x1234567890abcdef1234567890abcdef12345678"), (15, "0xabcdef1234567890abcdef1234567890abcdef12")])
         main_chain = MainChainInfo({i: f"root{i}" for i in [0, 15, 27]}, {}, 27)
 
         for proof_unit in proofs.proof_units:
             proof_unit.verify_proof_unit = Mock(return_value=(True, ""))
 
         # 执行验证
-        validator.verify_vpb_pair(target_value, proofs, block_index_list, main_chain, "0xbob")
+        validator.verify_vpb_pair(target_value, proofs, block_index_list, main_chain, "0xabcdef1234567890abcdef1234567890abcdef12")
 
         # 检查统计更新
         stats = validator.get_verification_stats()
@@ -1401,9 +2009,8 @@ class TestVPBValidatorIntegration:
 
 def run_all_test_cases():
     """运行所有测试案例"""
-    print("=" * 80)
-    print("VPB Validator 全面测试套件")
-    print("=" * 80)
+    start_time = time.time()
+    TestOutputManager.print_header("VPB Validator 全面测试套件")
 
     test_cases = [
         ("案例1：简单正常交易（有checkpoint）", TestCase1_SimpleNormalWithCheckpoint()),
@@ -1417,39 +2024,39 @@ def run_all_test_cases():
     ]
 
     results = []
+    total_tests = len(test_cases)
 
-    for case_name, test_case in test_cases:
-        print(f"\n运行 {case_name}...")
+    for i, (case_name, test_case) in enumerate(test_cases, 1):
+        TestOutputManager.print_progress_bar(i-1, total_tests)
+
         try:
-            # 获取测试数据
+            # 获取测试数据并执行测试
             if hasattr(test_case, 'test_data'):
                 test_data = test_case.test_data()
-                if hasattr(test_case, 'test_case1_execution'):
-                    test_case.test_case1_execution(test_data)
-                elif hasattr(test_case, 'test_case2_execution'):
-                    test_case.test_case2_execution(test_data)
-                elif hasattr(test_case, 'test_case3_execution'):
-                    test_case.test_case3_execution(test_data)
-                elif hasattr(test_case, 'test_case4_execution'):
-                    test_case.test_case4_execution(test_data)
-                elif hasattr(test_case, 'test_case5_execution'):
-                    test_case.test_case5_execution(test_data)
-                elif hasattr(test_case, 'test_case6_execution'):
-                    test_case.test_case6_execution(test_data)
-                elif hasattr(test_case, 'test_case7_execution'):
-                    test_case.test_case7_execution(test_data)
-                elif hasattr(test_case, 'test_case8_execution'):
-                    test_case.test_case8_execution(test_data)
 
-            results.append((case_name, "PASS", None))
-            print(f"[PASS] {case_name}")
+                # 动态调用对应的执行方法
+                for case_num in range(1, 9):
+                    method_name = f"test_case{case_num}_execution"
+                    if hasattr(test_case, method_name):
+                        getattr(test_case, method_name)(test_data)
+                        break
+
+            results.append((case_name, True))
+            TestOutputManager.print_progress_bar(i, total_tests)
 
         except Exception as e:
-            results.append((case_name, "FAIL", str(e)))
-            print(f"[FAIL] {case_name}: {e}")
+            results.append((case_name, False))
+            print(f"\n")  # 换行以避免进度条覆盖
+            TestOutputManager.print_failure(f"{case_name}: {str(e)}")
+
+    # 完成进度条
+    TestOutputManager.print_progress_bar(total_tests, total_tests)
+    print()  # 换行
+
+    # 运行边缘案例和压力测试
+    TestOutputManager.print_case_header("边缘案例和压力测试")
 
     # 运行边缘案例测试
-    print(f"\n运行边缘案例和压力测试...")
     edge_tests = TestEdgeCasesAndStress()
     edge_test_methods = [
         ("空VPB数据测试", edge_tests.test_empty_vpb_data),
@@ -1459,15 +2066,16 @@ def run_all_test_cases():
 
     for test_name, test_method in edge_test_methods:
         try:
+            TestOutputManager.print_info(f"运行 {test_name}...")
             test_method()
-            results.append((test_name, "PASS", None))
-            print(f"[PASS] {test_name}")
+            results.append((test_name, True))
+            TestOutputManager.print_success(f"{test_name} 通过")
         except Exception as e:
-            results.append((test_name, "FAIL", str(e)))
-            print(f"[FAIL] {test_name}: {e}")
+            results.append((test_name, False))
+            TestOutputManager.print_failure(f"{test_name} 失败: {str(e)}")
 
     # 运行集成测试
-    print(f"\n运行集成测试...")
+    TestOutputManager.print_case_header("集成测试")
     integration_tests = TestVPBValidatorIntegration()
     integration_test_methods = [
         ("验证统计测试", integration_tests.test_verification_statistics),
@@ -1476,31 +2084,17 @@ def run_all_test_cases():
 
     for test_name, test_method in integration_test_methods:
         try:
+            TestOutputManager.print_info(f"运行 {test_name}...")
             test_method()
-            results.append((test_name, "PASS", None))
-            print(f"[PASS] {test_name}")
+            results.append((test_name, True))
+            TestOutputManager.print_success(f"{test_name} 通过")
         except Exception as e:
-            results.append((test_name, "FAIL", str(e)))
-            print(f"[FAIL] {test_name}: {e}")
+            results.append((test_name, False))
+            TestOutputManager.print_failure(f"{test_name} 失败: {str(e)}")
 
-    # 打印测试总结
-    print("\n" + "=" * 80)
-    print("测试结果总结")
-    print("=" * 80)
-
-    passed = sum(1 for _, status, _ in results if status == "PASS")
-    failed = sum(1 for _, status, _ in results if status == "FAIL")
-
-    for case_name, status, error in results:
-        status_symbol = "[PASS]" if status == "PASS" else "[FAIL]"
-        print(f"{status_symbol} {case_name}")
-        if error:
-            print(f"  Error: {error}")
-
-    print("-" * 80)
-    print(f"总计: {len(results)} 个测试, 通过: {passed} 个, 失败: {failed} 个")
-    print(f"成功率: {passed/len(results)*100:.1f}%")
-    print("=" * 80)
+    # 打印最终测试结果
+    total_time = time.time() - start_time
+    TestOutputManager.print_final_results(results, total_time)
 
     return results
 
