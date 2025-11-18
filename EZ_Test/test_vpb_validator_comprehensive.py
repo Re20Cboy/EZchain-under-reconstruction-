@@ -1925,17 +1925,69 @@ class TestVPBValidatorIntegration:
         assert stats['successful'] == 0
         assert stats['failed'] == 0
 
-        # 执行一些验证
+        # 创建一个完整的交易路径测试数据 - 参考通过案例的模式
         target_value = Value("0x1000", 100)
-        proofs = VPBTestDataGenerator.create_mock_proofs(3, target_value.begin_index)
-        block_index_list = BlockIndexList([0, 15, 27], [(0, "0x1234567890abcdef1234567890abcdef12345678"), (15, "0xabcdef1234567890abcdef1234567890abcdef12")])
-        main_chain = MainChainInfo({i: f"root{i}" for i in [0, 15, 27]}, {}, 27)
 
-        for proof_unit in proofs.proof_units:
-            proof_unit.verify_proof_unit = Mock(return_value=(True, ""))
+        # 创建测试地址
+        alice_addr = "0x1234567890abcdef1234567890abcdef12345678"
+        bob_addr = "0xabcdef1234567890abcdef1234567890abcdef12"
+
+        # 创建完整的proofs - 包含创世块和交易路径
+        proofs = VPBTestDataGenerator.create_mock_proofs(2, target_value.begin_index)  # 简化为2个proof units
+
+        # 设置完整的交易路径
+        def create_test_transaction(sender: str, receiver: str, value: Value):
+            mock_tx = Mock()
+            mock_tx.sender = sender
+            mock_tx.receiver = receiver
+            mock_tx.input_values = [value]
+            mock_tx.output_values = [value]
+            return mock_tx
+
+        # 交易路径：创世块(GOD->alice) -> 转账(alice->bob)
+        block_heights = [0, 15]
+        transactions = [
+            [create_test_transaction("GOD", alice_addr, target_value)],  # 创世块：GOD->alice
+            [create_test_transaction(alice_addr, bob_addr, target_value)],  # 区块15：alice->bob
+        ]
+
+        # 设置proof units
+        for i, (height, txs) in enumerate(zip(block_heights, transactions)):
+            proofs.proof_units[i].owner_multi_txns = Mock()
+            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
+            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
+            proofs.proof_units[i].block_height = height
+            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
+
+        # 创建对应的BlockIndexList
+        block_index_list = BlockIndexList(
+            [0, 15],
+            [(0, alice_addr), (15, bob_addr)]
+        )
+
+        # 创建主链信息
+        additional_transactions = {
+            0: [alice_addr],  # 创世块包含alice地址
+            15: [bob_addr]    # 区块15包含bob地址
+        }
+
+        bloom_filters = VPBTestDataGenerator.create_realistic_bloom_filters(
+            [0, 15], additional_transactions
+        )
+
+        main_chain = MainChainInfo(
+            {i: f"root{i}" for i in [0, 15]},
+            bloom_filters,
+            15
+        )
 
         # 执行验证
-        validator.verify_vpb_pair(target_value, proofs, block_index_list, main_chain, "0xabcdef1234567890abcdef1234567890abcdef12")
+        report = validator.verify_vpb_pair(
+            target_value, proofs, block_index_list, main_chain, bob_addr
+        )
+
+        # 检查验证是否成功
+        assert report.is_valid == True, f"验证应该成功，但失败了: {report.errors}"
 
         # 检查统计更新
         stats = validator.get_verification_stats()
