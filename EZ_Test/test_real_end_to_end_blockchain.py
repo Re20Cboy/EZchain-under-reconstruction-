@@ -578,7 +578,7 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
 
             # 获取账户信息
             account_info = account.get_account_info()
-            print(f"    账户信息: 交易历史数={account_info['transaction_history_count']}, VPB数={account_info['local_vpbs']}")
+            print(f"    账户信息: 交易历史数={account_info['transaction_history_count']}, VPB数={account_info['vpb_statistics']}")
 
         # 测试确认交易功能
         print("测试确认交易功能...")

@@ -129,7 +129,11 @@ class TestTransactionHashing(unittest.TestCase):
         self.assertIn(f"Recipient: {self.recipient}", tx_str)
         self.assertIn(f"Nonce: {str(self.nonce)}", tx_str)
         self.assertIn(f"Value: {self.value}", tx_str)
-        self.assertIn("TxHash: b'", tx_str)
+        # Check for hash line (supports both single and double quotes)
+        self.assertTrue(
+            "TxHash: b'" in tx_str or "TxHash: b\"" in tx_str,
+            f"TxHash line not found in expected format. Got: {[line for line in tx_str.split('\\n') if 'TxHash:' in line]}"
+        )
         self.assertIn(f"Time: {self.tx.time}", tx_str)
 
 
