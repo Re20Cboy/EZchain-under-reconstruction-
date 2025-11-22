@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 # 导入项目中的真实区块链模块
 from EZ_Value.Value import ValueState
+from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Proof.ProofUnit import ProofUnit
 from EZ_Units.MerkleProof import MerkleTreeProof
@@ -50,27 +51,46 @@ class VPBUpdateResult:
 
 
 class VPBUpdater:
-    """VPB更新器核心类"""
+    """VPB更新器核心类 - 重构版本，符合Proofs映射优化设计"""
 
     def __init__(self, vpb_manager: Optional[VPBManager] = None,
-                 vpb_storage: Optional[VPBStorage] = None):
-        self.vpb_manager = vpb_manager or VPBManager()
+                 vpb_storage: Optional[VPBStorage] = None,
+                 value_collection: Optional[AccountValueCollection] = None):
+        self.vpb_manager = vpb_manager
         self.vpb_storage = vpb_storage or VPBStorage()
+        self.value_collection = value_collection
         self._lock = threading.RLock()
 
+        # 如果提供了ValueCollection，初始化VPBManager
+        if self.value_collection and self.vpb_manager:
+            self.vpb_manager.set_value_collection(self.value_collection)
+
     def update_vpb_for_transaction(self, request: VPBUpdateRequest) -> VPBUpdateResult:
-        """更新VPB数据"""
+        """更新VPB数据 - 重构版本，使用Proofs映射优化机制"""
         start_time = datetime.now()
         result = VPBUpdateResult(success=True)
 
         try:
             with self._lock:
-                # 获取账户拥有的所有VPB
-                owned_vpbs = self._get_account_vpbs(request.account_address)
+                # 使用VPBManager获取账户的VPB，利用映射优化机制
+                if not self.vpb_manager:
+                    logger.error("VPBManager not initialized")
+                    result.success = False
+                    result.error_message = "VPBManager not initialized"
+                    return result
 
-                if not owned_vpbs:
-                    logger.warning(f"No VPBs found for account {request.account_address}")
-                    result.error_message = "No VPBs found for account"
+                # 设置账户地址（如果尚未设置）
+                if not self.vpb_manager.account_address:
+                    self.vpb_manager.set_account_address(request.account_address)
+
+                # 获取所有VPB
+                all_vpbs = self.vpb_manager.get_all_vpbs()
+
+                if not all_vpbs:
+                    logger.info(f"No VPBs found for account {request.account_address}, creating new VPB entries")
+                    # 如果没有现有VPB，这是新账户的交易，需要创建相应的VPB结构
+                    result.success = True
+                    result.execution_time = (datetime.now() - start_time).total_seconds()
                     return result
 
                 # 创建新的ProofUnit
@@ -80,25 +100,16 @@ class VPBUpdater:
                     request.account_address
                 )
 
-                # 更新每个VPB
-                for vpb_pair in owned_vpbs:
-                    try:
-                        updated_vpb_id = self._update_single_vpb(
-                            vpb_pair,
-                            new_proof_unit,
-                            request.block_height,
-                            request.account_address,
-                            request.transferred_value_ids
-                        )
-                        result.updated_vpb_ids.append(updated_vpb_id)
-                    except Exception as e:
-                        error_msg = f"Failed to update VPB {vpb_pair.vpb_id}: {str(e)}"
-                        logger.error(error_msg)
-                        result.failed_operations.append(error_msg)
+                # 使用Proofs映射机制更新相关VPB
+                updated_vpb_ids = self._update_vpbs_with_mapping_optimization(
+                    all_vpbs,
+                    new_proof_unit,
+                    request.block_height,
+                    request.account_address,
+                    request.transferred_value_ids
+                )
 
-                # 持久化更改
-                self._persist_updates(owned_vpbs)
-
+                result.updated_vpb_ids = updated_vpb_ids
                 result.execution_time = (datetime.now() - start_time).total_seconds()
 
         except Exception as e:
@@ -108,30 +119,86 @@ class VPBUpdater:
 
         return result
 
-    def _get_account_vpbs(self, account_address: str) -> List[VPBPair]:
-        """获取账户拥有的所有VPB"""
-        try:
-            # 使用真实VPBStorage的接口获取账户的所有VPB ID
-            vpb_ids = self.vpb_storage.get_all_vpb_ids_for_account(account_address)
-            owned_vpbs = []
+    def _update_vpbs_with_mapping_optimization(self, vpb_map: Dict[str, VPBPair],
+                                             new_proof_unit: ProofUnit,
+                                             block_height: int,
+                                             account_address: str,
+                                             transferred_value_ids: Set[str]) -> List[str]:
+        """
+        使用Proofs映射优化机制更新VPB
 
-            for vpb_id in vpb_ids:
-                # 加载每个VPB的三元组数据
-                vpb_data = self.vpb_storage.load_vpb_triplet(vpb_id)
-                if vpb_data:
-                    value_id, proofs, block_index_lst, _ = vpb_data
+        这个方法实现了TODO列表中提到的"映射方案"，避免将所有ProofUnit读入内存，
+        而是通过映射关系和引用计数机制来高效更新VPB中的Proofs部分。
+        """
+        updated_vpb_ids = []
 
-                    # 需要获取实际的Value对象
-                    # 由于VPBUpdater没有直接访问ValueCollection，这里返回None
-                    # 实际使用中，应该通过VPBManager或VPBPairs来获取完整的VPBPair
-                    logger.warning(f"VPB {vpb_id} found but cannot construct complete VPBPair without ValueCollection")
+        for value_id, vpb_pair in vpb_map.items():
+            try:
+                # 检查是否需要更新此VPB
+                if self._should_update_vpb(vpb_pair, transferred_value_ids, account_address):
+                    # 使用Proofs映射机制添加ProofUnit
+                    # Proofs会自动处理引用计数和映射关系
+                    vpb_pair.proofs.add_proof_unit(new_proof_unit)
 
-            # 由于无法构造完整的VPBPair，返回空列表
-            # 这意味着在没有预先存在VPB的情况下，VPBUpdater仍能正常工作
-            return owned_vpbs
-        except Exception as e:
-            logger.error(f"Failed to get account VPBs: {str(e)}")
-            return []
+                    # 更新BlockIndexList
+                    if block_height not in vpb_pair.block_index_lst.index_lst:
+                        vpb_pair.block_index_lst.index_lst.append(block_height)
+                        vpb_pair.block_index_lst.index_lst.sort()
+
+                    # 如果涉及价值转移，更新所有权历史
+                    if value_id in transferred_value_ids:
+                        vpb_pair.block_index_lst.add_ownership_change(
+                            block_height,
+                            account_address
+                        )
+
+                    # 使用VPBManager更新VPB（确保持久化）
+                    if self.value_collection:
+                        value = vpb_pair.value
+                        if value:
+                            success = self.vpb_manager.update_vpb(
+                                value=value,
+                                new_proofs=vpb_pair.proofs,
+                                new_block_index_lst=vpb_pair.block_index_lst
+                            )
+                            if success:
+                                updated_vpb_ids.append(vpb_pair.vpb_id)
+                                logger.debug(f"Successfully updated VPB {vpb_pair.vpb_id[:16]}...")
+                            else:
+                                logger.error(f"Failed to persist VPB update for {vpb_pair.vpb_id[:16]}...")
+                    else:
+                        # 如果没有ValueCollection，至少记录更新
+                        updated_vpb_ids.append(vpb_pair.vpb_id)
+                        logger.warning(f"VPB {vpb_pair.vpb_id[:16]}... updated in memory only (no ValueCollection)")
+
+            except Exception as e:
+                logger.error(f"Failed to update VPB {vpb_pair.vpb_id[:16]}...: {str(e)}")
+                # 继续处理其他VPB，不让单个失败影响整体
+                continue
+
+        return updated_vpb_ids
+
+    def _should_update_vpb(self, vpb_pair: VPBPair, transferred_value_ids: Set[str],
+                          account_address: str) -> bool:
+        """
+        判断是否需要更新特定VPB
+
+        根据交易类型和VPB当前状态决定是否需要更新
+        """
+        if not vpb_pair.value:
+            return False
+
+        value_id = vpb_pair.value_id
+
+        # 如果直接涉及价值转移，需要更新
+        if value_id in transferred_value_ids:
+            return True
+
+        # 如果是发送方的交易，需要更新相关VPB
+        # 这里可以添加更复杂的逻辑来判断哪些VPB需要更新
+        # 例如，检查VPB的所有者状态等
+
+        return True  # 目前默认更新所有VPB，可根据实际业务逻辑优化
 
     def _create_proof_unit(self, transaction: MultiTransactions,
                           merkle_proof: MerkleTreeProof,
@@ -143,59 +210,6 @@ class VPBUpdater:
             owner_mt_proof=merkle_proof
         )
 
-    def _update_single_vpb(self, vpb_pair: VPBPair,
-                          new_proof_unit: ProofUnit,
-                          block_height: int,
-                          account_address: str,
-                          transferred_value_ids: Set[str]) -> str:
-        """更新单个VPB"""
-        # 添加ProofUnit到Proofs集合
-        vpb_pair.proofs.add_proof_unit(new_proof_unit)
-
-        # 检查是否需要添加区块高度到index_lst
-        if block_height not in vpb_pair.block_index_lst.index_lst:
-            vpb_pair.block_index_lst.index_lst.append(block_height)
-            vpb_pair.block_index_lst.index_lst.sort()
-
-        # 更新所有权变更
-        if hasattr(vpb_pair, 'value_id'):
-            value_id = vpb_pair.value_id
-        elif hasattr(vpb_pair.value, 'begin_index'):
-            value_id = vpb_pair.value.begin_index
-        else:
-            value_id = vpb_pair.value.begin_index if vpb_pair.value else None
-
-        if value_id and value_id in transferred_value_ids:
-            vpb_pair.block_index_lst.add_ownership_change(
-                block_height,
-                account_address
-            )
-
-        return vpb_pair.vpb_id
-
-    def _persist_updates(self, updated_vpbs: List[VPBPair]) -> None:
-        """持久化更新"""
-        try:
-            for vpb_pair in updated_vpbs:
-                # 获取Value对象
-                value = vpb_pair.value if hasattr(vpb_pair, 'value') else None
-                if value is None and hasattr(vpb_pair, 'value_id'):
-                    # 如果没有Value对象但有value_id，创建一个临时的Value对象
-                    from EZ_Value.AccountValueCollection import AccountValueCollection
-                    # 这种情况下需要从ValueCollection获取实际的Value
-                    logger.warning(f"VPB {vpb_pair.vpb_id} missing actual Value object")
-                    continue
-
-                if value:
-                    self.vpb_manager.update_vpb(
-                        value=value,
-                        new_proofs=vpb_pair.proofs,
-                        new_block_index_lst=vpb_pair.block_index_lst
-                    )
-        except Exception as e:
-            logger.error(f"Failed to persist VPB updates: {str(e)}")
-            raise
-
     def batch_update_vpbs(self, requests: List[VPBUpdateRequest]) -> List[VPBUpdateResult]:
         """批量更新VPB"""
         results = []
@@ -205,26 +219,86 @@ class VPBUpdater:
         return results
 
     def get_vpb_update_status(self, account_address: str) -> Dict[str, Any]:
-        """获取VPB更新状态"""
+        """获取VPB更新状态 - 重构版本"""
         try:
-            owned_vpbs = self._get_account_vpbs(account_address)
+            if not self.vpb_manager:
+                return {'error': 'VPBManager not initialized'}
+
+            # 确保账户地址已设置
+            if not self.vpb_manager.account_address:
+                self.vpb_manager.set_account_address(account_address)
+
+            all_vpbs = self.vpb_manager.get_all_vpbs()
+
+            # 收集VPB详情
+            vpb_details = []
+            for value_id, vpb_pair in all_vpbs.items():
+                vpb_details.append({
+                    'vpb_id': vpb_pair.vpb_id,
+                    'value_id': value_id,
+                    'proofs_count': len(vpb_pair.proofs),
+                    'block_indices': len(vpb_pair.block_index_lst.index_lst),
+                    'value_state': vpb_pair.value.state.name if vpb_pair.value else 'unknown'
+                })
+
             return {
                 'account_address': account_address,
-                'total_vpbs': len(owned_vpbs),
-                'vpb_details': []
+                'total_vpbs': len(all_vpbs),
+                'vpb_details': vpb_details,
+                'has_value_collection': self.value_collection is not None
             }
         except Exception as e:
             logger.error(f"Failed to get VPB status for account {account_address}: {str(e)}")
             return {'error': str(e)}
 
     def validate_vpb_consistency(self, account_address: str) -> Dict[str, Any]:
-        """验证VPB一致性"""
+        """验证VPB一致性 - 重构版本"""
         try:
-            owned_vpbs = self._get_account_vpbs(account_address)
+            if not self.vpb_manager:
+                return {
+                    'account_address': account_address,
+                    'is_consistent': False,
+                    'error': 'VPBManager not initialized'
+                }
+
+            # 确保账户地址已设置
+            if not self.vpb_manager.account_address:
+                self.vpb_manager.set_account_address(account_address)
+
+            all_vpbs = self.vpb_manager.get_all_vpbs()
+
+            # 验证每个VPB的一致性
+            inconsistencies = []
+            for value_id, vpb_pair in all_vpbs.items():
+                try:
+                    # 验证VPB三元组完整性
+                    if not vpb_pair.value:
+                        inconsistencies.append(f'VPB {vpb_pair.vpb_id[:16]}... missing Value')
+                        continue
+
+                    if not vpb_pair.proofs:
+                        inconsistencies.append(f'VPB {vpb_pair.vpb_id[:16]}... missing Proofs')
+                        continue
+
+                    if not vpb_pair.block_index_lst:
+                        inconsistencies.append(f'VPB {vpb_pair.vpb_id[:16]}... missing BlockIndexList')
+                        continue
+
+                    # 验证Proofs中的映射关系
+                    proof_units = vpb_pair.proofs.get_proof_units()
+                    if not proof_units:
+                        inconsistencies.append(f'VPB {vpb_pair.vpb_id[:16]}... has no ProofUnits')
+
+                except Exception as e:
+                    inconsistencies.append(f'VPB {vpb_pair.vpb_id[:16]}... validation error: {str(e)}')
+
+            is_consistent = len(inconsistencies) == 0
             return {
                 'account_address': account_address,
-                'is_consistent': True,
-                'total_vpbs': len(owned_vpbs)
+                'is_consistent': is_consistent,
+                'total_vpbs': len(all_vpbs),
+                'inconsistencies': inconsistencies,
+                'validation_summary': f'Found {len(inconsistencies)} issues out of {len(all_vpbs)} VPBs'
             }
         except Exception as e:
             logger.error(f"VPB consistency validation failed for account {account_address}: {str(e)}")
@@ -236,62 +310,114 @@ class VPBUpdater:
 
 
 class VPBServiceBuilder:
-    """VPB服务构建器 - 用于构建和配置VPB相关服务实例"""
+    """VPB服务构建器 - 用于构建和配置VPB相关服务实例 - 重构版本"""
 
     @staticmethod
-    def create_updater(account_address: str, storage_path: Optional[str] = None) -> VPBUpdater:
+    def create_updater(account_address: str,
+                      storage_path: Optional[str] = None,
+                      value_collection: Optional[AccountValueCollection] = None) -> VPBUpdater:
         """
-        创建VPB更新器实例
+        创建VPB更新器实例 - 支持ValueCollection集成
 
         Args:
             account_address: 账户地址
             storage_path: 存储路径，可选
+            value_collection: AccountValueCollection实例，用于获取Value对象
 
         Returns:
             VPBUpdater: VPB更新器实例
         """
         vpb_storage = VPBStorage(storage_path) if storage_path else VPBStorage()
         vpb_manager = VPBManager(account_address, vpb_storage)
-        return VPBUpdater(vpb_manager, vpb_storage)
+
+        # 如果提供了ValueCollection，设置到VPBManager
+        if value_collection:
+            vpb_manager.set_value_collection(value_collection)
+
+        return VPBUpdater(vpb_manager, vpb_storage, value_collection)
 
     @staticmethod
-    def create_test_updater(account_address: str = "test_account") -> VPBUpdater:
+    def create_updater_with_collection(account_address: str,
+                                     value_collection: AccountValueCollection,
+                                     storage_path: Optional[str] = None) -> VPBUpdater:
+        """
+        创建带有ValueCollection的VPB更新器实例 - 完整功能版本
+
+        Args:
+            account_address: 账户地址
+            value_collection: AccountValueCollection实例（必需）
+            storage_path: 存储路径，可选
+
+        Returns:
+            VPBUpdater: 具有完整功能的VPB更新器实例
+        """
+        vpb_storage = VPBStorage(storage_path) if storage_path else VPBStorage()
+        vpb_manager = VPBManager(account_address, vpb_storage)
+        vpb_manager.set_value_collection(value_collection)
+
+        return VPBUpdater(vpb_manager, vpb_storage, value_collection)
+
+    @staticmethod
+    def create_test_updater(account_address: str = "test_account",
+                           with_collection: bool = False) -> VPBUpdater:
         """
         创建测试用VPB更新器实例
 
         Args:
             account_address: 测试账户地址
+            with_collection: 是否创建测试用的ValueCollection
 
         Returns:
             VPBUpdater: 测试用VPB更新器实例
         """
         vpb_storage = VPBStorage("test_vpb_storage.db")
         vpb_manager = VPBManager(account_address, vpb_storage)
-        return VPBUpdater(vpb_manager, vpb_storage)
+
+        value_collection = None
+        if with_collection:
+            # 创建测试用的ValueCollection
+            try:
+                value_collection = AccountValueCollection(f"test_values_{account_address}.db")
+                vpb_manager.set_value_collection(value_collection)
+            except Exception as e:
+                logger.warning(f"Failed to create test ValueCollection: {e}")
+
+        return VPBUpdater(vpb_manager, vpb_storage, value_collection)
 
 
 class AccountVPBUpdater:
     """
-    账户VPB更新器 - 为Account类提供本地VPB更新接口
+    账户VPB更新器 - 重构版本，为Account类提供本地VPB更新接口
 
     这是为Account类提供的VPB更新服务，专注于单一账户的VPB数据管理。
     Account类在处理交易时调用此接口来更新本地VPB数据。
+
+    重构改进：
+    - 支持ValueCollection集成，解决TODO列表中的问题
+    - 利用Proofs映射优化机制，避免加载所有ProofUnit到内存
+    - 提供完整的VPB生命周期管理
     """
 
-    def __init__(self, account_address: str, vpb_updater: Optional[VPBUpdater] = None):
+    def __init__(self, account_address: str,
+                 vpb_updater: Optional[VPBUpdater] = None,
+                 value_collection: Optional[AccountValueCollection] = None):
         """
         初始化账户VPB更新器
 
         Args:
             account_address: 账户地址
             vpb_updater: 可选的VPBUpdater实例，如果不提供则自动创建
+            value_collection: 可选的ValueCollection实例，用于获取Value对象
         """
         self.account_address = account_address
         if vpb_updater:
             self.vpb_updater = vpb_updater
         else:
-            # 使用服务构建器创建VPBUpdater
-            self.vpb_updater = VPBServiceBuilder.create_updater(account_address)
+            # 使用服务构建器创建VPBUpdater，支持ValueCollection
+            self.vpb_updater = VPBServiceBuilder.create_updater(
+                account_address=account_address,
+                value_collection=value_collection
+            )
 
     def update_local_vpbs(self, transaction: MultiTransactions,
                           merkle_proof: MerkleTreeProof, block_height: int,

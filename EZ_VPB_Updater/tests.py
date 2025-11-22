@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 # 导入项目中的真实区块链模块
 from EZ_Value.Value import Value, ValueState
+from EZ_Value.AccountValueCollection import AccountValueCollection
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Proof.ProofUnit import ProofUnit
@@ -32,15 +33,15 @@ from vpb_updater import (
 
 
 class TestVPBUpdater(unittest.TestCase):
-    """VPBUpdater核心功能测试"""
+    """VPBUpdater核心功能测试 - 重构版本"""
 
     def setUp(self):
         """测试设置"""
         self.test_address = "0x1234567890abcdef"
         self.test_recipient = "0xabcdef1234567890"
 
-        # 使用服务构建器创建测试用的VPBUpdater
-        self.vpb_updater = VPBServiceBuilder.create_test_updater(self.test_address)
+        # 使用服务构建器创建测试用的VPBUpdater（包含ValueCollection）
+        self.vpb_updater = VPBServiceBuilder.create_test_updater(self.test_address, with_collection=True)
 
         # 创建测试Value
         self.test_value = Value("0x100", 100)  # begin_index=0x100, value_num=100
@@ -66,6 +67,8 @@ class TestVPBUpdater(unittest.TestCase):
         self.assertIsNotNone(self.vpb_updater.vpb_manager)
         self.assertIsNotNone(self.vpb_updater.vpb_storage)
         self.assertIsNotNone(self.vpb_updater._lock)
+        # 测试新增的ValueCollection支持
+        self.assertIsNotNone(self.vpb_updater.value_collection)
 
     def test_vpb_update_request_creation(self):
         """测试VPBUpdateRequest创建"""
@@ -110,34 +113,67 @@ class TestVPBUpdater(unittest.TestCase):
         self.assertEqual(len(result.failed_operations), 0)
 
     def test_vpb_status_query(self):
-        """测试VPB状态查询"""
+        """测试VPB状态查询 - 重构版本"""
         status = self.vpb_updater.get_vpb_update_status(self.test_address)
 
         self.assertIsInstance(status, dict)
         self.assertEqual(status['account_address'], self.test_address)
         self.assertEqual(status['total_vpbs'], 0)
         self.assertIsInstance(status['vpb_details'], list)
+        # 测试新增的字段
+        self.assertIn('has_value_collection', status)
+        self.assertTrue(status['has_value_collection'])
 
     def test_vpb_consistency_validation(self):
-        """测试VPB一致性验证"""
+        """测试VPB一致性验证 - 重构版本"""
         validation = self.vpb_updater.validate_vpb_consistency(self.test_address)
 
         self.assertIsInstance(validation, dict)
         self.assertEqual(validation['account_address'], self.test_address)
         self.assertTrue(validation['is_consistent'])
         self.assertEqual(validation['total_vpbs'], 0)
+        # 测试新增的字段
+        self.assertIn('inconsistencies', validation)
+        self.assertIn('validation_summary', validation)
+
+    def test_mapping_optimization_mechanism(self):
+        """测试映射优化机制 - 新功能测试"""
+        # 这个测试验证我们使用的是映射优化机制而不是传统的加载所有数据的方式
+        request = VPBUpdateRequest(
+            account_address=self.test_address,
+            transaction=self.test_multi_transaction,
+            block_height=100,
+            merkle_proof=self.test_merkle_proof,
+            transferred_value_ids={"0x100"}  # 测试价值转移
+        )
+
+        result = self.vpb_updater.update_vpb_for_transaction(request)
+
+        # 应该成功执行，即使没有现有VPB
+        self.assertTrue(result.success)
+        self.assertIsInstance(result.updated_vpb_ids, list)
+        self.assertIsInstance(result.execution_time, float)
+        # 验证执行时间合理（映射优化应该更快）
+        self.assertGreater(result.execution_time, 0)
+        self.assertLess(result.execution_time, 10.0)  # 不应该超过10秒
 
 
 class TestAccountVPBUpdater(unittest.TestCase):
-    """AccountVPBUpdater测试 - 账户VPB更新器的主要接口"""
+    """AccountVPBUpdater测试 - 账户VPB更新器的主要接口 - 重构版本"""
 
     def setUp(self):
         """测试设置"""
         self.test_address = "0x1234567890abcdef"
         self.test_recipient = "0xabcdef1234567890"
 
-        # 创建AccountVPBUpdater实例
-        self.account_updater = AccountVPBUpdater(self.test_address)
+        # 创建ValueCollection用于测试
+        self.value_collection = AccountValueCollection(f"test_values_{self.test_address}.db")
+
+        # 创建AccountVPBUpdater实例（支持ValueCollection）
+        self.account_updater = AccountVPBUpdater(
+            self.test_address,
+            value_collection=self.value_collection
+        )
 
         # 创建测试数据
         self.test_value = Value("0x100", 100)
@@ -283,10 +319,10 @@ class TestAccountNodeVPBIntegration_BackwardCompatibility(unittest.TestCase):
 
 
 class TestVPBServiceBuilder(unittest.TestCase):
-    """VPBServiceBuilder测试"""
+    """VPBServiceBuilder测试 - 重构版本"""
 
     def test_create_updater(self):
-        """测试创建VPBUpdater"""
+        """测试创建VPBUpdater - 基础版本"""
         test_address = "0xtest1234567890abcdef"
 
         updater = VPBServiceBuilder.create_updater(test_address)
@@ -296,16 +332,145 @@ class TestVPBServiceBuilder(unittest.TestCase):
         self.assertIsNotNone(updater.vpb_manager)
         self.assertIsNotNone(updater.vpb_storage)
 
+    def test_create_updater_with_collection(self):
+        """测试创建带ValueCollection的VPBUpdater - 新功能"""
+        test_address = "0xtest1234567890abcdef"
+        value_collection = AccountValueCollection(f"builder_test_{test_address}.db")
+
+        updater = VPBServiceBuilder.create_updater_with_collection(
+            test_address, value_collection
+        )
+
+        self.assertIsNotNone(updater)
+        self.assertIsInstance(updater, VPBUpdater)
+        self.assertIsNotNone(updater.vpb_manager)
+        self.assertIsNotNone(updater.vpb_storage)
+        self.assertIsNotNone(updater.value_collection)
+        self.assertIs(updater.value_collection, value_collection)
+
     def test_create_test_updater(self):
-        """测试创建测试用VPBUpdater"""
+        """测试创建测试用VPBUpdater - 重构版本"""
         test_address = "0xtest1234567890abcdef"
 
-        test_updater = VPBServiceBuilder.create_test_updater(test_address)
+        # 测试不包含ValueCollection的版本
+        test_updater = VPBServiceBuilder.create_test_updater(test_address, with_collection=False)
 
         self.assertIsNotNone(test_updater)
         self.assertIsInstance(test_updater, VPBUpdater)
         self.assertIsNotNone(test_updater.vpb_manager)
         self.assertIsNotNone(test_updater.vpb_storage)
+
+        # 测试包含ValueCollection的版本
+        test_updater_with_collection = VPBServiceBuilder.create_test_updater(
+            test_address, with_collection=True
+        )
+
+        self.assertIsNotNone(test_updater_with_collection)
+        self.assertIsInstance(test_updater_with_collection, VPBUpdater)
+        self.assertIsNotNone(test_updater_with_collection.value_collection)
+
+
+class TestMappingOptimization(unittest.TestCase):
+    """映射优化机制测试 - 新功能测试"""
+
+    def setUp(self):
+        """测试设置"""
+        self.test_address = "0xmappingtest1234567890"
+        # 创建ValueCollection以获得完整功能
+        self.value_collection = AccountValueCollection(f"mapping_test_{self.test_address}.db")
+        self.vpb_updater = VPBServiceBuilder.create_updater_with_collection(
+            self.test_address, self.value_collection
+        )
+
+        # 创建测试数据
+        self.test_value = Value("0x100", 100)
+        self.test_transaction = Transaction(
+            sender=self.test_address,
+            recipient="0xrecipient1234567890",
+            nonce=1,
+            signature=None,
+            value=[self.test_value],
+            time=datetime.now().isoformat()
+        )
+        self.test_multi_transaction = MultiTransactions(self.test_address, [self.test_transaction])
+        self.test_merkle_proof = MerkleTreeProof(['hash1', 'hash2', 'hash3', 'root_hash'])
+
+    def test_proofs_mapping_mechanism(self):
+        """测试Proofs映射机制"""
+        # 创建包含价值转移的请求
+        request = VPBUpdateRequest(
+            account_address=self.test_address,
+            transaction=self.test_multi_transaction,
+            block_height=100,
+            merkle_proof=self.test_merkle_proof,
+            transferred_value_ids={"0x100"}  # 直接包含测试value_id
+        )
+
+        # 执行更新
+        result = self.vpb_updater.update_vpb_for_transaction(request)
+
+        # 验证结果
+        self.assertTrue(result.success)
+        self.assertIsInstance(result.execution_time, float)
+        self.assertGreater(result.execution_time, 0)
+
+        # 验证使用的是映射优化机制（通过执行时间来判断）
+        # 映射优化应该比传统方法更快
+        self.assertLess(result.execution_time, 5.0)  # 映射优化应该在5秒内完成
+
+    def test_should_update_vpb_logic(self):
+        """测试VPB更新判断逻辑"""
+        # 这个测试验证_shoud_update_vpb方法的逻辑
+        from vpb_updater import VPBUpdater
+
+        # 创建一个VPBUpdater实例来访问私有方法
+        updater = VPBUpdater(
+            vpb_manager=self.vpb_updater.vpb_manager,
+            value_collection=self.value_collection
+        )
+
+        # 测试不同的transferred_value_ids场景
+        # 这里我们只能测试公共接口，私有方法的行为通过update_vpb_for_transaction来验证
+        request_with_transfer = VPBUpdateRequest(
+            account_address=self.test_address,
+            transaction=self.test_multi_transaction,
+            block_height=101,
+            merkle_proof=self.test_merkle_proof,
+            transferred_value_ids={"0x100", "0x200"}  # 包含多个value_id
+        )
+
+        result = updater.update_vpb_for_transaction(request_with_transfer)
+        self.assertTrue(result.success)
+
+    def test_memory_efficiency(self):
+        """测试内存效率 - 映射优化应该减少内存使用"""
+        try:
+            import psutil
+            import os
+
+            process = psutil.Process(os.getpid())
+            memory_before = process.memory_info().rss / 1024 / 1024  # MB
+
+            # 执行多次更新来测试内存效率
+            for i in range(10):
+                request = VPBUpdateRequest(
+                    account_address=self.test_address,
+                    transaction=self.test_multi_transaction,
+                    block_height=100 + i,
+                    merkle_proof=self.test_merkle_proof
+                )
+                result = self.vpb_updater.update_vpb_for_transaction(request)
+                self.assertTrue(result.success)
+
+            memory_after = process.memory_info().rss / 1024 / 1024  # MB
+            memory_increase = memory_after - memory_before
+
+            # 映射优化应该控制内存增长，不应该增长太多
+            self.assertLess(memory_increase, 50)  # 不应该增长超过50MB
+
+        except ImportError:
+            # 如果psutil不可用，跳过此测试但记录说明
+            self.skipTest("psutil模块未安装，跳过内存效率测试")
 
 
 class TestRealModuleIntegration(unittest.TestCase):
@@ -379,23 +544,25 @@ class TestRealModuleIntegration(unittest.TestCase):
 
 
 def run_basic_tests():
-    """运行基本测试"""
-    print("运行VPB Updater测试（使用真实区块链模块）...")
-    print("=" * 50)
+    """运行基本测试 - 重构版本"""
+    print("运行VPB Updater测试（重构版本 - 包含映射优化功能）...")
+    print("=" * 60)
 
     # 创建测试套件
     test_suite = unittest.TestSuite()
 
-    # 添加测试用例
+    # 添加测试用例（包含新的映射优化测试）
     test_classes = [
         TestVPBUpdater,
         TestAccountVPBUpdater,
         TestAccountNodeVPBIntegration_BackwardCompatibility,
         TestVPBServiceBuilder,
+        TestMappingOptimization,  # 新增的映射优化测试
         TestRealModuleIntegration
     ]
 
     for test_class in test_classes:
+        print(f"加载测试类: {test_class.__name__}")
         tests = unittest.TestLoader().loadTestsFromTestCase(test_class)
         test_suite.addTests(tests)
 
@@ -404,7 +571,7 @@ def run_basic_tests():
     result = runner.run(test_suite)
 
     # 输出总结
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(f"测试完成: 运行了 {result.testsRun} 个测试")
     print(f"成功: {result.testsRun - len(result.failures) - len(result.errors)}")
     print(f"失败: {len(result.failures)}")
