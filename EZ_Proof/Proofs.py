@@ -2,16 +2,26 @@ import sqlite3
 import json
 import os
 from typing import Dict, List, Set, Optional, Tuple
+import warnings
 
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 from EZ_Proof.ProofUnit import ProofUnit
+from EZ_Proof.AccountProofManager import AccountProofManager
 
-class ProofsStorage:
-    """Persistent storage manager for ProofUnits using SQLite"""
+class LegacyProofsStorage:
+    """
+    Legacy storage for backward compatibility.
+    已弃用：建议使用AccountProofStorage
+    """
 
     def __init__(self, db_path: str = "ez_proof_storage.db"):
+        warnings.warn(
+            "LegacyProofsStorage is deprecated. Use AccountProofStorage instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.db_path = db_path
         self._init_database()
 
@@ -151,87 +161,153 @@ class ProofsStorage:
 
 class Proofs:
     """
-    Proofs class with mapping table structure for optimized storage.
-    Manages relationships between Values and ProofUnits.
+    Legacy Proofs class for backward compatibility.
+    已弃用：建议使用AccountProofManager作为Account级别的统一管理接口
+
+    这个类是以单个Value为视角的proof unit映射，设计上存在局限性。
+    新的架构推荐使用AccountProofManager来管理Account级别的所有Value和ProofUnit关系。
     """
 
-    def __init__(self, value_id: str, storage: Optional[ProofsStorage] = None):
+    def __init__(self, value_id: str, account_address: Optional[str] = None,
+                 storage: Optional[LegacyProofsStorage] = None,
+                 account_proof_manager: Optional[AccountProofManager] = None):
+        """
+        初始化Proofs对象
+
+        Args:
+            value_id: Value的标识符
+            account_address: 账户地址（可选，用于兼容性）
+            storage: Legacy存储对象（已弃用）
+            account_proof_manager: 新的AccountProofManager对象（推荐使用）
+        """
+        warnings.warn(
+            "Proofs class is deprecated. Use AccountProofManager for better architecture.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         self.value_id = value_id
-        self.storage = storage or ProofsStorage()
-        self._proof_unit_ids: Set[str] = set()
-        self._proof_units_cache: Dict[str, ProofUnit] = {}
-        self._load_existing_mappings()
+        self.account_address = account_address or "default_account"
+
+        # 优先使用新的AccountProofManager
+        if account_proof_manager is not None:
+            self.account_proof_manager = account_proof_manager
+            self.use_legacy_storage = False
+        else:
+            # 回退到旧的存储系统
+            self.storage = storage or LegacyProofsStorage()
+            self.use_legacy_storage = True
+            self._proof_unit_ids: Set[str] = set()
+            self._proof_units_cache: Dict[str, ProofUnit] = {}
+            self._load_existing_mappings()
 
     def _load_existing_mappings(self):
-        """Load existing proof unit mappings for this value"""
-        proof_units = self.storage.get_proof_units_for_value(self.value_id)
-        for pu in proof_units:
-            self._proof_unit_ids.add(pu.unit_id)
-            self._proof_units_cache[pu.unit_id] = pu
+        """Load existing proof unit mappings for this value (legacy method)"""
+        if self.use_legacy_storage:
+            proof_units = self.storage.get_proof_units_for_value(self.value_id)
+            for pu in proof_units:
+                self._proof_unit_ids.add(pu.unit_id)
+                self._proof_units_cache[pu.unit_id] = pu
 
     def add_proof_unit(self, proof_unit: ProofUnit) -> bool:
-        """Add a ProofUnit to this Proofs collection"""
-        try:
-            # Check if similar ProofUnit already exists in storage
-            existing_unit = self.storage.load_proof_unit(proof_unit.unit_id)
+        """
+        Add a ProofUnit to this Proofs collection
 
-            if existing_unit:
-                # Use existing ProofUnit and increment reference
-                existing_unit.increment_reference()
-                self.storage.store_proof_unit(existing_unit)
-                proof_unit_id = existing_unit.unit_id
-            else:
-                # Store new ProofUnit
-                self.storage.store_proof_unit(proof_unit)
-                proof_unit_id = proof_unit.unit_id
+        Args:
+            proof_unit: 要添加的ProofUnit
 
-            # Add mapping
-            if self.storage.add_value_mapping(self.value_id, proof_unit_id):
-                self._proof_unit_ids.add(proof_unit_id)
-                if proof_unit_id in self._proof_units_cache:
-                    del self._proof_units_cache[proof_unit_id]
-                return True
+        Returns:
+            bool: 添加是否成功
+        """
+        if self.use_legacy_storage:
+            # Legacy implementation
+            try:
+                # Check if similar ProofUnit already exists in storage
+                existing_unit = self.storage.load_proof_unit(proof_unit.unit_id)
 
-            return False
-        except Exception as e:
-            print(f"Error adding proof unit: {e}")
-            return False
+                if existing_unit:
+                    # Use existing ProofUnit and increment reference
+                    existing_unit.increment_reference()
+                    self.storage.store_proof_unit(existing_unit)
+                    proof_unit_id = existing_unit.unit_id
+                else:
+                    # Store new ProofUnit
+                    self.storage.store_proof_unit(proof_unit)
+                    proof_unit_id = proof_unit.unit_id
+
+                # Add mapping
+                if self.storage.add_value_mapping(self.value_id, proof_unit_id):
+                    self._proof_unit_ids.add(proof_unit_id)
+                    if proof_unit_id in self._proof_units_cache:
+                        del self._proof_units_cache[proof_unit_id]
+                    return True
+
+                return False
+            except Exception as e:
+                print(f"Error adding proof unit: {e}")
+                return False
+        else:
+            # New implementation using AccountProofManager
+            return self.account_proof_manager.add_proof_unit(self.value_id, proof_unit)
 
     def remove_proof_unit(self, unit_id: str) -> bool:
-        """Remove a ProofUnit from this Proofs collection"""
-        try:
-            if self.storage.remove_value_mapping(self.value_id, unit_id):
-                self._proof_unit_ids.discard(unit_id)
-                if unit_id in self._proof_units_cache:
-                    del self._proof_units_cache[unit_id]
+        """
+        Remove a ProofUnit from this Proofs collection
 
-                # Check if ProofUnit can be deleted from storage
-                proof_unit = self.storage.load_proof_unit(unit_id)
-                if proof_unit:
-                    proof_unit.decrement_reference()
-                    if proof_unit.can_be_deleted():
-                        self.storage.delete_proof_unit(unit_id)
-                    else:
-                        self.storage.store_proof_unit(proof_unit)
+        Args:
+            unit_id: 要移除的ProofUnit ID
 
-                return True
-            return False
-        except Exception as e:
-            print(f"Error removing proof unit: {e}")
-            return False
+        Returns:
+            bool: 移除是否成功
+        """
+        if self.use_legacy_storage:
+            # Legacy implementation
+            try:
+                if self.storage.remove_value_mapping(self.value_id, unit_id):
+                    self._proof_unit_ids.discard(unit_id)
+                    if unit_id in self._proof_units_cache:
+                        del self._proof_units_cache[unit_id]
+
+                    # Check if ProofUnit can be deleted from storage
+                    proof_unit = self.storage.load_proof_unit(unit_id)
+                    if proof_unit:
+                        proof_unit.decrement_reference()
+                        if proof_unit.can_be_deleted():
+                            self.storage.delete_proof_unit(unit_id)
+                        else:
+                            self.storage.store_proof_unit(proof_unit)
+
+                    return True
+                return False
+            except Exception as e:
+                print(f"Error removing proof unit: {e}")
+                return False
+        else:
+            # New implementation using AccountProofManager
+            return self.account_proof_manager.remove_value_proof_mapping(self.value_id, unit_id)
 
     def get_proof_units(self) -> List[ProofUnit]:
-        """Get all ProofUnits in this collection"""
-        proof_units = []
-        for unit_id in self._proof_unit_ids:
-            if unit_id in self._proof_units_cache:
-                proof_units.append(self._proof_units_cache[unit_id])
-            else:
-                proof_unit = self.storage.load_proof_unit(unit_id)
-                if proof_unit:
-                    self._proof_units_cache[unit_id] = proof_unit
-                    proof_units.append(proof_unit)
-        return proof_units
+        """
+        Get all ProofUnits in this collection
+
+        Returns:
+            List[ProofUnit]: ProofUnit列表
+        """
+        if self.use_legacy_storage:
+            # Legacy implementation
+            proof_units = []
+            for unit_id in self._proof_unit_ids:
+                if unit_id in self._proof_units_cache:
+                    proof_units.append(self._proof_units_cache[unit_id])
+                else:
+                    proof_unit = self.storage.load_proof_unit(unit_id)
+                    if proof_unit:
+                        self._proof_units_cache[unit_id] = proof_unit
+                        proof_units.append(proof_unit)
+            return proof_units
+        else:
+            # New implementation using AccountProofManager
+            return self.account_proof_manager.get_proof_units_for_value(self.value_id)
 
     def verify_all_proof_units(self, merkle_root: str = None) -> List[Tuple[bool, str]]:
         """
@@ -244,8 +320,8 @@ class Proofs:
             List[Tuple[bool, str]]: A list of tuples containing the verification result
             and an error message (if any) for each ProofUnit.
         """
-        results = []
         proof_units = self.get_proof_units()
+        results = []
 
         for pu in proof_units:
             is_valid, error_message = pu.verify_proof_unit(merkle_root)
@@ -254,22 +330,72 @@ class Proofs:
         return results
 
     def get_proof_unit_count(self) -> int:
-        """Get the number of ProofUnits in this collection"""
-        return len(self._proof_unit_ids)
+        """
+        Get the number of ProofUnits in this collection
+
+        Returns:
+            int: ProofUnit数量
+        """
+        if self.use_legacy_storage:
+            return len(self._proof_unit_ids)
+        else:
+            return len(self.account_proof_manager.get_proof_units_for_value(self.value_id))
 
     def clear_all(self) -> bool:
-        """Remove all ProofUnits from this collection"""
-        success = True
-        for unit_id in list(self._proof_unit_ids):
-            if not self.remove_proof_unit(unit_id):
-                success = False
-        return success
+        """
+        Remove all ProofUnits from this collection
+
+        Returns:
+            bool: 清除是否成功
+        """
+        if self.use_legacy_storage:
+            success = True
+            for unit_id in list(self._proof_unit_ids):
+                if not self.remove_proof_unit(unit_id):
+                    success = False
+            return success
+        else:
+            # For AccountProofManager, we need to remove the value entirely
+            return self.account_proof_manager.remove_value(self.value_id)
+
+    def migrate_to_account_proof_manager(self, account_address: str) -> AccountProofManager:
+        """
+        迁移到新的AccountProofManager架构
+
+        Args:
+            account_address: 目标账户地址
+
+        Returns:
+            AccountProofManager: 新的管理器实例
+        """
+        try:
+            # 创建新的AccountProofManager
+            new_manager = AccountProofManager(account_address)
+
+            if self.use_legacy_storage:
+                # 从旧系统迁移数据
+                for proof_unit in self.get_proof_units():
+                    new_manager.add_proof_unit(self.value_id, proof_unit)
+
+            # 切换到新系统
+            self.account_proof_manager = new_manager
+            self.use_legacy_storage = False
+            self.account_address = account_address
+
+            return new_manager
+        except Exception as e:
+            print(f"Error migrating to AccountProofManager: {e}")
+            return None
 
     def __len__(self):
         return self.get_proof_unit_count()
 
     def __contains__(self, unit_id: str) -> bool:
-        return unit_id in self._proof_unit_ids
+        if self.use_legacy_storage:
+            return unit_id in self._proof_unit_ids
+        else:
+            proof_units = self.account_proof_manager.get_proof_units_for_value(self.value_id)
+            return any(pu.unit_id == unit_id for pu in proof_units)
 
     def __iter__(self):
         return iter(self.get_proof_units())
