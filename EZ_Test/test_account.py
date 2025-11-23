@@ -14,7 +14,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from EZ_Value.Value import Value, ValueState
+    from EZ_VPB.values.Value import Value, ValueState
     from EZ_Account.Account import Account
     from EZ_VPB.VPBPairs import VPBPairs, VPBPair
     from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions

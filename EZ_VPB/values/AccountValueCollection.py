@@ -2,7 +2,7 @@ from typing import List, Tuple, Optional
 from collections import defaultdict
 import uuid
 
-from EZ_Value.Value import Value, ValueState
+from .Value import Value, ValueState
 
 class ValueNode:
     """链表节点，用于管理Value及其索引"""

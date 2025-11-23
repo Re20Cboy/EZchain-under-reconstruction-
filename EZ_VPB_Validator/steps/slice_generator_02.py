@@ -126,7 +126,7 @@ class VPBSliceGenerator(ValidatorBase):
                         owner_slice.append((height, owner_dict[height]))
 
         # 创建切片后的BlockIndexList
-        from EZ_BlockIndex.BlockIndexList import BlockIndexList
+        from EZ_VPB.block_index.BlockIndexList import BlockIndexList
         sliced_block_index_list = BlockIndexList(index_slice, owner_slice)
 
         # 获取checkpoint的owner信息

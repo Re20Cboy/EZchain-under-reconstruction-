@@ -19,18 +19,25 @@ import sqlite3
 import json
 import os
 import threading
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime
 
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Value.Value import Value, ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
-from EZ_Value.AccountPickValues import AccountPickValues
-from EZ_Proof.Proofs import Proofs, ProofsStorage
-from EZ_BlockIndex.BlockIndexList import BlockIndexList
-from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+from .values.Value import Value, ValueState
+from .values.AccountValueCollection import AccountValueCollection
+from .values.AccountPickValues import AccountPickValues
+from .proofs.Proofs import Proofs, LegacyProofsStorage as ProofsStorage
+from .block_index.BlockIndexList import BlockIndexList
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+
+def _get_create_multi_transactions_class():
+    """延迟导入CreateMultiTransactions类以避免循环依赖"""
+    from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+    return CreateMultiTransactions
 
 class VPBStorage:
     """VPB永久存储管理器，使用SQLite提供持久化存储
@@ -626,7 +633,7 @@ class VPBPairs:
 
         # 如果没有提供ValueCollection，则创建一个
         if value_collection is None:
-            from EZ_Value.AccountValueCollection import AccountValueCollection
+            from .values.AccountValueCollection import AccountValueCollection
             value_collection = AccountValueCollection(account_address)
 
         self.manager = VPBManager(account_address, self.storage, value_collection)

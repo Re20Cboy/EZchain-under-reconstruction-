@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Tool_Box.Hash import sha256_hash
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
-from EZ_Value.Value import Value
+from EZ_VPB.values.Value import Value
 
 class Transaction:
     def __init__(self, sender: str, recipient: str, nonce: int, signature: Optional[bytes], value: List[Value], time: Optional[str]):
@@ -201,7 +201,7 @@ class Transaction:
     @classmethod
     def from_dict(cls, data: dict) -> 'Transaction':
         """Create Transaction from dictionary"""
-        from EZ_Value.Value import Value
+        from EZ_VPB.values.Value import Value
         values = [Value.from_dict(val_data) for val_data in data['value']]
         transaction = cls(
             sender=data['sender'],

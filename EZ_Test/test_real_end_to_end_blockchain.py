@@ -40,9 +40,9 @@ from EZ_Main_Chain.Blockchain import (
 )
 from EZ_Main_Chain.Block import Block
 from EZ_Account.Account import Account
-from EZ_Value.Value import Value, ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
-from EZ_Value.AccountPickValues import AccountPickValues
+from EZ_VPB.values.Value import Value, ValueState
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
+from EZ_VPB.values.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction

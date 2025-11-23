@@ -1,13 +1,21 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, TYPE_CHECKING
 import sys
 import os
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from EZ_Value.Value import Value, ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
-from EZ_Transaction.SingleTransaction import Transaction
+from .Value import Value, ValueState
+from .AccountValueCollection import AccountValueCollection
+
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from EZ_Transaction.SingleTransaction import Transaction
+
+def _get_transaction_class():
+    """延迟导入Transaction类以避免循环依赖"""
+    from EZ_Transaction.SingleTransaction import Transaction
+    return Transaction
 
 class AccountPickValues:
     """增强版Value选择器，基于AccountValueCollection实现高效调度"""
@@ -32,7 +40,7 @@ class AccountPickValues:
         return added_count
     
     def pick_values_for_transaction(self, required_amount: int, sender: str, recipient: str,
-                                 nonce: int, time: str) -> Tuple[List[Value], Optional[Value], Optional[Transaction], Optional[Transaction]]:
+                                 nonce: int, time: str) -> Tuple[List[Value], Optional[Value], Optional['Transaction'], Optional['Transaction']]:
         """为交易选择Value，返回选中的值、找零、找零交易、主交易"""
         if required_amount < 1:
             raise ValueError("交易金额必须大于等于1")
@@ -83,6 +91,7 @@ class AccountPickValues:
                     self._update_value_state(v2, ValueState.SELECTED)
                     
                     # 创建（给sender自己）找零交易
+                    Transaction = _get_transaction_class()
                     change_transaction = Transaction(
                         sender=sender,
                         recipient=sender,
@@ -93,6 +102,7 @@ class AccountPickValues:
                     )
                     
                     # 创建主交易
+                    Transaction = _get_transaction_class()
                     main_transaction = Transaction(
                         sender=sender,
                         recipient=recipient,
@@ -103,6 +113,7 @@ class AccountPickValues:
                     )
         else:
             # 不需要找零，直接使用所有选中的值
+            Transaction = _get_transaction_class()
             main_transaction = Transaction(
                 sender=sender,
                 recipient=recipient,

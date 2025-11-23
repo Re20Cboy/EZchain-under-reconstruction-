@@ -239,7 +239,7 @@ class ValueIntersectionDetector(ValidatorBase):
         """
         检查对象是否是有效的Value类型对象
 
-        严格类型检查：必须是Value类型（from EZ_Value.Value import Value）
+        严格类型检查：必须是Value类型（from EZ_VPB.values.Value import Value）
 
         Args:
             value_obj: 要检查的对象
@@ -248,7 +248,7 @@ class ValueIntersectionDetector(ValidatorBase):
             bool: 是否是有效的Value对象
         """
         # 严格检查是否为Value类型
-        from EZ_Value.Value import Value
+        from EZ_VPB.values.Value import Value
         return isinstance(value_obj, Value)
 
     def transaction_spends_value(self, transaction: Any, value) -> bool:

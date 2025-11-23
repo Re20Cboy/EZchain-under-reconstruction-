@@ -22,7 +22,7 @@ try:
         MainChainInfo
     )
     from EZ_CheckPoint.CheckPoint import CheckPoint
-    from EZ_Value.Value import Value
+    from EZ_VPB.values.Value import Value
 except ImportError as e:
     print(f"导入模块错误: {e}")
     sys.exit(1)

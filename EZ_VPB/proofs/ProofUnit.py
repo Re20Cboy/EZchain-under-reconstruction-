@@ -2,16 +2,24 @@ import hashlib
 import json
 import sqlite3
 import os
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Units.MerkleProof import MerkleTreeProof
 
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from EZ_Transaction.MultiTransactions import MultiTransactions
+
+def _get_multi_transactions_class():
+    """延迟导入MultiTransactions类以避免循环依赖"""
+    from EZ_Transaction.MultiTransactions import MultiTransactions
+    return MultiTransactions
+
 class ProofUnit:  # value proof within a block
-    def __init__(self, owner: str, owner_multi_txns: MultiTransactions, owner_mt_proof: MerkleTreeProof, unit_id: Optional[str] = None):
+    def __init__(self, owner: str, owner_multi_txns: 'MultiTransactions', owner_mt_proof: MerkleTreeProof, unit_id: Optional[str] = None):
         self.owner = owner
         self.owner_multi_txns = owner_multi_txns  # 在此区块内的ownTxns
         self.owner_mt_proof = owner_mt_proof  # ownTxns对应的mTreeProof

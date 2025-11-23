@@ -17,10 +17,10 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 # 导入项目中的真实区块链模块
-from EZ_Value.Value import ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
+from EZ_VPB.values.Value import ValueState
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
 from EZ_Transaction.MultiTransactions import MultiTransactions
-from EZ_Proof.ProofUnit import ProofUnit
+from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_Units.MerkleProof import MerkleTreeProof
 from EZ_VPB.VPBPairs import VPBPair, VPBManager, VPBStorage
 

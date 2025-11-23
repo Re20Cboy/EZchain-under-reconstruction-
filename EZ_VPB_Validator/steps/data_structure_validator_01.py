@@ -60,7 +60,7 @@ class DataStructureValidator(ValidatorBase):
         3. end_index > begin_index验证
         4. 使用Value类自身的验证方法（包含hex格式、value_num正数、索引关系验证）
         """
-        from EZ_Value.Value import Value, ValueState
+        from EZ_VPB.values.Value import Value, ValueState
 
         # 1. 类型检查
         if not isinstance(value, Value):
@@ -91,7 +91,7 @@ class DataStructureValidator(ValidatorBase):
         3. proof_units列表验证
         4. 每个ProofUnit的深度验证
         """
-        from EZ_Proof.Proofs import Proofs
+        from EZ_VPB.proofs.Proofs import Proofs
 
         # 1. 类型检查
         if not isinstance(proofs, Proofs):
@@ -127,7 +127,7 @@ class DataStructureValidator(ValidatorBase):
         5. unit_id格式验证
         6. reference_count验证
         """
-        from EZ_Proof.ProofUnit import ProofUnit
+        from EZ_VPB.proofs.ProofUnit import ProofUnit
 
         # 1. 类型检查
         if not isinstance(proof_unit, ProofUnit):
@@ -209,7 +209,7 @@ class DataStructureValidator(ValidatorBase):
         4. owner数据格式验证（补充BlockIndexList未覆盖的验证）
         5. index_lst与owner的逻辑关系验证
         """
-        from EZ_BlockIndex.BlockIndexList import BlockIndexList
+        from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 
         # 1. 类型检查
         if not isinstance(block_index_list, BlockIndexList):
@@ -301,7 +301,7 @@ class DataStructureValidator(ValidatorBase):
         if not isinstance(hex_string, str):
             return False
         # 使用Value类的验证逻辑保持一致性
-        from EZ_Value.Value import Value
+        from EZ_VPB.values.Value import Value
         temp_value = object.__new__(Value)  # 创建临时实例以使用其方法
         return temp_value._is_valid_hex(hex_string)
 

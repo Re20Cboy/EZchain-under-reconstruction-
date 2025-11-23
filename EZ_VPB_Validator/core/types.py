@@ -99,9 +99,9 @@ class MainChainInfo:
 @dataclass
 class VPBSlice:
     """VPB历史切片"""
-    from EZ_Value.Value import Value
-    from EZ_Proof.ProofUnit import ProofUnit
-    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+    from EZ_VPB.values.Value import Value
+    from EZ_VPB.proofs.ProofUnit import ProofUnit
+    from EZ_VPB.block_index.BlockIndexList import BlockIndexList
     from EZ_CheckPoint.CheckPoint import CheckPointRecord
 
     value: Value

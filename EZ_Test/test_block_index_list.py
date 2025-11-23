@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+    from EZ_VPB.block_index.BlockIndexList import BlockIndexList
     from EZ_Main_Chain.Block import Block
     from EZ_Units.MerkleTree import MerkleTree
 except ImportError as e:

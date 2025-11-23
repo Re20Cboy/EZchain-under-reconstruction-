@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from EZ_Value.AccountPickValues import AccountPickValues
-    from EZ_Value.Value import Value, ValueState
+    from EZ_VPB.values.AccountPickValues import AccountPickValues
+    from EZ_VPB.values.Value import Value, ValueState
     from EZ_Transaction.SingleTransaction import Transaction
 except ImportError as e:
     print(f"Error importing AccountPickValues: {e}")

@@ -7,8 +7,8 @@ import warnings
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Proof.ProofUnit import ProofUnit
-from EZ_Proof.AccountProofManager import AccountProofManager
+from .ProofUnit import ProofUnit
+from .AccountProofManager import AccountProofManager
 
 class LegacyProofsStorage:
     """

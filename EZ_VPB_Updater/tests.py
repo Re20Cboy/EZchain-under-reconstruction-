@@ -15,11 +15,11 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 # 导入项目中的真实区块链模块
-from EZ_Value.Value import Value, ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
+from EZ_VPB.values.Value import Value, ValueState
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
-from EZ_Proof.ProofUnit import ProofUnit
+from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_Units.MerkleProof import MerkleTreeProof
 from EZ_VPB.VPBPairs import VPBPair, VPBManager, VPBStorage, VPBPairs
 
@@ -479,10 +479,10 @@ class TestRealModuleIntegration(unittest.TestCase):
     def test_all_real_modules_importable(self):
         """测试所有真实模块都能正确导入"""
         try:
-            from EZ_Value.Value import Value, ValueState
+            from EZ_VPB.values.Value import Value, ValueState
             from EZ_Transaction.MultiTransactions import MultiTransactions
             from EZ_Transaction.SingleTransaction import Transaction
-            from EZ_Proof.ProofUnit import ProofUnit
+            from EZ_VPB.proofs.ProofUnit import ProofUnit
             from EZ_Units.MerkleProof import MerkleTreeProof
             from EZ_VPB.VPBPairs import VPBPair, VPBManager, VPBStorage, VPBPairs
 

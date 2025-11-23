@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from EZ_Value.Value import Value, ValueState
+    from EZ_VPB.values.Value import Value, ValueState
 except ImportError as e:
     print(f"Error importing Value: {e}")
     sys.exit(1)

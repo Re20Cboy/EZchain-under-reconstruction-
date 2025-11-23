@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(__file__) + '/../EZ_Transaction')
 
 try:
     from EZ_Transaction.MultiTransactions import MultiTransactions
-    from EZ_Value.Value import Value
+    from EZ_VPB.values.Value import Value
     from EZ_Transaction.SingleTransaction import Transaction
 except ImportError as e:
     print(f"Error importing modules: {e}")

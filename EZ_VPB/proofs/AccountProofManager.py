@@ -7,8 +7,8 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Proof.ProofUnit import ProofUnit
-from EZ_Value.Value import Value
+from .ProofUnit import ProofUnit
+from ..values.Value import Value
 
 class AccountProofStorage:
     """

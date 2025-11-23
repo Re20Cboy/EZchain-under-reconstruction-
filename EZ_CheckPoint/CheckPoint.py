@@ -32,7 +32,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Value.Value import Value
+from EZ_VPB.values.Value import Value
 
 
 @dataclass

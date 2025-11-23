@@ -14,9 +14,9 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Transaction.SingleTransaction import Transaction
-from EZ_Value.AccountPickValues import AccountPickValues
-from EZ_Value.AccountValueCollection import AccountValueCollection
-from EZ_Value.Value import Value, ValueState
+from EZ_VPB.values.AccountPickValues import AccountPickValues
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
+from EZ_VPB.values.Value import Value, ValueState
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import sha256_hash
 

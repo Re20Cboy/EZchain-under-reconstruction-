@@ -15,7 +15,7 @@ import shutil
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Account.Account import Account
-from EZ_Value.Value import Value, ValueState
+from EZ_VPB.values.Value import Value, ValueState
 from EZ_Tool_Box.Hash import hash
 
 

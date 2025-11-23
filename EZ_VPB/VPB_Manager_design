@@ -1,0 +1,49 @@
+VPB管理器设计（其是Account进行Value-Proofs-BlockIndex管理的唯一接口）
+
+现状与背景：value、proofs、blockIndex的数据结构具体实现已在EZ_VPB的对应子文件夹中实现。
+且其中也已有一些管理接口，例如value提供了AccountValueCollection.py，proofs提供了AccountProofManager.py等。
+它们暂可以保留，但它们目前还是比较分散的，没有做一个统一的管理接口（我们的目的是为Account提供一个统一的存储、操作V、P、B的接口）。
+在逻辑上，VPB（即，Value-Proofs-BlockIndex）是一一对应的，
+一个Value对应一组Proofs（多个Proof Unit）和一个BlockIndex（包含一个index_lst和一个owner）。
+但在永久存储（硬盘）中，Value和BlockIndex依旧是一一对应的，但Proof Unit和它们却不是，其根本原因是，可能存在多个Value的Proofs包含同一个Proof Unit的情况。
+因此在永久存储（硬盘）设计中，我们是将Proof Unit单独存储的，并额外存储它和Value的映射关系。
+以上内容均已在EZ_VPB的对应子文件夹中（values、proofs、block_index）实现
+
+VPB管理器设计思路：
+VPB管理器是为Account提供的管理vpb的唯一接口，因此主要考虑account的所有可能操作，即，主要包括以下几种操作：
+1）account（例如：0xAlice）作为recipient从创世块处获得最初始的Value、Proofs（创世块的创世交易及其默克尔树证明）、BlockIndex（块高度为0，owner为0xAlice）；
+2）account想要作为sender发起交易Tx（包含在某个提交的MultiTransactions中）给Bob转移目标value（0xAlice->0xBob），那么account需要对本地所有vpb进行相关修改操作；
+3）account想要作为recipient接收其他account发送过来的vpb，那么account需要将接收到的vpb添加进本地数据库；
+
+具体地，我们针对上述各个操作进行具体实现设计：
+1）account（例如：0xAlice）作为recipient从创世块处获得最初始的Value、Proofs（创世块的创世交易及其默克尔树证明）、BlockIndex（块高度为0，owner为0xAlice）。
+输入：创世块数据（包含创世交易及其默克尔树证明）
+分别对account的本地数据库中的value、proofs、blockIndex进行初始化操作；
+直接分别添加相关的数据到对应的本地数据库中；
+建立value和proof unit的映射关系。
+
+2）account想要作为sender发起交易Tx（包含在某个提交的MultiTransactions中）给Bob转移目标value（0xAlice->0xBob），那么account需要对本地所有vpb进行相关修改操作。
+输入：Tx数据、提交的MultiTransactions已在主链上被确认的数据（默克尔树证明mtprf、区块高度h等）等信息（也就是说，只有在包含交易Tx（0xAlice->0xBob，目标Value）的Alice提交的MultiTransactions被主链确认后，才会调用此方法）。
+从account的本地数据库中提取交易Tx中目标Value及其唯一对应的BlockIndex，在此BlockIndex中对index_lst添加高度h，对owner添加（h,Bob_addr）；
+向account的本地数据库中直接新增proof unti（基于提交的MultiTransactions+默克尔树根证明生成）；
+对于account的本地所有非目标的且状态为“未花销”的value：
+    -提取此value对应的BlockIndex，在此BlockIndex中仅对index_lst添加高度h；
+对于account的本地所有状态为“未花销”的value（包括目标和非目标）：
+    -对此value的proof映射新增一个对前述proof unti的映射。
+对目标Value进行标记为“已花销”状态更新；
+
+3）account想要作为recipient接收其他account发送过来的vpb，那么account需要将接收到的vpb添加进本地数据库。
+输入：接收到的vpb数据（包含value、proofs、blockIndex等信息）
+检查value是否已存在，若存在：
+    -则跳过value的添加，将proofs的proof unit挨个添加到本地数据库中，这里要对proof unit进行本地化查重，
+    若重复则只需新建目标value与proof unit的映射关系，
+    若不存在则添加新的proof unit到本地数据库中，并新建目标value与proof unit的映射关系；
+    -对blockIndex进行添加操作；
+    -将此value的状态更新为“未花销”状态；
+若不存在：
+    -则直接添加value到本地数据库中；
+    -将proofs的proof unit挨个添加到本地数据库中，这里要对proof unit进行本地化查重，
+    若重复则只需新建目标value与proof unit的映射关系，
+    若不存在则添加新的proof unit到本地数据库中，并新建目标value与proof unit的映射关系；
+    -对blockIndex进行添加操作；
+    -将此value的状态更新为“未花销”状态；

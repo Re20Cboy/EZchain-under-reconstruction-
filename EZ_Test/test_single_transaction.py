@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from EZ_Transaction.SingleTransaction import Transaction
-    from EZ_Value.Value import Value, ValueState
+    from EZ_VPB.values.Value import Value, ValueState
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -132,7 +132,7 @@ class TestTransactionHashing(unittest.TestCase):
         # Check for hash line (supports both single and double quotes)
         self.assertTrue(
             "TxHash: b'" in tx_str or "TxHash: b\"" in tx_str,
-            f"TxHash line not found in expected format. Got: {[line for line in tx_str.split('\\n') if 'TxHash:' in line]}"
+            "TxHash line not found in expected format. Got: " + str([line for line in tx_str.split('\n') if 'TxHash:' in line])
         )
         self.assertIn(f"Time: {self.tx.time}", tx_str)
 

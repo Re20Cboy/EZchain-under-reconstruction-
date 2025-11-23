@@ -14,7 +14,7 @@ from EZ_Simulation.TransactionInjector import TransactionInjector, SimulationCon
 from EZ_Transaction_Pool.TransactionPool import TransactionPool
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
-from EZ_Value.Value import Value, ValueState
+from EZ_VPB.values.Value import Value, ValueState
 
 
 class TestTransactionInjector(unittest.TestCase):

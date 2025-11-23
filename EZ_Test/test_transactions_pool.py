@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
-from EZ_Value.Value import Value
+from EZ_VPB.values.Value import Value
 from EZ_Transaction_Pool.TransactionPool import TransactionPool, ValidationResult
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization

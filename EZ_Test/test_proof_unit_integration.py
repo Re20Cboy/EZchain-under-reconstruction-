@@ -13,12 +13,12 @@ import datetime
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from EZ_Proof.ProofUnit import ProofUnit
+from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Units.MerkleTree import MerkleTree
 from EZ_Units.MerkleProof import MerkleTreeProof
-from EZ_Value.Value import Value, ValueState
+from EZ_VPB.values.Value import Value, ValueState
 
 
 class TestProofUnitIntegration:

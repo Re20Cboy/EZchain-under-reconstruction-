@@ -29,11 +29,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from EZ_VPB.VPBPairs import VPBStorage, VPBPair, VPBManager, VPBPairs
-    from EZ_Value.Value import Value, ValueState
-    from EZ_Value.AccountValueCollection import AccountValueCollection
-    from EZ_Value.AccountPickValues import AccountPickValues
-    from EZ_Proof.Proofs import Proofs, ProofsStorage
-    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+    from EZ_VPB.values.Value import Value, ValueState
+    from EZ_VPB.values.AccountValueCollection import AccountValueCollection
+    from EZ_VPB.values.AccountPickValues import AccountPickValues
+    from EZ_VPB.proofs.Proofs import Proofs, LegacyProofsStorage as ProofsStorage
+    from EZ_VPB.block_index.BlockIndexList import BlockIndexList
     from EZ_Transaction.MultiTransactions import MultiTransactions
     from EZ_Transaction.SingleTransaction import Transaction
 except ImportError as e:

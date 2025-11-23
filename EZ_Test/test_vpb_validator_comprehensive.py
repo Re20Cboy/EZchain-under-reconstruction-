@@ -159,10 +159,10 @@ try:
         MainChainInfo, VPBSlice
     )
     from EZ_CheckPoint.CheckPoint import CheckPoint, CheckPointRecord
-    from EZ_Value.Value import Value, ValueState
-    from EZ_Proof.Proofs import Proofs
-    from EZ_Proof.ProofUnit import ProofUnit
-    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+    from EZ_VPB.values.Value import Value, ValueState
+    from EZ_VPB.proofs.Proofs import Proofs
+    from EZ_VPB.proofs.ProofUnit import ProofUnit
+    from EZ_VPB.block_index.BlockIndexList import BlockIndexList
     from EZ_Units.Bloom import BloomFilter
 except ImportError as e:
     print(f"导入模块错误: {e}")

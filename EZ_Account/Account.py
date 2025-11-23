@@ -19,9 +19,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 # Core EZChain imports
-from EZ_Value.Value import Value, ValueState
-from EZ_Value.AccountValueCollection import AccountValueCollection
-from EZ_Value.AccountPickValues import AccountPickValues
+from EZ_VPB.values.Value import Value, ValueState
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
+from EZ_VPB.values.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 # TransactionPool is used by consensus nodes, not account nodes
 # from EZ_Transaction_Pool.TransactionPool import TransactionPool
@@ -153,7 +153,7 @@ class Account:
                 vpb_proofs = proofs[i] if proofs is not None else None
                 vpb_block_indices = None
                 if block_indices is not None:
-                    from EZ_BlockIndex.BlockIndexList import BlockIndexList
+                    from EZ_VPB.block_index.BlockIndexList import BlockIndexList
                     vpb_block_indices = BlockIndexList(block_indices[i], owner=self.address)
 
                 # 通过VPBPairs统一添加，确保Value和VPB的一致性

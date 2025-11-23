@@ -1,7 +1,7 @@
 """
-EZ_Proof Module
+EZ_VPB Proofs Module
 
-Proof management system for EZChain blockchain.
+Proof management system for EZChain VPB system.
 Provides unified Account-level proof management capabilities.
 
 Key Components:

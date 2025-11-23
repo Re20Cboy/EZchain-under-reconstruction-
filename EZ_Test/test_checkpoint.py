@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_CheckPoint.CheckPoint import CheckPoint, CheckPointRecord, CheckPointStorage
-from EZ_Value.Value import Value, ValueState
+from EZ_VPB.values.Value import Value, ValueState
 
 
 class TestCheckPointRecord:
