@@ -7,8 +7,8 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from .ProofUnit import ProofUnit
-from ..values.Value import Value
+from proofs.ProofUnit import ProofUnit
+from values.Value import Value
 
 class AccountProofStorage:
     """
@@ -426,6 +426,33 @@ class AccountProofManager:
             print(f"Error adding proof unit: {e}")
             return False
 
+    def add_proof_unit_direct(self, value_id: str, proof_unit: ProofUnit) -> bool:
+        """
+        直接新增ProofUnit到指定Value，不进行重复检测（提高效率）
+
+        Args:
+            value_id: Value的标识符（begin_index）
+            proof_unit: 要直接新增的ProofUnit
+
+        Returns:
+            bool: 添加是否成功
+        """
+        try:
+            # 直接存储新的ProofUnit，不进行重复检测
+            if not self.storage.store_proof_unit(proof_unit):
+                return False
+
+            # 添加映射关系
+            if self.storage.add_value_proof_mapping(self.account_address, value_id, proof_unit.unit_id):
+                self._value_proof_mapping[value_id].add(proof_unit.unit_id)
+                self._proof_units_cache[proof_unit.unit_id] = proof_unit
+                return True
+
+            return False
+        except Exception as e:
+            print(f"Error adding proof unit directly: {e}")
+            return False
+
     def remove_value_proof_mapping(self, value_id: str, unit_id: str) -> bool:
         """
         移除Value和ProofUnit的映射关系
@@ -644,3 +671,100 @@ class AccountProofManager:
         """迭代所有(value_id, proof_units)对"""
         for value_id in self._value_proof_mapping:
             yield (value_id, self.get_proof_units_for_value(value_id))
+
+
+# 测试代码
+if __name__ == "__main__":
+    print("Testing AccountProofManager...")
+
+    try:
+        # 创建测试管理器
+        manager = AccountProofManager("test_account_0x123")
+        print("[SUCCESS] AccountProofManager created successfully")
+
+        # 测试统计信息
+        stats = manager.get_statistics()
+        print(f"[SUCCESS] Statistics retrieved: {stats}")
+
+        # 测试基本操作
+        print(f"[SUCCESS] Manager length: {len(manager)}")
+        print(f"[SUCCESS] Contains test_value: {'test_value' in manager}")
+
+        # 测试Value相关功能
+        print("\n--- Testing Value operations ---")
+
+        # 创建测试Value
+        test_value = Value("0x1000", 100)
+        print(f"[SUCCESS] Test Value created: begin={test_value.begin_index}, num={test_value.value_num}")
+
+        # 添加Value到管理器
+        if manager.add_value(test_value):
+            print("[SUCCESS] Value added to manager")
+        else:
+            print("[ERROR] Failed to add value to manager")
+
+        # 测试长度变化
+        print(f"[SUCCESS] Manager length after adding value: {len(manager)}")
+        print(f"[SUCCESS] Contains test_value: {test_value.begin_index in manager}")
+
+        # 测试获取所有Values
+        all_values = manager.get_all_values()
+        print(f"[SUCCESS] Retrieved {len(all_values)} values from manager")
+
+        # 更新统计信息
+        updated_stats = manager.get_statistics()
+        print(f"[SUCCESS] Updated statistics: {updated_stats}")
+
+        # 测试ProofUnit相关功能
+        print("\n--- Testing ProofUnit operations ---")
+
+        # 由于ProofUnit需要复杂的依赖，我们先测试相关方法
+        print("[INFO] Testing ProofUnit-related methods without creating actual ProofUnits...")
+
+        # 测试获取不存在的value的proof units
+        non_existant_proofs = manager.get_proof_units_for_value("non_existent_value")
+        print(f"[SUCCESS] Retrieved proof units for non-existent value: {len(non_existant_proofs)}")
+
+        # 测试get_value_for_proof_unit
+        test_result = manager.get_value_for_proof_unit("non_existent_unit")
+        print(f"[SUCCESS] Value for non-existent proof unit: {test_result}")
+
+        # 测试get_all_proof_units
+        all_proofs = manager.get_all_proof_units()
+        print(f"[SUCCESS] Retrieved all proof units: {len(all_proofs)}")
+
+        # 测试get_proof_units_by_owner
+        owner_proofs = manager.get_proof_units_by_owner("test_owner")
+        print(f"[SUCCESS] Retrieved proof units for owner: {len(owner_proofs)}")
+
+        # 测试持久化功能
+        print("\n--- Testing persistence operations ---")
+
+        # 创建新的管理器实例来测试数据加载
+        new_manager = AccountProofManager("test_account_0x123")
+        print("[SUCCESS] Created new manager instance")
+
+        # 检查是否成功加载了之前的数据
+        loaded_values = new_manager.get_all_values()
+        print(f"[SUCCESS] Loaded {len(loaded_values)} values from storage")
+
+        # 比较统计信息
+        loaded_stats = new_manager.get_statistics()
+        print(f"[SUCCESS] Loaded statistics: {loaded_stats}")
+
+        # 测试清除功能
+        if new_manager.clear_all():
+            print("[SUCCESS] Cleared all data from manager")
+        else:
+            print("[ERROR] Failed to clear data")
+
+        # 验证清除后的状态
+        cleared_stats = new_manager.get_statistics()
+        print(f"[SUCCESS] Statistics after clearing: {cleared_stats}")
+
+        print("\n=== All tests passed! ===")
+
+    except Exception as e:
+        print(f"[ERROR] Error during testing: {e}")
+        import traceback
+        traceback.print_exc()

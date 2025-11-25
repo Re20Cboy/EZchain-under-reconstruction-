@@ -5,7 +5,7 @@ import os
 from typing import Optional, TYPE_CHECKING
 
 import sys
-sys.path.insert(0, os.path.dirname(__file__) + '/..')
+sys.path.insert(0, os.path.dirname(__file__) + '/../..')
 
 from EZ_Units.MerkleProof import MerkleTreeProof
 
