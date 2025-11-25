@@ -258,3 +258,6 @@ test_results/
 coverage_reports/
 temp/
 tmp/
+
+# Consolidated temporary test data folder
+temp_test_data/

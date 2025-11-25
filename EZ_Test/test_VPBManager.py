@@ -9,11 +9,10 @@ from typing import List, Optional
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from VPBManager import VPBManager
-sys.path.insert(0, os.path.dirname(__file__))
-from values.Value import Value, ValueState
-from proofs.ProofUnit import ProofUnit
-from block_index.BlockIndexList import BlockIndexList
+from EZ_VPB.VPBManager import VPBManager
+from EZ_VPB.values.Value import Value, ValueState
+from EZ_VPB.proofs.ProofUnit import ProofUnit
+from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Units.MerkleProof import MerkleTreeProof
