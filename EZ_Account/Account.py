@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from EZ_VPB import Value, ValueState
 from EZ_VPB.VPBManager import VPBManager
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
+from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 
 
@@ -259,27 +260,42 @@ class Account:
             print(f"确认多交易失败: {e}")
             return False
 
-    def submit_multi_transaction(self, multi_txn_result: Dict, transaction_pool=None) -> bool:
-        """提交多交易到交易池"""
+    def create_submit_tx_info(self, multi_txn_result: Dict) -> Optional[SubmitTxInfo]:
+        """
+        将multi_transaction(通过create_batch_transactions获得)转化为SubmitTxInfo
+
+        Args:
+            multi_txn_result: 通过create_batch_transactions获得的多交易结果字典
+
+        Returns:
+            SubmitTxInfo: 生成的SubmitTxInfo实例，失败返回None
+        """
         try:
-            if transaction_pool is not None:
-                success, message = self.transaction_creator.submit_to_transaction_pool(
-                    multi_txn_result, transaction_pool, self.public_key_pem
-                )
-                if success:
-                    self._record_multi_transaction(multi_txn_result, "submitted")
-                    print(f"多交易已提交: {message}")
-                    self.last_activity = datetime.now()
-                return success
-            else:
-                # 模拟提交
-                multi_txn = multi_txn_result["multi_transactions"]
-                print(f"多交易准备网络提交: {multi_txn.digest[:16] if multi_txn.digest else 'N/A'}...")
-                self._record_multi_transaction(multi_txn_result, "submitted")
-                return True
+            # 从multi_txn_result中获取MultiTransactions对象
+            multi_transactions = multi_txn_result.get("multi_transactions")
+            if not multi_transactions:
+                print("multi_txn_result中缺少multi_transactions")
+                return None
+
+            # 使用SubmitTxInfo的工厂方法创建SubmitTxInfo
+            submit_tx_info = SubmitTxInfo.create_from_multi_transactions(
+                multi_transactions=multi_transactions,
+                private_key_pem=self.private_key_pem,
+                public_key_pem=self.public_key_pem
+            )
+
+            # 记录创建SubmitTxInfo的操作
+            self._record_multi_transaction(multi_txn_result, "submit_info_created")
+
+            multi_txn_hash = multi_transactions.digest
+            print(f"SubmitTxInfo创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
+            self.last_activity = datetime.now()
+
+            return submit_tx_info
+
         except Exception as e:
-            print(f"提交多交易失败: {e}")
-            return False
+            print(f"创建SubmitTxInfo失败: {e}")
+            return None
 
     # ========== 账户信息和管理接口 ==========
 
@@ -375,44 +391,3 @@ class Account:
     def __del__(self):
         """析构函数"""
         self.cleanup()
-
-
-# ========== 使用示例 ==========
-
-"""
-# 创建账户
-account = Account(
-    address="user_address_123",
-    private_key_pem=private_key_bytes,
-    public_key_pem=public_key_bytes,
-    name="TestAccount"
-)
-
-# 从创世块初始化
-genesis_value = Value("0x1000", 1000)
-genesis_proof_units = []  # ProofUnit列表
-genesis_block_index = BlockIndexList([0], owner="user_address_123")
-
-account.initialize_from_genesis(genesis_value, genesis_proof_units, genesis_block_index)
-
-# 查询余额
-balance = account.get_available_balance()
-print(f"可用余额: {balance}")
-
-# 获取账户信息
-info = account.get_account_info()
-print(f"账户信息: {info}")
-
-# 创建交易
-transaction_requests = [
-    {'recipient': 'recipient_456', 'amount': 100}
-]
-
-result = account.create_batch_transactions(transaction_requests)
-if result:
-    account.confirm_multi_transaction(result)
-
-# 验证完整性
-is_valid = account.validate_integrity()
-print(f"账户完整性: {is_valid}")
-"""

@@ -46,8 +46,8 @@ from EZ_VPB.values.AccountPickValues import AccountPickValues
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction as SingleTransaction
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_Transaction_Pool.PackTransactions import (
+from EZ_Tx_Pool.TXPool import TxPool
+from backup_EZ_Transaction_Pool.PackTransactions import (
     TransactionPackager,
     package_transactions_from_pool
 )
@@ -81,7 +81,7 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
 
         # 创建交易池（使用临时数据库）
         self.pool_db_path = os.path.join(self.temp_dir, "real_test_pool.db")
-        self.transaction_pool = TransactionPool(db_path=self.pool_db_path)
+        self.transaction_pool = TxPool(db_path=self.pool_db_path)
 
         # 创建交易打包器
         self.transaction_packager = TransactionPackager()

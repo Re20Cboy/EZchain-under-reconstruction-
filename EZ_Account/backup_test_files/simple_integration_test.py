@@ -32,8 +32,8 @@ from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 from EZ_Transaction.MultiTransactions import MultiTransactions
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_Transaction_Pool.PackTransactions import TransactionPackager
+from backup_EZ_Transaction_Pool.TransactionPool import TransactionPool
+from backup_EZ_Transaction_Pool.PackTransactions import TransactionPackager
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.backends import default_backend

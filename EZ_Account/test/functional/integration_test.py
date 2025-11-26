@@ -340,7 +340,7 @@ class IntegrationTest:
 
             # 4. 等待区块链处理和VPB更新
             logger.info("步骤 4: 等待区块链处理和VPB更新")
-            time.sleep(10)  # 等待挖矿和VPB更新
+            time.sleep(1)  # 等待挖矿和VPB更新
 
             # 显示区块链信息
             chain_info = self.blockchain_node.get_chain_info()

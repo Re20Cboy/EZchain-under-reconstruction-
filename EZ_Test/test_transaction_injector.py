@@ -11,9 +11,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Simulation.TransactionInjector import TransactionInjector, SimulationConfig, SimulationStats
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
+from EZ_Tx_Pool.TXPool import TxPool
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
+from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_VPB.values.Value import Value, ValueState
 
 
@@ -32,7 +33,7 @@ class TestTransactionInjector(unittest.TestCase):
             num_batches=5,
             injection_interval=0.01,  # Very fast for testing
             validation_enabled=False,  # Disable validation for simpler testing
-            signature_enabled=False,  # Disable for simpler testing
+            signature_enabled=False,  # Disable signing for simpler testing
             duplicate_probability=0.0,  # Disable duplicates for basic tests
             invalid_probability=0.0    # Disable invalid transactions for basic tests
         )
@@ -57,7 +58,7 @@ class TestTransactionInjector(unittest.TestCase):
         """Test TransactionInjector initialization"""
         self.assertEqual(len(self.injector.sender_keys), self.config.num_senders)
         self.assertEqual(self.injector.stats.total_injected, 0)
-        self.assertIsInstance(self.injector.transaction_pool, TransactionPool)
+        self.assertIsInstance(self.injector.transaction_pool, TxPool)
     
     def test_generate_sender_keys(self):
         """Test sender key generation"""
@@ -146,17 +147,22 @@ class TestTransactionInjector(unittest.TestCase):
     
     def test_inject_invalid_transaction(self):
         """Test injection of invalid transaction"""
-        sender = list(self.injector.sender_keys.keys())[0]
-        
-        # Create invalid MultiTransactions manually
-        invalid_multi_txn = self.injector._create_invalid_multi_transactions(sender)
-        
+        # This test creates an invalid SubmitTxInfo (missing required fields)
+        submit_tx_info = SubmitTxInfo.__new__(SubmitTxInfo)
+        submit_tx_info.multi_transactions_hash = ""  # Missing hash
+        submit_tx_info.submitter_address = self.test_sender if hasattr(self, 'test_sender') else "test_sender"
+        submit_tx_info.signature = b"test_signature"
+        submit_tx_info.public_key = b"test_public_key"
+        submit_tx_info.submit_timestamp = "2023-01-01T00:00:00"
+        submit_tx_info.version = SubmitTxInfo.VERSION
+        submit_tx_info._hash = None
+
         # Add to pool
-        public_key = self.injector.sender_keys[sender]
-        success, message = self.injector.transaction_pool.add_multi_transactions(invalid_multi_txn, public_key)
-        
+        success, message = self.injector.transaction_pool.add_submit_tx_info(submit_tx_info)
+
         self.assertFalse(success)
-        self.assertIn("different sender", message.lower())
+        # The validation should fail because the multi_transactions_hash is missing
+        self.assertIn("missing multi_transactions_hash", message.lower())
     
     def test_duplicate_transaction_injection(self):
         """Test duplicate transaction injection"""
@@ -251,27 +257,29 @@ class TestTransactionInjector(unittest.TestCase):
         self.assertGreaterEqual(mock_sleep.call_count, 0)
     
     def test_transaction_pool_integration(self):
-        """Test integration with TransactionPool"""
+        """Test integration with TxPool"""
         sender = list(self.injector.sender_keys.keys())[0]
-        
+
         # Inject a transaction
         success, message = self.injector.inject_single_transaction(sender)
-        self.assertTrue(success)
-        
+        if not success:
+            print(f"Transaction injection failed: {message}")
+        self.assertTrue(success, f"Transaction injection failed with message: {message}")
+
         # Check that it's in the pool
         pool_stats = self.injector.transaction_pool.get_pool_stats()
         self.assertEqual(pool_stats['total_transactions'], 1)
-        self.assertEqual(pool_stats['unique_senders'], 1)
-        
-        # Get transactions by sender
-        sender_txns = self.injector.transaction_pool.get_multi_transactions_by_sender(sender)
-        self.assertEqual(len(sender_txns), 1)
-        
-        # Get transaction by digest
-        digest = self.injector.injected_transactions[0]
-        txn = self.injector.transaction_pool.get_multi_transactions_by_digest(digest)
-        self.assertIsNotNone(txn)
-        self.assertEqual(txn.sender, sender)
+        self.assertEqual(pool_stats['unique_submitters'], 1)
+
+        # Get transactions by submitter
+        submitter_tx_infos = self.injector.transaction_pool.get_submit_tx_infos_by_submitter(sender)
+        self.assertEqual(len(submitter_tx_infos), 1)
+
+        # Get transaction by hash
+        submit_hash = self.injector.injected_transactions[0]
+        submit_tx_info = self.injector.transaction_pool.get_submit_tx_info_by_hash(submit_hash)
+        self.assertIsNotNone(submit_tx_info)
+        self.assertEqual(submit_tx_info.submitter_address, sender)
     
     def test_concurrent_injection(self):
         """Test concurrent transaction injection"""
@@ -351,7 +359,7 @@ class TestSimulationIntegration(unittest.TestCase):
             # Verify pool state
             pool_stats = injector.transaction_pool.get_pool_stats()
             self.assertGreaterEqual(pool_stats['total_transactions'], 0)
-            self.assertGreaterEqual(pool_stats['unique_senders'], 0)
+            self.assertGreaterEqual(pool_stats['unique_submitters'], 0)
             
         finally:
             injector.cleanup()

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-EZchain Blockchain Integration Tests
+EZchain Blockchain Integration Tests (Updated for EZ_Tx_Pool)
 贴近真实场景的区块链联调测试
 
 测试完整的交易注入→交易池→区块形成→上链流程
 包含分叉处理、并发交易、错误处理等复杂场景
+使用新的EZ_Tx_Pool和SubmitTxInfo架构
 """
 
 import sys
@@ -12,8 +13,10 @@ import os
 import unittest
 import tempfile
 import shutil
+import datetime
+import json
+import logging
 from typing import List, Dict, Any, Tuple
-from unittest.mock import patch, MagicMock
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,18 +25,21 @@ from EZ_Main_Chain.Blockchain import (
     Blockchain, ChainConfig, ConsensusStatus
 )
 from EZ_Main_Chain.Block import Block
-from EZ_Transaction.CreateSingleTransaction import CreateTransaction
-from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_Transaction_Pool.PackTransactions import (
-    TransactionPackager,
-    package_transactions_from_pool
-)
+from EZ_Tx_Pool.TXPool import TxPool
+from EZ_Tx_Pool.PickTx import TransactionPicker, pick_transactions_from_pool
+from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
+from EZ_Transaction.MultiTransactions import MultiTransactions
+from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Units.MerkleTree import MerkleTree
+from EZ_Tool_Box.SecureSignature import secure_signature_handler
+
+# Configure logging for debugging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 class TestBlockchainIntegration(unittest.TestCase):
-    """贴近真实场景的区块链联调测试"""
+    """贴近真实场景的区块链联调测试（使用新的EZ_Tx_Pool架构）"""
 
     def setUp(self):
         """测试前准备：创建真实的测试环境"""
@@ -52,10 +58,10 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         # 创建交易池（使用临时数据库）
         self.pool_db_path = os.path.join(self.temp_dir, "test_pool.db")
-        self.transaction_pool = TransactionPool(db_path=self.pool_db_path)
+        self.transaction_pool = TxPool(db_path=self.pool_db_path)
 
-        # 创建交易打包器
-        self.transaction_packager = TransactionPackager()
+        # 创建交易选择器（新的TransactionPicker）
+        self.transaction_picker = TransactionPicker()
 
         # 创建测试用的密钥对和地址
         self.setup_test_accounts()
@@ -65,96 +71,165 @@ class TestBlockchainIntegration(unittest.TestCase):
 
     def tearDown(self):
         """测试后清理：删除临时文件"""
-        if os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
+        try:
+            if os.path.exists(self.temp_dir):
+                shutil.rmtree(self.temp_dir)
+        except Exception as e:
+            print(f"清理临时文件失败: {e}")
+            # 尝试删除数据库文件
+            try:
+                if os.path.exists(self.pool_db_path):
+                    os.unlink(self.pool_db_path)
+            except:
+                pass
 
     def setup_test_accounts(self):
-        """设置测试账户和密钥对"""
-        # 测试账户数据
-        self.test_accounts = {
-            "alice": {
-                "private_key": b"alice_private_key_32_bytes_test1234567890",
-                "public_key": b"alice_public_key_test_data_32_bytes_here",
-                "address": "alice_address_001",
-                "balance": 1000
-            },
-            "bob": {
-                "private_key": b"bob_private_key_32_bytes_test_data_1234567890",
-                "public_key": b"bob_public_key_test_data_32_bytes_here12345",
-                "address": "bob_address_002",
-                "balance": 500
-            },
-            "charlie": {
-                "private_key": b"charlie_private_key_32_bytes_test_data123456",
-                "public_key": b"charlie_public_key_test_data_32_bytes_here",
-                "address": "charlie_address_003",
-                "balance": 2000
-            }
-        }
+        """设置测试账户和密钥对 - 使用真实生成的密钥对"""
+        self.test_accounts = {}
+        account_names = ["alice", "bob", "charlie", "david", "eve"]
+
+        for i, name in enumerate(account_names):
+            try:
+                # 生成真实的密钥对
+                private_key_pem, public_key_pem = secure_signature_handler.signer.generate_key_pair()
+
+                self.test_accounts[name] = {
+                    "private_key": private_key_pem,
+                    "public_key": public_key_pem,
+                    "address": f"{name}_address_{i:03d}",
+                    "balance": 1000 + (i * 500)  # 不同的初始余额
+                }
+                logger.info(f"Generated real key pair for account: {name}")
+            except Exception as e:
+                logger.error(f"Failed to generate key pair for account {name}: {e}")
+                raise RuntimeError(f"Key generation failed for {name}: {e}")
 
     def create_test_transactions(self, num_transactions: int = 5) -> List[Dict[str, Any]]:
-        """创建测试交易"""
+        """创建测试交易数据 - 使用真实账户和密钥"""
         transactions = []
+        account_names = list(self.test_accounts.keys())
+
+        if len(account_names) < 2:
+            raise RuntimeError("Need at least 2 accounts to create transactions")
 
         for i in range(num_transactions):
-            # 创建唯一的发送者以避免与 PackTransactions.py 的唯一性检查冲突
-            sender = f"sender_{i}"
-            recipient = f"recipient_{i}"
+            # 轮换账户作为发送者和接收者
+            sender_name = account_names[i % len(account_names)]
+            recipient_name = account_names[(i + 1) % len(account_names)]
 
-            # 创建交易创建器
-            sender_address = self.test_accounts.get(sender, {}).get("address", f"{sender}_address")
-            recipient_address = self.test_accounts.get(recipient, {}).get("address", f"{recipient}_address")
+            sender_account = self.test_accounts[sender_name]
+            recipient_account = self.test_accounts[recipient_name]
 
-            # 模拟创建交易（这里简化处理，实际需要AccountPickValues）
-            try:
-                # 创建简单的测试交易数据结构
-                transaction_data = {
-                    "sender": sender_address,
-                    "recipient": recipient_address,
-                    "amount": 10 + (i * 5),  # 递增金额
-                    "nonce": i,
-                    "private_key": self.test_accounts.get(sender, {}).get("private_key", f"{sender}_private_key")
-                }
-                transactions.append(transaction_data)
-            except Exception as e:
-                # 简化测试，即使真实交易创建失败也继续
-                transaction_data = {
-                    "sender": self.test_accounts[sender]["address"],
-                    "recipient": self.test_accounts[recipient]["address"],
-                    "amount": 10 + (i * 5),
-                    "nonce": i,
-                    "hash": f"test_tx_hash_{i}"
-                }
-                transactions.append(transaction_data)
+            # 创建真实的交易数据
+            transaction_data = {
+                "sender": sender_account["address"],
+                "recipient": recipient_account["address"],
+                "amount": 10 + (i * 5),  # 递增金额
+                "nonce": i,
+                "private_key": sender_account["private_key"],
+                "public_key": sender_account["public_key"],
+                "sender_name": sender_name,
+                "recipient_name": recipient_name
+            }
+            transactions.append(transaction_data)
 
         return transactions
 
-    def create_mock_multi_transactions(self, transactions: List[Dict[str, Any]]) -> List[Any]:
-        """创建模拟的多重交易（简化版用于测试）"""
-        # 这里创建一个简化的多重交易对象用于测试
-        class MockMultiTransaction:
-            def __init__(self, sender: str, transactions: List[Dict]):
-                self.sender = sender
-                self.multi_txns = transactions  # 简化的交易列表
-                self.digest = f"mock_digest_{hash(sender)}_{len(transactions)}"
-                self.signature = b"mock_signature"
-                self.time = "2025-01-01T00:00:00"
-
-            def get_sender(self) -> str:
-                return self.sender
-
-            def get_digest(self) -> str:
-                return self.digest
-
+    def create_test_multi_transactions(self, transactions: List[Dict[str, Any]]) -> List[MultiTransactions]:
+        """创建测试用的MultiTransactions - 使用真实签名"""
         multi_txns = []
+
         for tx_data in transactions:
-            mock_multi = MockMultiTransaction(tx_data["sender"], [tx_data])
-            multi_txns.append(mock_multi)
+            try:
+                # 创建交易值数据
+                value_data = [tx_data["amount"]]
+
+                # 使用真实签名创建SingleTransaction
+                signed_transaction = secure_signature_handler.sign_transaction(
+                    sender=tx_data["sender"],
+                    recipient=tx_data["recipient"],
+                    nonce=tx_data["nonce"],
+                    value_data=value_data,
+                    private_key_pem=tx_data["private_key"],
+                    timestamp=datetime.datetime.now().isoformat()
+                )
+
+                # 创建SingleTransaction对象
+                try:
+                    from EZ_VPB.values.Value import Value, ValueState
+                    # Value类需要beginIndex和valueNum参数
+                    # 使用简单的16进制字符串作为beginIndex
+                    begin_index = f"0x{tx_data['nonce']:08x}"  # 基于nonce生成beginIndex
+                    value = [Value(begin_index, tx_data["amount"], ValueState.UNSPENT)]
+                except ImportError:
+                    # 如果Value类不可用，创建简单的值表示
+                    value = [{"amount": tx_data["amount"]}]
+                except Exception as e:
+                    # Value类可用但参数有问题，使用简单表示
+                    logger.warning(f"Value creation failed, using simple dict: {e}")
+                    value = [{"amount": tx_data["amount"]}]
+
+                single_txn = Transaction(
+                    sender=tx_data["sender"],
+                    recipient=tx_data["recipient"],
+                    nonce=tx_data["nonce"],
+                    signature=bytes.fromhex(signed_transaction["signature"]),
+                    value=value,
+                    time=signed_transaction["timestamp"]
+                )
+
+                # 创建MultiTransactions
+                multi_txn = MultiTransactions(
+                    sender=tx_data["sender"],
+                    multi_txns=[single_txn]
+                )
+                multi_txn.set_digest()
+                multi_txns.append(multi_txn)
+
+                logger.info(f"Created MultiTransaction for sender: {tx_data['sender']}")
+
+            except Exception as e:
+                logger.error(f"Failed to create MultiTransaction for sender {tx_data['sender']}: {e}")
+                raise RuntimeError(f"MultiTransaction creation failed: {e}")
 
         return multi_txns
 
+    def create_submit_tx_infos(self, multi_txns: List[MultiTransactions]) -> List[SubmitTxInfo]:
+        """创建SubmitTxInfo对象 - 使用真实签名"""
+        submit_tx_infos = []
+
+        for i, multi_txn in enumerate(multi_txns):
+            try:
+                # 获取发送者的账户信息
+                sender_name = None
+                for name, account in self.test_accounts.items():
+                    if account["address"] == multi_txn.sender:
+                        sender_name = name
+                        break
+
+                if sender_name is None:
+                    raise ValueError(f"No account found for sender: {multi_txn.sender}")
+
+                sender_account = self.test_accounts[sender_name]
+
+                # 创建真实的SubmitTxInfo
+                submit_tx_info = SubmitTxInfo(
+                    multi_transactions=multi_txn,
+                    private_key_pem=sender_account["private_key"],
+                    public_key_pem=sender_account["public_key"]
+                )
+
+                submit_tx_infos.append(submit_tx_info)
+                logger.info(f"Created SubmitTxInfo for sender: {multi_txn.sender}")
+
+            except Exception as e:
+                logger.error(f"Failed to create SubmitTxInfo for MultiTransaction {i}: {e}")
+                raise RuntimeError(f"SubmitTxInfo creation failed: {e}")
+
+        return submit_tx_infos
+
     def test_complete_transaction_flow(self):
-        """测试完整的交易流程：创建→交易池→打包→区块→上链"""
+        """测试完整的交易流程：创建→交易池→选择→区块→上链"""
         print("\n测试完整交易流程...")
 
         # 步骤1：创建测试交易
@@ -163,57 +238,61 @@ class TestBlockchainIntegration(unittest.TestCase):
         self.assertEqual(len(test_transactions), 5)
         print(f"   创建了 {len(test_transactions)} 个交易")
 
-        # 步骤2：将交易添加到交易池
-        print("2. 添加交易到交易池...")
-        mock_multi_txns = self.create_mock_multi_transactions(test_transactions)
+        # 步骤2：创建MultiTransactions和SubmitTxInfo
+        print("2. 创建MultiTransactions和SubmitTxInfo...")
+        multi_txns = self.create_test_multi_transactions(test_transactions)
+        submit_tx_infos = self.create_submit_tx_infos(multi_txns)
+        print(f"   创建了 {len(multi_txns)} 个MultiTransactions")
+        print(f"   创建了 {len(submit_tx_infos)} 个SubmitTxInfo")
 
+        # 步骤3：将SubmitTxInfo添加到交易池
+        print("3. 添加SubmitTxInfo到交易池...")
         added_count = 0
-        for multi_txn in mock_multi_txns:
+
+        # 使用交易池的add_submit_tx_info方法（会进行验证）
+        for submit_tx_info in submit_tx_infos:
             try:
-                # 简化验证，直接添加到交易池
-                self.transaction_pool.pool.append(multi_txn)
-                added_count += 1
+                success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info)
+                if success:
+                    added_count += 1
+                    logger.info(f"Successfully added SubmitTxInfo for sender: {submit_tx_info.submitter_address}")
+                else:
+                    logger.error(f"Failed to add SubmitTxInfo: {message}")
+                    raise RuntimeError(f"Transaction pool rejected SubmitTxInfo: {message}")
             except Exception as e:
-                print(f"   警告：交易添加失败: {e}")
+                logger.error(f"Error adding SubmitTxInfo to pool: {e}")
+                raise RuntimeError(f"Failed to add SubmitTxInfo to transaction pool: {e}")
 
-        print(f"   成功添加 {added_count} 个交易到交易池")
-        self.assertGreater(added_count, 0)
+        print(f"   成功添加 {added_count} 个SubmitTxInfo到交易池")
+        self.assertEqual(added_count, len(submit_tx_infos), "All SubmitTxInfos should be added to pool")
 
-        # 步骤3：从交易池打包交易
-        print("3. 从交易池打包交易...")
-
-        # 获取最新的区块哈希
+        # 步骤4：从交易池选择交易并打包
+        print("4. 从交易池选择交易并打包...")
         latest_hash = self.blockchain.get_latest_block_hash()
         next_index = self.blockchain.get_latest_block_index() + 1
 
+        # 使用pick_transactions_from_pool便捷函数
         try:
-            # 尝试使用真实的打包器
-            package_data = self.transaction_packager.package_transactions(
-                transaction_pool=self.transaction_pool,
-                selection_strategy="fifo"
+            package_data, block = pick_transactions_from_pool(
+                tx_pool=self.transaction_pool,
+                miner_address=self.miner_address,
+                previous_hash=latest_hash,
+                block_index=next_index
             )
 
-            # 创建区块
-            if package_data and package_data.merkle_root:
-                block = self.transaction_packager.create_block_from_package(
-                    package_data=package_data,
-                    miner_address=self.miner_address,
-                    previous_hash=latest_hash,
-                    block_index=next_index
-                )
-            else:
-                # 如果打包失败，创建模拟区块
-                block = self.create_mock_block(next_index, latest_hash, mock_multi_txns[:3])
+            print(f"   成功打包，选中 {len(package_data.selected_submit_tx_infos)} 个SubmitTxInfo")
+            self.assertIsNotNone(package_data)
+            self.assertIsNotNone(block)
+            self.assertGreater(len(package_data.selected_submit_tx_infos), 0)
 
         except Exception as e:
-            print(f"   打包器使用失败，创建模拟区块: {e}")
-            block = self.create_mock_block(next_index, latest_hash, mock_multi_txns[:3])
+            logger.error(f"Transaction packaging failed: {e}")
+            raise RuntimeError(f"Failed to package transactions from pool: {e}")
 
-        self.assertIsNotNone(block)
-        print(f"   创建了区块 #{block.index}，包含 {len(mock_multi_txns[:3])} 个交易")
+        print(f"   创建了区块 #{block.index}")
 
-        # 步骤4：将区块添加到区块链
-        print("4. 将区块添加到区块链...")
+        # 步骤5：将区块添加到区块链
+        print("5. 将区块添加到区块链...")
         main_chain_updated = self.blockchain.add_block(block)
 
         self.assertTrue(main_chain_updated)
@@ -223,8 +302,8 @@ class TestBlockchainIntegration(unittest.TestCase):
         block_status = fork_node.consensus_status if fork_node else ConsensusStatus.PENDING
         print(f"   区块成功添加到主链，状态: {block_status.value}")
 
-        # 步骤5：验证区块链状态
-        print("5. 验证区块链状态...")
+        # 步骤6：验证区块链状态
+        print("6. 验证区块链状态...")
         latest_block = self.blockchain.get_block_by_index(next_index)
         self.assertIsNotNone(latest_block)
         self.assertEqual(latest_block.index, next_index)
@@ -232,10 +311,26 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         print("完整交易流程测试通过！")
 
-    def create_mock_block(self, index: int, previous_hash: str, transactions: List[Any]) -> Block:
+    def create_mock_block(self, index: int, previous_hash: str, multi_txns: List[Any]) -> Block:
         """创建包含交易的模拟区块"""
-        # 计算默克尔根（简化版）
-        merkle_root = self.calculate_mock_merkle_root(transactions)
+        # 计算默克尔根（基于multi_transactions_hash）
+        hash_values = []
+        for multi_txn in multi_txns:
+            if hasattr(multi_txn, 'digest'):
+                hash_values.append(multi_txn.digest)
+            else:
+                hash_values.append(f"mock_tx_hash_{len(hash_values)}")
+
+        # 创建真实的默克尔树
+        merkle_root = ""
+        try:
+            if hash_values:
+                merkle_tree = MerkleTree(hash_values)
+                merkle_root = merkle_tree.get_root_hash()
+            else:
+                merkle_root = "empty_merkle_root"
+        except:
+            merkle_root = f"mock_merkle_root_{hash(''.join(hash_values)) % 1000000}"
 
         # 创建区块
         block = Block(
@@ -246,31 +341,14 @@ class TestBlockchainIntegration(unittest.TestCase):
             nonce=0
         )
 
-        # 将交易信息添加到布隆过滤器
-        for tx in transactions:
-            if hasattr(tx, 'get_sender'):
-                block.add_item_to_bloom(tx.get_sender())
+        # 将发送者地址添加到布隆过滤器
+        for multi_txn in multi_txns:
+            if hasattr(multi_txn, 'sender'):
+                block.add_item_to_bloom(multi_txn.sender)
             else:
                 block.add_item_to_bloom(f"sender_{index}")
 
         return block
-
-    def calculate_mock_merkle_root(self, transactions: List[Any]) -> str:
-        """计算模拟默克尔根"""
-        if not transactions:
-            return "empty_merkle_root"
-
-        # 简化版默克尔根计算
-        hash_values = []
-        for tx in transactions:
-            if hasattr(tx, 'get_digest'):
-                hash_values.append(tx.get_digest())
-            else:
-                hash_values.append(f"mock_tx_hash_{len(hash_values)}")
-
-        # 简单哈希组合
-        combined = "".join(sorted(hash_values))
-        return f"merkle_root_{hash(combined) % 1000000}"
 
     def test_multiple_blocks_with_transactions(self):
         """测试多区块连续上链场景"""
@@ -286,16 +364,40 @@ class TestBlockchainIntegration(unittest.TestCase):
             transactions = self.create_test_transactions(3)
             total_transactions += len(transactions)
 
+            # 创建MultiTransactions和SubmitTxInfo
+            multi_txns = self.create_test_multi_transactions(transactions)
+            submit_tx_infos = self.create_submit_tx_infos(multi_txns)
+
             # 添加到交易池
-            mock_multi_txns = self.create_mock_multi_transactions(transactions)
-            for multi_txn in mock_multi_txns:
-                self.transaction_pool.pool.append(multi_txn)
+            added_count = 0
+            for submit_tx_info in submit_tx_infos:
+                try:
+                    success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info)
+                    if success:
+                        added_count += 1
+                        logger.info(f"Round {round_num + 1}: Successfully added SubmitTxInfo")
+                    else:
+                        logger.error(f"Round {round_num + 1}: Failed to add SubmitTxInfo: {message}")
+                        raise RuntimeError(f"Transaction pool rejected SubmitTxInfo: {message}")
+                except Exception as e:
+                    logger.error(f"Round {round_num + 1}: Error adding SubmitTxInfo to pool: {e}")
+                    raise RuntimeError(f"Failed to add SubmitTxInfo to transaction pool: {e}")
 
             # 创建区块
             latest_hash = self.blockchain.get_latest_block_hash()
             next_index = self.blockchain.get_latest_block_index() + 1
 
-            block = self.create_mock_block(next_index, latest_hash, mock_multi_txns)
+            try:
+                package_data, block = pick_transactions_from_pool(
+                    tx_pool=self.transaction_pool,
+                    miner_address=self.miner_address,
+                    previous_hash=latest_hash,
+                    block_index=next_index
+                )
+                logger.info(f"Round {round_num + 1}: Successfully packaged {len(package_data.selected_submit_tx_infos)} transactions")
+            except Exception as e:
+                logger.error(f"Round {round_num + 1}: Transaction packaging failed: {e}")
+                raise RuntimeError(f"Failed to package transactions from pool: {e}")
 
             # 上链
             main_chain_updated = self.blockchain.add_block(block)
@@ -316,100 +418,25 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         print("多区块连续上链测试通过！")
 
-    def test_fork_with_transactions(self):
-        """测试分叉场景下的交易处理"""
-        print("\n测试分叉场景下的交易处理...")
-
-        # 步骤1：创建主链区块
-        print("1. 创建主链区块...")
-        transactions = self.create_test_transactions(3)
-        mock_multi_txns = self.create_mock_multi_transactions(transactions)
-
-        latest_hash = self.blockchain.get_latest_block_hash()
-        next_index = self.blockchain.get_latest_block_index() + 1
-
-        main_block = self.create_mock_block(next_index, latest_hash, mock_multi_txns)
-        main_chain_updated = self.blockchain.add_block(main_block)
-        self.assertTrue(main_chain_updated)
-        print(f"   主链区块 #{next_index} 创建成功")
-
-        # 步骤2：创建另一个主链区块
-        print("2. 创建第二个主链区块...")
-        latest_hash = self.blockchain.get_latest_block_hash()
-        next_index = self.blockchain.get_latest_block_index() + 1
-
-        second_block = self.create_mock_block(next_index, latest_hash, mock_multi_txns[:2])
-        main_chain_updated = self.blockchain.add_block(second_block)
-        self.assertTrue(main_chain_updated)
-        print(f"   主链区块 #{next_index} 创建成功")
-
-        # 步骤3：创建分叉区块（从第一个新创建的区块开始分叉）
-        print("3. 创建分叉区块...")
-        # 获取第一个新创建区块的前一个区块哈希来创建分叉
-        first_block_height = main_block.get_index() - 1  # 应该是 20
-        # 分叉应该从高度 20 开始，不是从高度 2 开始
-        fork_block = self.create_mock_block(
-            first_block_height + 1,  # 正确的分叉高度
-            self.blockchain.get_block_by_index(first_block_height).get_hash(),  # 使用正确的前一个区块哈希
-            mock_multi_txns[1:]  # 使用不同的交易
-        )
-
-        is_main_chain = self.blockchain.add_block(fork_block)
-        self.assertFalse(is_main_chain)  # 分叉不会立即更新主链
-        fork_node = self.blockchain.get_fork_node_by_hash(fork_block.get_hash())
-        fork_status = fork_node.consensus_status if fork_node else ConsensusStatus.PENDING
-        print(f"   分叉区块创建成功，状态: {fork_status.value}")
-
-        # 步骤4：扩展分叉链
-        print("4. 扩展分叉链...")
-        # 保存前一个分叉区块的引用
-        prev_fork_block = fork_block
-        fork_base_index = first_block_height + 1  # 分叉起始索引
-
-        for i in range(1, 4):  # 创建3个分叉区块
-            # 使用前一个分叉区块的真实哈希
-            parent_hash = prev_fork_block.get_hash()
-
-            fork_block_new = self.create_mock_block(
-                fork_base_index + i,  # 正确的分叉索引
-                parent_hash,
-                mock_multi_txns[:2]  # 每个分叉区块包含2个交易
-            )
-
-            is_main_chain = self.blockchain.add_block(fork_block_new)
-            if is_main_chain:
-                print(f"   分叉链成为主链！区块 #{fork_base_index + i} 更新主链")
-                break
-            else:
-                print(f"   分叉区块 #{fork_base_index + i} 创建，继续分叉")
-                # 更新前一个分叉区块的引用
-                prev_fork_block = fork_block_new
-
-        # 验证最终状态
-        stats = self.blockchain.get_fork_statistics()
-        print(f"\n分叉测试结果:")
-        print(f"   总区块数: {stats['total_nodes']}")
-        print(f"   主链节点: {stats['main_chain_nodes']}")
-        print(f"   分叉节点: {stats['fork_nodes']}")
-        print(f"   当前主链高度: {self.blockchain.get_latest_block_index()}")
-
-        print("分叉场景交易处理测试通过！")
-
     def test_transaction_pool_empty_scenario(self):
         """测试交易池为空的情况"""
         print("\n测试交易池为空的情况...")
 
         # 确保交易池为空
         self.transaction_pool.pool.clear()
+        self.transaction_pool.hash_index.clear()
+        self.transaction_pool.multi_tx_hash_index.clear()
 
-        # 尝试打包交易
-        package_data = self.transaction_packager.package_transactions(
-            transaction_pool=self.transaction_pool,
+        # 尝试选择交易
+        package_data = self.transaction_picker.pick_transactions(
+            tx_pool=self.transaction_pool,
             selection_strategy="fifo"
         )
 
-        # 应该返回空或None
-        self.assertTrue(package_data is None or not package_data.merkle_root)
+        # 应该返回空的打包数据
+        self.assertIsNotNone(package_data)
+        self.assertEqual(len(package_data.selected_submit_tx_infos), 0)
+        self.assertEqual(package_data.merkle_root, "")
 
         # 创建空区块（仅包含区块头信息）
         latest_hash = self.blockchain.get_latest_block_hash()
@@ -429,36 +456,130 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         print("空交易池场景测试通过！")
 
+    def test_fork_with_transactions(self):
+        """测试分叉场景下的交易处理"""
+        print("\n测试分叉场景下的交易处理...")
+
+        # 步骤1：创建主链区块
+        print("1. 创建主链区块...")
+        transactions = self.create_test_transactions(3)
+        multi_txns = self.create_test_multi_transactions(transactions)
+
+        latest_hash = self.blockchain.get_latest_block_hash()
+        next_index = self.blockchain.get_latest_block_index() + 1
+
+        main_block = self.create_mock_block(next_index, latest_hash, multi_txns)
+        main_chain_updated = self.blockchain.add_block(main_block)
+        self.assertTrue(main_chain_updated)
+        print(f"   主链区块 #{next_index} 创建成功")
+
+        # 步骤2：创建另一个主链区块
+        print("2. 创建第二个主链区块...")
+        latest_hash = self.blockchain.get_latest_block_hash()
+        next_index = self.blockchain.get_latest_block_index() + 1
+
+        second_block = self.create_mock_block(next_index, latest_hash, multi_txns[:2])
+        main_chain_updated = self.blockchain.add_block(second_block)
+        self.assertTrue(main_chain_updated)
+        print(f"   主链区块 #{next_index} 创建成功")
+
+        # 步骤3：创建分叉区块
+        print("3. 创建分叉区块...")
+        first_block_height = main_block.get_index() - 1
+        fork_block = self.create_mock_block(
+            first_block_height + 1,
+            self.blockchain.get_block_by_index(first_block_height).get_hash(),
+            multi_txns[1:]
+        )
+
+        is_main_chain = self.blockchain.add_block(fork_block)
+        self.assertFalse(is_main_chain)  # 分叉不会立即更新主链
+        fork_node = self.blockchain.get_fork_node_by_hash(fork_block.get_hash())
+        fork_status = fork_node.consensus_status if fork_node else ConsensusStatus.PENDING
+        print(f"   分叉区块创建成功，状态: {fork_status.value}")
+
+        # 步骤4：扩展分叉链
+        print("4. 扩展分叉链...")
+        prev_fork_block = fork_block
+        fork_base_index = first_block_height + 1
+
+        for i in range(1, 4):  # 创建3个分叉区块
+            parent_hash = prev_fork_block.get_hash()
+
+            fork_block_new = self.create_mock_block(
+                fork_base_index + i,
+                parent_hash,
+                multi_txns[:2]
+            )
+
+            is_main_chain = self.blockchain.add_block(fork_block_new)
+            if is_main_chain:
+                print(f"   分叉链成为主链！区块 #{fork_base_index + i} 更新主链")
+                break
+            else:
+                print(f"   分叉区块 #{fork_base_index + i} 创建，继续分叉")
+                prev_fork_block = fork_block_new
+
+        # 验证最终状态
+        stats = self.blockchain.get_fork_statistics()
+        print(f"\n分叉测试结果:")
+        print(f"   总区块数: {stats['total_nodes']}")
+        print(f"   主链节点: {stats['main_chain_nodes']}")
+        print(f"   分叉节点: {stats['fork_nodes']}")
+        print(f"   当前主链高度: {self.blockchain.get_latest_block_index()}")
+
+        print("分叉场景交易处理测试通过！")
+
     def test_large_number_of_transactions(self):
         """测试大量交易处理场景"""
         print("\n测试大量交易处理...")
 
         # 创建大量交易
         large_transactions = self.create_test_transactions(20)
-        mock_multi_txns = self.create_mock_multi_transactions(large_transactions)
-
         print(f"   创建了 {len(large_transactions)} 个交易")
 
-        # 分批添加到交易池
+        # 分批处理
         batch_size = 5
-        batches = [mock_multi_txns[i:i+batch_size] for i in range(0, len(mock_multi_txns), batch_size)]
-
         blocks_created = 0
-        for i, batch in enumerate(batches):
-            # 添加批次到交易池
-            for multi_txn in batch:
-                self.transaction_pool.pool.append(multi_txn)
+
+        for i in range(0, len(large_transactions), batch_size):
+            batch = large_transactions[i:i+batch_size]
+            print(f"   处理批次 {i//batch_size + 1}: {len(batch)} 个交易")
+
+            # 创建MultiTransactions和SubmitTxInfo
+            multi_txns = self.create_test_multi_transactions(batch)
+            submit_tx_infos = self.create_submit_tx_infos(multi_txns)
+
+            # 添加到交易池
+            for submit_tx_info in submit_tx_infos:
+                try:
+                    success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info)
+                    if not success:
+                        logger.error(f"Batch {i//batch_size + 1}: Failed to add SubmitTxInfo: {message}")
+                        raise RuntimeError(f"Transaction pool rejected SubmitTxInfo: {message}")
+                except Exception as e:
+                    logger.error(f"Batch {i//batch_size + 1}: Error adding SubmitTxInfo to pool: {e}")
+                    raise RuntimeError(f"Failed to add SubmitTxInfo to transaction pool: {e}")
 
             # 创建区块
             latest_hash = self.blockchain.get_latest_block_hash()
             next_index = self.blockchain.get_latest_block_index() + 1
 
-            block = self.create_mock_block(next_index, latest_hash, batch)
-            is_main_chain = self.blockchain.add_block(block)
+            try:
+                package_data, block = pick_transactions_from_pool(
+                    tx_pool=self.transaction_pool,
+                    miner_address=self.miner_address,
+                    previous_hash=latest_hash,
+                    block_index=next_index
+                )
+                print(f"   批次 {i//batch_size + 1} 成功打包为区块 #{next_index}")
+            except Exception as e:
+                logger.error(f"Batch {i//batch_size + 1}: Transaction packaging failed: {e}")
+                raise RuntimeError(f"Failed to package transactions from pool: {e}")
 
+            is_main_chain = self.blockchain.add_block(block)
             if is_main_chain:
                 blocks_created += 1
-                print(f"   批次 {i+1} 成功打包为区块 #{next_index}")
 
         print(f"大量交易测试结果:")
         print(f"   总交易数: {len(large_transactions)}")
@@ -473,8 +594,6 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         # 测试1：无效区块添加
         print("1. 测试无效区块处理...")
-
-        # 创建索引错误的区块
         invalid_block = Block(
             index=999,  # 无效索引
             m_tree_root="test_root",
@@ -482,7 +601,6 @@ class TestBlockchainIntegration(unittest.TestCase):
             pre_hash="invalid_hash"
         )
 
-        # 应该能够处理无效区块而不崩溃
         try:
             is_main_chain = self.blockchain.add_block(invalid_block)
             print(f"   无效区块处理结果: {is_main_chain}")
@@ -491,26 +609,27 @@ class TestBlockchainIntegration(unittest.TestCase):
 
         # 测试2：交易池损坏恢复
         print("2. 测试交易池损坏恢复...")
-
-        # 保存原始交易池
         original_pool = self.transaction_pool.pool.copy()
+        original_hash_index = self.transaction_pool.hash_index.copy()
 
         # 模拟交易池损坏
         self.transaction_pool.pool = None
+        self.transaction_pool.hash_index = None
 
         # 尝试重新创建交易池
         try:
             self.transaction_pool.pool = []
+            self.transaction_pool.hash_index = {}
             print("   交易池恢复成功")
         except Exception as e:
             print(f"   交易池恢复失败: {e}")
 
         # 恢复原始数据
         self.transaction_pool.pool = original_pool
+        self.transaction_pool.hash_index = original_hash_index
 
         # 测试3：区块数据部分缺失
         print("3. 测试部分数据缺失的区块...")
-
         incomplete_block = Block(
             index=self.blockchain.get_latest_block_index() + 1,
             m_tree_root="",  # 空默克尔根
@@ -527,8 +646,9 @@ class TestBlockchainIntegration(unittest.TestCase):
 def run_integration_tests():
     """运行所有集成测试"""
     print("=" * 80)
-    print("EZchain Blockchain Integration Tests")
+    print("EZchain Blockchain Integration Tests (Updated for EZ_Tx_Pool)")
     print("贴近真实场景的区块链联调测试")
+    print("使用新的EZ_Tx_Pool和SubmitTxInfo架构")
     print("=" * 80)
 
     # 创建测试套件

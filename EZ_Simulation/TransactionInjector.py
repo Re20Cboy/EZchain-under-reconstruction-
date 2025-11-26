@@ -13,9 +13,10 @@ import shutil
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
+from EZ_Tx_Pool.TXPool import TxPool
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
+from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_VPB.values.Value import Value, ValueState
 
 
@@ -59,11 +60,12 @@ class TransactionInjector:
     
     def __init__(self, config: SimulationConfig):
         self.config = config
-        self.transaction_pool = TransactionPool("simulation_pool.db")
+        self.transaction_pool = TxPool("simulation_pool.db")
         self.sender_keys = self._generate_sender_keys()
         self.injected_transactions = []
         self.stats = SimulationStats()
         self.lock = threading.Lock()
+        self.private_keys = self._generate_private_keys()  # Generate private keys for signing
         
         # Create output directory if it doesn't exist
         if self.config.preserve_database and not os.path.exists(self.config.database_output_dir):
@@ -72,9 +74,9 @@ class TransactionInjector:
     def _generate_sender_keys(self) -> Dict[str, bytes]:
         """Generate sender addresses and their corresponding public keys"""
         from cryptography.hazmat.primitives import serialization
-        
+
         sender_keys = {}
-        
+
         # Generate test sender addresses and keys
         for i in range(self.config.num_senders):
             sender = f"sender_{i:03d}"
@@ -86,8 +88,28 @@ class TransactionInjector:
                 format=serialization.PublicFormat.SubjectPublicKeyInfo
             )
             sender_keys[sender] = public_key_pem
-            
+
         return sender_keys
+
+    def _generate_private_keys(self) -> Dict[str, bytes]:
+        """Generate sender addresses and their corresponding private keys"""
+        from cryptography.hazmat.primitives import serialization
+
+        private_keys = {}
+
+        # Generate test sender addresses and keys
+        for i in range(self.config.num_senders):
+            sender = f"sender_{i:03d}"
+            # Generate a new ECDSA key pair for each sender
+            private_key = ec.generate_private_key(ec.SECP256R1())
+            private_key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            private_keys[sender] = private_key_pem
+
+        return private_keys
     
     def _generate_values(self, num_values: int = 3) -> List[Value]:
         """Generate random values for transactions"""
@@ -175,41 +197,82 @@ class TransactionInjector:
         """Inject a single transaction into the pool"""
         if sender is None:
             sender = random.choice(list(self.sender_keys.keys()))
-        
+
         try:
             # Create a single-transaction MultiTransactions
             recipient = f"recipient_{random.randint(0, 99):03d}"
             tx = self._create_single_transaction(sender, recipient, random.randint(0, 1000000))
-            
+
             multi_txn = MultiTransactions(sender=sender, multi_txns=[tx])
-            
+
             # Always set digest for proper validation
             multi_txn.set_digest()
-            
+
             # For simulation purposes, add signatures to all transactions
-            if self.config.validation_enabled:
-                # Add dummy signature to MultiTransactions
-                multi_txn.signature = b"dummy_signature_for_simulation"
-                
-                # Add dummy signatures to individual transactions
+            if self.config.signature_enabled and sender in self.private_keys:
+                # Sign the MultiTransactions and individual transactions
+                multi_txn.sig_acc_txn(self.private_keys[sender])
                 for txn in multi_txn.multi_txns:
-                    txn.signature = b"dummy_transaction_signature"
+                    txn.sig_txn(self.private_keys[sender])
             else:
-                # Even when validation is disabled, we need to provide dummy signatures
-                # to pass the basic existence checks
+                # Add dummy signatures to pass basic existence checks
                 multi_txn.signature = b"dummy_signature_for_simulation"
                 for txn in multi_txn.multi_txns:
                     txn.signature = b"dummy_transaction_signature"
-            
+
+            # Create SubmitTxInfo
+            if self.config.signature_enabled and sender in self.private_keys and sender in self.sender_keys:
+                private_key_pem = self.private_keys[sender]
+                public_key_pem = self.sender_keys[sender]
+
+                # Create SubmitTxInfo with real signing
+                submit_tx_info = SubmitTxInfo.create_from_multi_transactions(
+                    multi_txn, private_key_pem, public_key_pem
+                )
+            else:
+                # For simulation without signing, create SubmitTxInfo manually with dummy data
+                submit_tx_info = SubmitTxInfo.__new__(SubmitTxInfo)
+                submit_tx_info.multi_transactions_hash = multi_txn.digest
+                submit_tx_info.submit_timestamp = "2023-01-01T00:00:00"
+                submit_tx_info.version = SubmitTxInfo.VERSION
+                submit_tx_info.submitter_address = sender
+                submit_tx_info.signature = b"dummy_signature_for_simulation"
+                submit_tx_info.public_key = b"dummy_public_key"
+                submit_tx_info._hash = None
+
             # Add to pool
-            public_key = self.sender_keys[sender] if self.config.validation_enabled else None
-            success, message = self.transaction_pool.add_multi_transactions(multi_txn, public_key)
-            
+            if self.config.validation_enabled and self.config.signature_enabled:
+                # Full validation with real signatures
+                success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+            else:
+                # For simulation without full validation, just add without strict validation
+                try:
+                    with self.transaction_pool.lock:
+                        self.transaction_pool.pool.append(submit_tx_info)
+                        index = len(self.transaction_pool.pool) - 1
+
+                        # Update indices
+                        if submit_tx_info.submitter_address not in self.transaction_pool.submitter_index:
+                            self.transaction_pool.submitter_index[submit_tx_info.submitter_address] = []
+                        self.transaction_pool.submitter_index[submit_tx_info.submitter_address].append(index)
+
+                        submit_hash = submit_tx_info.get_hash()
+                        self.transaction_pool.hash_index[submit_hash] = index
+                        self.transaction_pool.multi_tx_hash_index[submit_tx_info.multi_transactions_hash] = index
+
+                        self.transaction_pool.stats['total_received'] += 1
+                        self.transaction_pool.stats['valid_received'] += 1
+
+                    validation_type = "full validation" if self.config.validation_enabled else "no validation"
+                    success, message = True, f"SubmitTxInfo added successfully ({validation_type})"
+                except Exception as e:
+                    success, message = False, f"Error adding SubmitTxInfo: {str(e)}"
+
             with self.lock:
                 self.stats.total_injected += 1
                 if success:
                     self.stats.successfully_added += 1
-                    self.injected_transactions.append(multi_txn.digest)
+                    self.injected_transactions.append(submit_tx_info.get_hash())
                 else:
                     if "duplicate" in message.lower():
                         self.stats.duplicates += 1
@@ -217,9 +280,9 @@ class TransactionInjector:
                         self.stats.failed_validation += 1
                     else:
                         self.stats.injection_errors += 1
-            
+
             return success, message
-            
+
         except Exception as e:
             with self.lock:
                 self.stats.total_injected += 1
@@ -232,45 +295,86 @@ class TransactionInjector:
             sender = random.choice(list(self.sender_keys.keys()))
         if batch_size is None:
             batch_size = self.config.num_transactions_per_batch
-        
+
         results = []
-        
+
         # Determine if this should be an invalid transaction
         is_invalid = random.random() < self.config.invalid_probability
-        
+
         try:
             if is_invalid:
                 multi_txn = self._create_invalid_multi_transactions(sender)
             else:
                 multi_txn = self._create_multi_transactions(sender, batch_size)
-            
+
             # Always set digest for proper validation
             multi_txn.set_digest()
-            
+
             # For simulation purposes, add signatures to all transactions
-            if self.config.validation_enabled:
-                # Add dummy signature to MultiTransactions
-                multi_txn.signature = b"dummy_signature_for_simulation"
-                
-                # Add dummy signatures to individual transactions
+            if self.config.signature_enabled and sender in self.private_keys:
+                # Sign the MultiTransactions and individual transactions
+                multi_txn.sig_acc_txn(self.private_keys[sender])
                 for txn in multi_txn.multi_txns:
-                    txn.signature = b"dummy_transaction_signature"
+                    txn.sig_txn(self.private_keys[sender])
             else:
-                # Even when validation is disabled, we need to provide dummy signatures
-                # to pass the basic existence checks
+                # Add dummy signatures to pass basic existence checks
                 multi_txn.signature = b"dummy_signature_for_simulation"
                 for txn in multi_txn.multi_txns:
                     txn.signature = b"dummy_transaction_signature"
-            
+
+            # Create SubmitTxInfo
+            if self.config.signature_enabled and sender in self.private_keys and sender in self.sender_keys:
+                private_key_pem = self.private_keys[sender]
+                public_key_pem = self.sender_keys[sender]
+
+                # Create SubmitTxInfo with real signing
+                submit_tx_info = SubmitTxInfo.create_from_multi_transactions(
+                    multi_txn, private_key_pem, public_key_pem
+                )
+            else:
+                # For simulation without signing, create SubmitTxInfo manually with dummy data
+                submit_tx_info = SubmitTxInfo.__new__(SubmitTxInfo)
+                submit_tx_info.multi_transactions_hash = multi_txn.digest
+                submit_tx_info.submit_timestamp = "2023-01-01T00:00:00"
+                submit_tx_info.version = SubmitTxInfo.VERSION
+                submit_tx_info.submitter_address = sender
+                submit_tx_info.signature = b"dummy_signature_for_simulation"
+                submit_tx_info.public_key = b"dummy_public_key"
+                submit_tx_info._hash = None
+
             # Add to pool
-            public_key = self.sender_keys[sender] if self.config.validation_enabled else None
-            success, message = self.transaction_pool.add_multi_transactions(multi_txn, public_key)
-            
+            if self.config.validation_enabled and self.config.signature_enabled:
+                # Full validation with real signatures
+                success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+            else:
+                # For simulation without full validation, just add without strict validation
+                try:
+                    with self.transaction_pool.lock:
+                        self.transaction_pool.pool.append(submit_tx_info)
+                        index = len(self.transaction_pool.pool) - 1
+
+                        # Update indices
+                        if submit_tx_info.submitter_address not in self.transaction_pool.submitter_index:
+                            self.transaction_pool.submitter_index[submit_tx_info.submitter_address] = []
+                        self.transaction_pool.submitter_index[submit_tx_info.submitter_address].append(index)
+
+                        submit_hash = submit_tx_info.get_hash()
+                        self.transaction_pool.hash_index[submit_hash] = index
+                        self.transaction_pool.multi_tx_hash_index[submit_tx_info.multi_transactions_hash] = index
+
+                        self.transaction_pool.stats['total_received'] += 1
+                        self.transaction_pool.stats['valid_received'] += 1
+
+                    validation_type = "full validation" if self.config.validation_enabled else "no validation"
+                    success, message = True, f"SubmitTxInfo added successfully ({validation_type})"
+                except Exception as e:
+                    success, message = False, f"Error adding SubmitTxInfo: {str(e)}"
+
             with self.lock:
                 self.stats.total_injected += 1
                 if success:
                     self.stats.successfully_added += 1
-                    self.injected_transactions.append(multi_txn.digest)
+                    self.injected_transactions.append(submit_tx_info.get_hash())
                 else:
                     if "duplicate" in message.lower():
                         self.stats.duplicates += 1
@@ -278,15 +382,15 @@ class TransactionInjector:
                         self.stats.failed_validation += 1
                     else:
                         self.stats.injection_errors += 1
-            
+
             results.append((success, message))
-            
+
         except Exception as e:
             with self.lock:
                 self.stats.total_injected += 1
                 self.stats.injection_errors += 1
             results.append((False, f"Error injecting batch: {str(e)}"))
-        
+
         return results
     
     def run_simulation(self) -> SimulationStats:
@@ -356,11 +460,12 @@ class TransactionInjector:
         print(f"Duplicates: {self.stats.duplicates}")
         print(f"Injection errors: {self.stats.injection_errors}")
         print(f"Success rate: {self.stats.success_rate:.2f}%")
-        print(f"Injection rate: {self.stats.total_injected/self.stats.duration:.2f} tx/sec")
+        injection_rate = (self.stats.total_injected/self.stats.duration) if self.stats.duration > 0 else 0
+        print(f"Injection rate: {injection_rate:.2f} tx/sec")
         
         print("\nTransaction Pool Status:")
         print(f"  Transactions in pool: {pool_stats['total_transactions']}")
-        print(f"  Unique senders: {pool_stats['unique_senders']}")
+        print(f"  Unique submitters: {pool_stats['unique_submitters']}")
         print(f"  Pool size: {pool_stats['pool_size_bytes']} bytes")
         
         print("="*60)

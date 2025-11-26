@@ -14,8 +14,8 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from EZ_Simulation.TransactionInjector import TransactionInjector, SimulationConfig
-from EZ_Transaction_Pool.TransactionPool import TransactionPool
-from EZ_Transaction_Pool.PackTransactions import TransactionPackager, package_transactions_from_pool
+from EZ_Tx_Pool.TXPool import TxPool
+from backup_EZ_Transaction_Pool.PackTransactions import TransactionPackager, package_transactions_from_pool
 from EZ_Main_Chain.Block import Block
 
 
@@ -139,7 +139,7 @@ class PackTransactionsIntegrationTest:
         
         try:
             # 从保存的数据库加载交易池
-            transaction_pool = TransactionPool(self.db_path)
+            transaction_pool = TxPool(self.db_path)
             
             # 创建交易打包器
             packager = TransactionPackager(max_multi_txns_per_block=10)
@@ -201,7 +201,7 @@ class PackTransactionsIntegrationTest:
         
         try:
             # 从保存的数据库加载交易池
-            transaction_pool = TransactionPool(self.db_path)
+            transaction_pool = TxPool(self.db_path)
             
             # 使用便捷函数创建区块
             package_data, block = package_transactions_from_pool(
@@ -271,7 +271,7 @@ class PackTransactionsIntegrationTest:
                 print(f"\n--- 创建区块 {block_num + 1} ---")
                 
                 # 创建新的交易池
-                transaction_pool = TransactionPool(f"test_pool_{block_num}.db")
+                transaction_pool = TxPool(f"test_pool_{block_num}.db")
                 
                 # 注入少量交易
                 config = SimulationConfig(

@@ -1,0 +1,20 @@
+SubmitTxInfo设计
+
+背景信息：Account会调用CreateMultiTransactions集成接口生成MultiTransactions，
+Account在真正提交至交易池时，应该再对生成的MultiTransactions进行进一步处理（即，基于MultiTransactions生成SubmitTxInfo）；
+
+SubmitTxInfo包含的信息：
+1. MultiTransactions的哈希值（若已有转换hash的方法可以直接调用）；
+2. 提交的标准时间戳；
+3. 当前版本号；
+4. 提交者地址（即，MultiTransactions的唯一Sender的地址）；
+5. Sender针对1~4打包信息的数字签名（若已有签名的方法可以直接调用）；
+6. Sender的公钥（用于对签名验证，若已有获取公钥的方法可以直接调用）；
+
+SubmitTxInfo的方法：
+1. 生成SubmitTxInfo的方法（输入参数为MultiTransactions，输出为SubmitTxInfo实例）；
+2. 验证SubmitTxInfo的方法（输入参数为和MultiTransactions等必要信息，检测能否按照SubmitTxInfo生成过程生成self的SubmitTxInfo信息，输出为布尔值，表示验证是否通过）；
+3. 将SubmitTxInfo转换为字典的方法（便于序列化存储和传输）；
+4. 从字典恢复SubmitTxInfo实例的方法（便于反序列化存储和传输）；
+5. 获取SubmitTxInfo的哈希值的方法（便于快速索引和查询）；
+6. 打印SubmitTxInfo内容的方法（便于调试和日志记录）；
