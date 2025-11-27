@@ -9,7 +9,7 @@ private keys are handled safely in memory and properly cleaned up after use.
 import os
 import secrets
 import hashlib
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, Generator
 from contextlib import contextmanager
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes, serialization
@@ -42,7 +42,7 @@ class SecureMemoryHandler:
     
     @staticmethod
     @contextmanager
-    def secure_load_private_key(private_key_pem: bytes) -> ec.EllipticCurvePrivateKey:
+    def secure_load_private_key(private_key_pem: bytes) -> Generator[ec.EllipticCurvePrivateKey, None, None]:
         """
         Context manager for secure private key handling.
         Ensures key is properly wiped from memory after use.
@@ -255,7 +255,7 @@ class SecureTransactionSignature:
         # Sign the transaction hash
         signature = self.signer.sign_transaction_data(transaction_hash, private_key_pem)
         
-        print(f"DEBUG - Generated signature: {signature.hex()}")
+        # print(f"DEBUG - Generated signature: {signature.hex()}")  # Commented out to reduce log noise
         
         return {
             "transaction_data": transaction_data,
