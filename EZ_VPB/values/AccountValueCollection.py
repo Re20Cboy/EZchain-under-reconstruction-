@@ -51,8 +51,46 @@ class AccountValueCollection:
         self._state_index[value.state].add(node.node_id)
         self._decimal_begin_map[value.get_decimal_begin_index()] = node.node_id
         self.size += 1
-        
+
         return True
+
+    def batch_add_values(self, values: List[Value]) -> List[str]:
+        """
+        批量添加Value到集合中，返回对应的node_id列表
+
+        Args:
+            values: 要添加的Value列表
+
+        Returns:
+            List[str]: 对应的node_id列表，失败则为None
+        """
+        if not values:
+            return []
+
+        node_ids = []
+
+        for value in values:
+            node = ValueNode(value)
+
+            # 添加到链表尾部
+            if self.tail is None:
+                self.head = node
+                self.tail = node
+            else:
+                self.tail.next = node
+                node.prev = self.tail
+                self.tail = node
+
+            # 更新索引
+            self._index_map[node.node_id] = node
+            self._state_index[value.state].add(node.node_id)
+            self._decimal_begin_map[value.get_decimal_begin_index()] = node.node_id
+
+            node_ids.append(node.node_id)
+
+        self.size += len(values)
+
+        return node_ids
     
     def remove_value(self, node_id: str) -> bool:
         """根据node_id移除Value"""
@@ -216,8 +254,8 @@ class AccountValueCollection:
     
     def get_balance_by_state(self, state: ValueState = ValueState.UNSPENT) -> int:
         """计算指定状态的总余额"""
-        values = self.find_by_state(state)
-        return sum(v.value_num for v in values)
+        state_values = self.find_by_state(state)
+        return sum(v.value_num for v in state_values)
     
     def get_total_balance(self) -> int:
         """计算总余额"""

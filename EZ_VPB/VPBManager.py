@@ -5,11 +5,11 @@ from typing import List, Optional, Dict, Any
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from values.Value import Value, ValueState
-from values.AccountValueCollection import AccountValueCollection
-from proofs.AccountProofManager import AccountProofManager
-from proofs.ProofUnit import ProofUnit
-from block_index.BlockIndexList import BlockIndexList
+from EZ_VPB.values.Value import Value, ValueState
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
+from EZ_VPB.proofs.AccountProofManager import AccountProofManager
+from EZ_VPB.proofs.ProofUnit import ProofUnit
+from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Units.MerkleProof import MerkleTreeProof
 
@@ -45,6 +45,96 @@ class VPBManager:
 
     # ==================== 操作1：从创世块初始化 ====================
 
+    def initialize_from_genesis_batch(self, genesis_values: List[Value], genesis_proof_units: List[ProofUnit],
+                                    genesis_block_index: BlockIndexList) -> bool:
+        """
+        从创世块处批量获得最初始的Values、Proofs、BlockIndex
+
+        优化版本：移除了冗余的检查，提升批量操作性能
+
+        Args:
+            genesis_values: 创世Values列表
+            genesis_proof_units: 创世Proofs列表（对应所有Values）
+            genesis_block_index: 创世BlockIndex（块高度为0，owner为当前账户）
+
+        Returns:
+            bool: 批量初始化是否成功
+        """
+        try:
+            print(f"Initializing VPB for {self.account_address} from genesis block with {len(genesis_values)} values...")
+
+            if not genesis_values:
+                print("Error: No genesis values provided for batch initialization")
+                return False
+
+            # 1. 批量添加所有Values到ValueCollection，直接获取node_id
+            added_nodes = []
+            # 在VPBManager内部直接获取添加后的node_id映射，避免重复查询
+            batch_node_ids = self.value_collection.batch_add_values(genesis_values)
+
+            print(f"Batch add values returned {len(batch_node_ids)} node_ids for {len(genesis_values)} values")
+
+            for i, genesis_value in enumerate(genesis_values):
+                node_id = batch_node_ids[i] if i < len(batch_node_ids) else None
+                if not node_id:
+                    print(f"Error: Failed to add genesis value {genesis_value.begin_index} to collection")
+                    return False
+
+                # 直接建立映射关系
+                self._node_id_to_value_id[node_id] = genesis_value.begin_index
+                added_nodes.append((genesis_value, node_id))
+
+            print(f"Successfully added {len(added_nodes)} genesis values to ValueCollection")
+
+            # 2. 批量将Value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
+            # ProofManager现在只管理Value-Proof映射，Value数据由ValueCollection统一管理
+            if not self.proof_manager.batch_add_values(genesis_values):
+                print("Error: Failed to batch add value mappings to proof manager")
+                return False
+
+            print(f"Successfully added value mappings to ProofManager for {len(genesis_values)} values")
+
+            # 3. 优化ProofUnits添加 - 使用批量操作避免不必要的嵌套循环
+            # 构建value_proof_pairs列表用于批量添加
+            value_proof_pairs = []
+            if len(genesis_proof_units) == len(added_nodes):
+                # 一对一映射的情况（最常见）
+                for (genesis_value, node_id), proof_unit in zip(added_nodes, genesis_proof_units):
+                    value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+            elif len(genesis_proof_units) == 1:
+                # 单个ProofUnit对应所有Values的情况
+                proof_unit = genesis_proof_units[0]
+                for genesis_value, _ in added_nodes:
+                    value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+            else:
+                # 其他情况 - 构建所有组合但使用批量添加
+                for proof_unit in genesis_proof_units:
+                    for genesis_value, _ in added_nodes:
+                        value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+
+            # 使用批量添加方法提升性能
+            if not self.proof_manager.batch_add_proof_units(value_proof_pairs):
+                print("Error: Failed to batch add proof units to proof manager")
+                return False
+
+            # 4. 优化BlockIndex处理 - 直接引用而不是深拷贝，因为创世块数据是只读的
+            for _, node_id in added_nodes:
+                # 对于创世块初始化，直接使用同一个BlockIndex对象引用
+                # 因为所有Values都在同一个创世块中创建，共享相同的BlockIndex信息
+                self._block_indices[node_id] = genesis_block_index
+
+            print(f"Genesis batch initialization completed successfully for {self.account_address}")
+            print(f"  - Added {len(added_nodes)} values")
+            print(f"  - Added {len(genesis_proof_units)} proof units")
+            print(f"  - Created block indices for all values")
+            return True
+
+        except Exception as e:
+            print(f"Error during genesis batch initialization: {e}")
+            import traceback
+            print(f"Detailed error: {traceback.format_exc()}")
+            return False
+
     def initialize_from_genesis(self, genesis_value: Value, genesis_proof_units: List[ProofUnit],
                                 genesis_block_index: BlockIndexList) -> bool:
         """
@@ -61,30 +151,54 @@ class VPBManager:
         try:
             print(f"Initializing VPB for {self.account_address} from genesis block...")
 
-            # 1. 添加Value到本地数据库，获取node_id
-            if not self.value_collection.add_value(genesis_value):
-                return False
+            # 1. 检查Value是否已存在
+            existing_node_id = self._get_node_id_for_value(genesis_value)
+            if existing_node_id:
+                print(f"Genesis value {genesis_value.begin_index} already exists, updating...")
+                node_id = existing_node_id
+            else:
+                # 2. 添加Value到本地数据库，获取node_id
+                if not self.value_collection.add_value(genesis_value):
+                    print("Error: Failed to add genesis value to collection")
+                    return False
 
-            # 获取添加后生成的node_id
-            node_id = self._get_node_id_for_value(genesis_value)
-            if not node_id:
-                print("Error: Failed to get node_id for genesis value")
-                return False
+                # 获取添加后生成的node_id
+                node_id = self._get_node_id_for_value(genesis_value)
+                if not node_id:
+                    print("Error: Failed to get node_id for genesis value")
+                    return False
+
+                print(f"Added genesis value with node_id: {node_id}")
 
             value_id = genesis_value.begin_index
             self._node_id_to_value_id[node_id] = value_id
 
-            # 2. 添加Value到ProofManager中，然后添加ProofUnits
+            # 3. 添加Value映射到ProofManager中（仅建立映射关系，不重复存储Value）
             if not self.proof_manager.add_value(genesis_value):
+                print("Error: Failed to add genesis value mapping to proof manager")
                 return False
+
+            print(f"Added genesis value mapping to ProofManager for {value_id}")
 
             # 为每个ProofUnit建立映射
             for proof_unit in genesis_proof_units:
                 if not self.proof_manager.add_proof_unit(value_id, proof_unit):
                     print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis value {value_id}")
 
-            # 3. 添加BlockIndex到本地数据库（使用node_id作为key）
-            self._block_indices[node_id] = genesis_block_index
+            # 4. 添加BlockIndex到本地数据库（使用node_id作为key）
+            if node_id in self._block_indices:
+                print(f"Merging BlockIndex for existing node_id: {node_id}")
+                existing_block_index = self._block_indices[node_id]
+                # 合并index_lst
+                for idx in genesis_block_index.index_lst:
+                    if idx not in existing_block_index.index_lst:
+                        existing_block_index.index_lst.append(idx)
+                # 合并owner信息
+                received_owner_history = genesis_block_index.get_ownership_history()
+                for block_idx, owner_addr in received_owner_history:
+                    existing_block_index.add_ownership_change(block_idx, owner_addr)
+            else:
+                self._block_indices[node_id] = genesis_block_index
 
             print(f"Genesis initialization completed successfully for {self.account_address}")
             return True
@@ -235,9 +349,11 @@ class VPBManager:
 
                 self._node_id_to_value_id[new_node_id] = received_value_id
 
-                # 2. 将value添加到ProofManager中
+                # 2. 将value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
                 if not self.proof_manager.add_value(received_value):
                     return False
+
+                print(f"Added received value mapping to ProofManager for {received_value_id}")
 
                 # 3. 将proofs的proof unit挨个添加到本地数据库中，进行本地化查重
                 for proof_unit in received_proof_units:
@@ -271,10 +387,19 @@ class VPBManager:
             node_id: Value对应的node_id，如果不存在则返回None
         """
         try:
-            # 通过ValueCollection的内部映射查找node_id
+            # 首先尝试通过AccountValueCollection的get_value_by_id方法查找
+            found_value = self.value_collection.get_value_by_id(value.begin_index)
+            if found_value:
+                # 如果找到了Value，通过遍历找到对应的node_id
+                for node_id, node in self.value_collection._index_map.items():
+                    if node.value.is_same_value(found_value):
+                        return node_id
+
+            # 如果没找到，通过遍历所有节点查找
             for node_id, node in self.value_collection._index_map.items():
-                if node.value.begin_index == value.begin_index:
+                if node.value.is_same_value(value):
                     return node_id
+
             return None
         except Exception as e:
             print(f"Error getting node_id for value: {e}")
@@ -356,14 +481,58 @@ class VPBManager:
             # 验证ProofManager的完整性（通过检查统计信息）
             proof_stats = self.proof_manager.get_statistics()
             if proof_stats.get('total_values', 0) != len(self.get_all_values()):
-                print(f"Warning: ProofManager value count ({proof_stats.get('total_values', 0)}) "
+                print(f"Warning: ProofManager value mapping count ({proof_stats.get('total_values', 0)}) "
                       f"does not match ValueCollection count ({len(self.get_all_values())})")
+                # 这不是严重错误，因为ProofManager现在只管理映射关系
+
+            # 验证映射关系的一致性
+            if not self._validate_value_proof_mapping_consistency():
+                print("Value-Proof mapping consistency validation failed")
+                return False
 
             print("VPB integrity validation completed")
             return True
 
         except Exception as e:
             print(f"Error during VPB integrity validation: {e}")
+            return False
+
+    def _validate_value_proof_mapping_consistency(self) -> bool:
+        """验证Value-Proof映射关系的一致性"""
+        try:
+            # 获取ValueCollection中的所有Value
+            collection_value_ids = set(value.begin_index for value in self.get_all_values())
+
+            # 获取ProofManager中的所有Value ID
+            proof_manager_value_ids = set(self.proof_manager.get_all_value_ids())
+
+            # 检查一致性
+            missing_in_proof_manager = collection_value_ids - proof_manager_value_ids
+            extra_in_proof_manager = proof_manager_value_ids - collection_value_ids
+
+            if missing_in_proof_manager:
+                print(f"Warning: {len(missing_in_proof_manager)} values in ValueCollection but not in ProofManager")
+                # 自动修复：添加缺失的映射
+                for value_id in missing_in_proof_manager:
+                    value = self.value_collection.get_value_by_id(value_id)
+                    if value and not self.proof_manager.add_value(value):
+                        print(f"Error: Failed to add missing mapping for value {value_id}")
+                        return False
+                print(f"Auto-repaired {len(missing_in_proof_manager)} missing value mappings")
+
+            if extra_in_proof_manager:
+                print(f"Warning: {len(extra_in_proof_manager)} value mappings in ProofManager but not in ValueCollection")
+                # 这些可能是孤立的映射，可以清理
+                for value_id in extra_in_proof_manager:
+                    if not self.proof_manager.remove_value(value_id):
+                        print(f"Error: Failed to remove orphan mapping for value {value_id}")
+                        return False
+                print(f"Auto-cleaned {len(extra_in_proof_manager)} orphan value mappings")
+
+            return True
+
+        except Exception as e:
+            print(f"Error validating value-proof mapping consistency: {e}")
             return False
 
     def clear_all_data(self) -> bool:

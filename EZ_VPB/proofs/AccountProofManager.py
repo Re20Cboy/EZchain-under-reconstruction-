@@ -7,8 +7,8 @@ from collections import defaultdict
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
-from proofs.ProofUnit import ProofUnit
-from values.Value import Value
+from EZ_VPB.proofs.ProofUnit import ProofUnit
+from EZ_VPB.values.Value import Value
 
 class AccountProofStorage:
     """
@@ -56,18 +56,7 @@ class AccountProofStorage:
                 )
             """)
 
-            # Value基本信息表 - 存储Value的基本信息以便快速查找
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS account_values (
-                    account_address TEXT NOT NULL,
-                    value_id TEXT NOT NULL,
-                    value_data TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (account_address) REFERENCES accounts (account_address),
-                    PRIMARY KEY (account_address, value_id)
-                )
-            """)
-
+  
             conn.commit()
 
     def store_proof_unit(self, proof_unit: ProofUnit) -> bool:
@@ -177,44 +166,13 @@ class AccountProofStorage:
             print(f"Error removing value-proof mapping: {e}")
             return False
 
-    def store_value_info(self, account_address: str, value: Value) -> bool:
-        """存储Value的基本信息"""
-        try:
-            # 确保账户存在
-            if not self.ensure_account_exists(account_address):
-                return False
-
-            # 使用begin_index作为value_id
-            value_id = value.begin_index
-
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO account_values (account_address, value_id, value_data)
-                    VALUES (?, ?, ?)
-                """, (
-                    account_address,
-                    value_id,
-                    json.dumps(value.to_dict())
-                ))
-                conn.commit()
-                return True
-        except Exception as e:
-            print(f"Error storing value info: {e}")
-            return False
-
     def remove_value_info(self, account_address: str, value_id: str) -> bool:
-        """移除Value的基本信息"""
+        """移除Value相关的所有映射关系"""
         try:
             with sqlite3.connect(self.db_path) as conn:
-                # 先删除相关的proof映射
-                conn.execute("""
-                    DELETE FROM account_value_proofs
-                    WHERE account_address = ? AND value_id = ?
-                """, (account_address, value_id))
-
-                # 再删除value信息
+                # 删除相关的proof映射
                 cursor = conn.execute("""
-                    DELETE FROM account_values
+                    DELETE FROM account_value_proofs
                     WHERE account_address = ? AND value_id = ?
                 """, (account_address, value_id))
                 conn.commit()
@@ -263,25 +221,7 @@ class AccountProofStorage:
             print(f"Error getting all proof units for account: {e}")
             return []
 
-    def get_values_for_account(self, account_address: str) -> List[Value]:
-        """获取指定账户的所有Value"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("""
-                    SELECT value_data FROM account_values
-                    WHERE account_address = ?
-                """, (account_address,))
-
-                values = []
-                for row in cursor.fetchall():
-                    value_data = json.loads(row[0])
-                    value = Value.from_dict(value_data)
-                    values.append(value)
-                return values
-        except Exception as e:
-            print(f"Error getting values for account: {e}")
-            return []
-
+  
     def get_proof_units_by_owner(self, account_address: str, owner: str) -> List[ProofUnit]:
         """获取指定账户中指定owner的所有ProofUnit"""
         try:
@@ -333,7 +273,7 @@ class AccountProofManager:
 
     def add_value(self, value: Value) -> bool:
         """
-        添加Value到管理器中
+        添加Value到管理器中（仅建立映射，不存储Value数据）
 
         Args:
             value: 要添加的Value对象
@@ -342,15 +282,12 @@ class AccountProofManager:
             bool: 添加是否成功
         """
         try:
-            # 存储Value基本信息
-            if not self.storage.store_value_info(self.account_address, value):
-                return False
-
             # 初始化该Value的proof映射（空集合）
             value_id = value.begin_index
             if value_id not in self._value_proof_mapping:
                 self._value_proof_mapping[value_id] = set()
 
+            print(f"[AccountProofManager] Added value mapping for {value_id} (value data stored in ValueCollection)")
             return True
         except Exception as e:
             print(f"Error adding value: {e}")
@@ -373,16 +310,19 @@ class AccountProofManager:
             # 移除所有映射关系
             for unit_id in unit_ids:
                 if not self.remove_value_proof_mapping(value_id, unit_id):
-                    print(f"Warning: Failed to remove mapping for value {value_id}, unit {unit_id}")
+                    pass
+                    # print(f"Warning: Failed to remove mapping for value {value_id}, unit {unit_id}")
 
-            # 从存储中删除Value信息
+            # 从存储中删除Value相关的映射关系
             if not self.storage.remove_value_info(self.account_address, value_id):
-                print(f"Warning: Failed to remove value info for {value_id}")
+                pass
+                # print(f"Warning: Failed to remove value mappings for {value_id}")
 
             # 从内存缓存中删除
             if value_id in self._value_proof_mapping:
                 del self._value_proof_mapping[value_id]
 
+            # print(f"[AccountProofManager] Removed value mapping for {value_id}")
             return True
         except Exception as e:
             print(f"Error removing value: {e}")
@@ -451,6 +391,71 @@ class AccountProofManager:
             return False
         except Exception as e:
             print(f"Error adding proof unit directly: {e}")
+            return False
+
+    def batch_add_values(self, values: List[Value]) -> bool:
+        """
+        批量添加Values到管理器中（仅建立映射，不存储Value数据）
+
+        Args:
+            values: 要添加的Value列表
+
+        Returns:
+            bool: 批量添加是否成功
+        """
+        if not values:
+            return True
+
+        try:
+            # 批量初始化Value的proof映射
+            for value in values:
+                value_id = value.begin_index
+                if value_id not in self._value_proof_mapping:
+                    self._value_proof_mapping[value_id] = set()
+
+            print(f"[AccountProofManager] Batch added value mappings for {len(values)} values (data stored in ValueCollection)")
+            return True
+        except Exception as e:
+            print(f"Error during batch add values: {e}")
+            import traceback
+            print(f"Batch add values traceback: {traceback.format_exc()}")
+            return False
+
+    def batch_add_proof_units(self, value_proof_pairs: List[Tuple[str, ProofUnit]]) -> bool:
+        """
+        批量添加ProofUnits到指定Values，不进行重复检测（提高效率）
+
+        Args:
+            value_proof_pairs: (value_id, proof_unit) 元组的列表
+
+        Returns:
+            bool: 批量添加是否成功
+        """
+        if not value_proof_pairs:
+            return True
+
+        try:
+            # 批量存储ProofUnits
+            for value_id, proof_unit in value_proof_pairs:
+                # 直接存储新的ProofUnit，不进行重复检测
+                if not self.storage.store_proof_unit(proof_unit):
+                    print(f"Error: Failed to store proof unit {proof_unit.unit_id} for value {value_id}")
+                    return False
+
+                # 添加映射关系
+                if not self.storage.add_value_proof_mapping(self.account_address, value_id, proof_unit.unit_id):
+                    print(f"Error: Failed to add mapping for value {value_id}, proof {proof_unit.unit_id}")
+                    return False
+
+                # 更新内存缓存
+                self._value_proof_mapping[value_id].add(proof_unit.unit_id)
+                self._proof_units_cache[proof_unit.unit_id] = proof_unit
+
+            return True
+        except Exception as e:
+            print(f"Error during batch add proof units: {e}")
+            import traceback
+            print(f"Batch add proof units traceback: {traceback.format_exc()}")
             return False
 
     def remove_value_proof_mapping(self, value_id: str, unit_id: str) -> bool:
@@ -537,17 +542,17 @@ class AccountProofManager:
             print(f"Error getting value for proof unit: {e}")
             return None
 
-    def get_all_values(self) -> List[Value]:
+    def get_all_value_ids(self) -> List[str]:
         """
-        获取账户的所有Value
+        获取账户的所有Value ID列表
 
         Returns:
-            List[Value]: Value列表
+            List[str]: Value ID列表
         """
         try:
-            return self.storage.get_values_for_account(self.account_address)
+            return list(self._value_proof_mapping.keys())
         except Exception as e:
-            print(f"Error getting all values: {e}")
+            print(f"Error getting all value IDs: {e}")
             return []
 
     def get_all_proof_units(self) -> List[Tuple[str, ProofUnit]]:

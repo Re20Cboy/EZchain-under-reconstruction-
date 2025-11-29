@@ -242,8 +242,9 @@ class GenesisBlockCreator:
             owner_mt_proof=merkle_proof
         )
 
-        logger.info(f"Created genesis VPB for account {account.address}")
-        logger.info(f"Proof unit ID: {proof_unit.unit_id}")
+        # Reduced verbosity for genesis VPB creation
+        # logger.info(f"Created genesis VPB for account {account.address}")
+        # logger.info(f"Proof unit ID: {proof_unit.unit_id}")
 
         return proof_unit
 
@@ -335,6 +336,7 @@ class GenesisBlockCreator:
                         valueNum=value_amount,
                         state=ValueState.UNSPENT
                     )
+                    # Created genesis value
                     created_values.append(genesis_value)
 
                     # Create a single transaction for this value
@@ -376,6 +378,8 @@ class GenesisBlockCreator:
 
             logger.info(f"Successfully created {len(transactions)} genesis transactions for account {account.address}")
             logger.info(f"Total value created: {self.total_initial_value}")
+
+            # Genesis values created successfully
 
             # Store created values for later use in VPB creation
             if not hasattr(self, '_genesis_values_by_account'):
@@ -540,42 +544,47 @@ def create_genesis_vpb_for_account(account_addr: str,
     # Create Value and ProofUnit for each individual transaction
     for txn in genesis_multi_txn.multi_txns:
         try:
-            # Extract transaction information to create Value object
-            if hasattr(txn, 'begin_index') and hasattr(txn, 'amount'):
-                # Create real Value object with UNSPENT state for genesis
-                value = Value(
-                    beginIndex=txn.begin_index,
-                    valueNum=txn.amount,
-                    state=ValueState.UNSPENT
-                )
-                genesis_values.append(value)
+            # Extract Value information from transaction's value list
+            if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
+                # Each transaction should contain one Value object for genesis
+                for txn_value in txn.value:
+                    if isinstance(txn_value, Value):
+                        # Extract genesis value from transaction
+                        # Use the Value object directly from the transaction
+                        genesis_values.append(txn_value)
 
-                # Create a single-transaction MultiTransactions for this value
-                single_multi_txn = MultiTransactions(
-                    sender=genesis_multi_txn.sender,
-                    multi_txns=[txn]  # Only this specific transaction
-                )
+                        # Create a single-transaction MultiTransactions for this value
+                        single_multi_txn = MultiTransactions(
+                            sender=genesis_multi_txn.sender,
+                            multi_txns=[txn]  # Only this specific transaction
+                        )
 
-                # Create real ProofUnit for this specific value
-                proof_unit = ProofUnit(
-                    owner=account_addr,
-                    owner_multi_txns=single_multi_txn,
-                    owner_mt_proof=merkle_proof
-                )
-                genesis_proof_units.append(proof_unit)
+                        # Create real ProofUnit for this specific value
+                        proof_unit = ProofUnit(
+                            owner=account_addr,
+                            owner_multi_txns=single_multi_txn,
+                            owner_mt_proof=merkle_proof
+                        )
+                        genesis_proof_units.append(proof_unit)
 
-                logger.info(f"Created Value {value.begin_index}-{value.end_index} (amount: {value.value_num}) for account {account_addr}")
-
+                        # Detailed value creation logging - commented out to reduce verbosity
+                        # logger.info(f"Created Value {txn_value.begin_index}-{txn_value.end_index} (amount: {txn_value.value_num}) for account {account_addr}")
+                    else:
+                        logger.warning(f"Transaction value is not a Value object: {type(txn_value)}")
             else:
-                logger.warning(f"Transaction missing required attributes: begin_index or amount")
+                logger.warning(f"Transaction missing value attribute or empty value list")
 
         except Exception as e:
             logger.error(f"Error creating Value/ProofUnit for transaction: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             continue
 
-    logger.info(f"Created {len(genesis_values)} Values and {len(genesis_proof_units)} ProofUnits for account {account_addr}")
+    # Reduced verbosity for summary - uncomment if detailed debugging needed
+        # logger.info(f"Created {len(genesis_values)} Values and {len(genesis_proof_units)} ProofUnits for account {account_addr}")
 
-    logger.info(f"Genesis VPB data created for account {account_addr}. Ready for distribution.")
+    # Reduced final logging verbosity
+        # logger.info(f"Genesis VPB data created for account {account_addr}. Ready for distribution.")
 
     return genesis_values, genesis_proof_units, block_index
 
