@@ -154,7 +154,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         main_chain_updated = self.blockchain.add_block(genesis_block)
         print(f"[{'SUCCESS' if main_chain_updated else 'WARNING'}] 创世块{'已' if main_chain_updated else '未'}添加到主链")
 
-        # 重新获取完整的创世数据以进行VPB初始化
+        # 获取创世数据（避免重复创建）
         genesis_creator = GenesisBlockCreator(custom_denomination)
         genesis_multi_txns = genesis_creator._create_genesis_transactions(
             accounts=self.accounts,
@@ -164,63 +164,35 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 为每个账户初始化VPB
         for i, account in enumerate(self.accounts):
-            try:
-                print(f"为账户 {account.name} 创世初始化...")
+            print(f"为账户 {account.name} 创世初始化...")
 
-                # 获取对应账户的创世交易
-                if i >= len(genesis_multi_txns):
-                    raise RuntimeError(f"账户 {account.name} 没有对应的创世交易")
+            # 获取对应账户的创世交易（简化验证）
+            account_genesis_txn = genesis_multi_txns[i]
+            if not account_genesis_txn or not account_genesis_txn.multi_txns:
+                raise RuntimeError(f"账户 {account.name} 的创世交易无效")
 
-                account_genesis_txn = genesis_multi_txns[i]
+            # 使用创世块的VPB创建函数
+            genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
+                account_addr=account.address,
+                genesis_block=genesis_block,
+                genesis_multi_txn=account_genesis_txn,
+                merkle_tree=merkle_tree,
+                denomination_config=custom_denomination
+            )
 
-                # 验证交易结构
-                if not account_genesis_txn or not hasattr(account_genesis_txn, 'multi_txns'):
-                    raise RuntimeError(f"账户 {account.name} 的创世交易结构无效")
+            # 批量VPB初始化
+            success = account.vpb_manager.initialize_from_genesis_batch(
+                genesis_values=genesis_values,
+                genesis_proof_units=genesis_proof_units,
+                genesis_block_index=block_index_result
+            )
 
-                if not account_genesis_txn.multi_txns:
-                    raise RuntimeError(f"账户 {account.name} 的创世交易为空")
-
-                # 创建默克尔证明
-                merkle_proof = genesis_creator.create_merkle_proof(account_genesis_txn, merkle_tree)
-
-                # 创建区块索引
-                block_index = genesis_creator.create_block_index(account.address)
-
-                # 使用创世块的VPB创建函数
-                genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
-                    account_addr=account.address,
-                    genesis_block=genesis_block,
-                    genesis_multi_txn=account_genesis_txn,
-                    merkle_tree=merkle_tree,
-                    denomination_config=custom_denomination
-                )
-
-                if not genesis_values:
-                    raise RuntimeError(f"账户 {account.name} 没有创建任何Genesis Values")
-
-                if not genesis_proof_units:
-                    raise RuntimeError(f"账户 {account.name} 没有创建任何Genesis ProofUnits")
-
-                print(f"   创建 {len(genesis_values)} 个Values, {len(genesis_proof_units)} 个ProofUnits")
-
-                # 批量VPB初始化
-                success = account.vpb_manager.initialize_from_genesis_batch(
-                    genesis_values=genesis_values,
-                    genesis_proof_units=genesis_proof_units,
-                    genesis_block_index=block_index_result
-                )
-
-                if success:
-                    total_value = sum(v.value_num for v in genesis_values)
-                    available_balance = account.get_available_balance()
-                    print(f"   [SUCCESS] 创世初始化成功: {len(genesis_values)}个Values, 总面额{total_value}, 可用{available_balance}")
-                else:
-                    print(f"   [ERROR] VPB初始化失败")
-                    raise RuntimeError(f"账户 {account.name} VPB初始化失败")
-
-            except Exception as e:
-                print(f"   [ERROR] 初始化失败: {e}")
-                raise RuntimeError(f"无法完成账户 {account.name} 的创世初始化: {e}")
+            if success:
+                total_value = sum(v.value_num for v in genesis_values)
+                available_balance = account.get_available_balance()
+                print(f"   [SUCCESS] 创世初始化成功: {len(genesis_values)}个Values, 总面额{total_value}, 可用{available_balance}")
+            else:
+                raise RuntimeError(f"账户 {account.name} VPB初始化失败")
 
         print(f"[COMPLETE] 所有账户创世初始化完成！")
 
