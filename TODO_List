@@ -8,3 +8,5 @@
 
 11/27：已完成genesis创建，test_blockchain_integration_with_real_account.py测试待修复。
 
+12/1：test_blockchain_integration_with_real_account.py测试中test_complete_real_account_transaction_flow中：
+步骤6到步骤7中缺少一些具体过程：例如，miner像account发送vpb更新相关数据包，account本地化处理，sender发送vpb给recipient，recipient本地验证等。
