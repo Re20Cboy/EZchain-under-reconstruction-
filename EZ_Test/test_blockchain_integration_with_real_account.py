@@ -37,6 +37,8 @@ from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_GENESIS.genesis import GenesisBlockCreator, create_genesis_block, create_genesis_vpb_for_account
+from EZ_Miner.miner import Miner
+from EZ_VPB_Validator.vpb_validator import VPBValidator
 
 # Configure logging - disable most logging to reduce verbosity
 logging.basicConfig(level=logging.CRITICAL, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -73,6 +75,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 创建矿工地址
         self.miner_address = "miner_real_account_test"
+
+        # 创建矿工实例用于VPB分发
+        self.miner = Miner(
+            miner_id="test_miner",
+            blockchain=self.blockchain
+        )
+
+        # 创建VPB验证器
+        self.vpb_validator = VPBValidator()
 
     def tearDown(self):
         """测试后清理：删除临时文件"""
@@ -405,6 +416,155 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         block_status = fork_node.consensus_status if fork_node else ConsensusStatus.PENDING
         print(f"   {'✅' if main_chain_updated else '⚠️'} 区块#{'已' if main_chain_updated else '未'}添加到主链, 状态: {block_status.value}")
 
+        # 步骤6.1：矿工准备VPB分发数据
+        print("\n📦 6.1 矿工准备VPB分发数据...")
+        try:
+            # 获取所有参与交易的账户地址
+            participant_addresses = []
+            for submit_tx_info in package_data.selected_submit_tx_infos:
+                participant_addresses.append(submit_tx_info.submitter_address)
+                # 从交易中提取接收者地址
+                if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
+                    for txn in submit_tx_info.multi_transactions.single_txns:
+                        if hasattr(txn, 'recipient_address'):
+                            participant_addresses.append(txn.recipient_address)
+
+            # 去重
+            participant_addresses = list(set(participant_addresses))
+
+            vpb_distribution_data = self.miner.prepare_vpb_distribution_data(block, participant_addresses)
+            if 'error' not in vpb_distribution_data:
+                print(f"   ✅ 成功准备VPB分发数据，涵盖 {len(participant_addresses)} 个地址")
+            else:
+                print(f"   ⚠️ VPB分发数据准备失败: {vpb_distribution_data['error']}")
+        except Exception as e:
+            print(f"   ❌ VPB分发数据准备异常: {e}")
+            vpb_distribution_data = None
+
+        # 步骤6.2：发送者本地化处理VPB
+        print("\n🔄 6.2 发送者本地化处理VPB...")
+        vpb_update_count = 0
+        if vpb_distribution_data and package_data.selected_submit_tx_infos:
+            try:
+                for submit_tx_info in package_data.selected_submit_tx_infos:
+                    sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
+                    if not sender_account:
+                        continue
+
+                    # 获取发送者的相关交易数据
+                    if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
+                        for txn in submit_tx_info.multi_transactions.single_txns:
+                            # 构造VPB更新参数
+                            target_value = Value(0)  # 这里应该从实际的VPB数据中获取
+                            recipient_address = getattr(txn, 'recipient_address', 'unknown')
+
+                            # 调用发送者的VPB本地更新方法
+                            success = sender_account.update_vpb_after_transaction_sent(
+                                target_value=target_value,
+                                confirmed_multi_txns=submit_tx_info.multi_transactions,
+                                mt_proof=[],  # 这里应该从实际的证明数据中获取
+                                block_height=block.index,
+                                recipient_address=recipient_address
+                            )
+
+                            if success:
+                                vpb_update_count += 1
+                                print(f"   ✅ {sender_account.name} VPB本地更新成功")
+                            else:
+                                print(f"   ❌ {sender_account.name} VPB本地更新失败")
+
+                print(f"   完成对 {len(package_data.selected_submit_tx_infos)} 个发送者的VPB本地处理")
+            except Exception as e:
+                print(f"   ❌ 发送者VPB本地化处理异常: {e}")
+
+        # 步骤6.3：发送者发送VPB给接收者
+        print("\n📤 6.3 发送者发送VPB给接收者...")
+        vpb_transfer_count = 0
+        if vpb_distribution_data and package_data.selected_submit_tx_infos:
+            try:
+                for submit_tx_info in package_data.selected_submit_tx_infos:
+                    sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
+                    if not sender_account:
+                        continue
+
+                    if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
+                        for txn in submit_tx_info.multi_transactions.single_txns:
+                            recipient_address = getattr(txn, 'recipient_address', None)
+                            if not recipient_address:
+                                continue
+
+                            recipient_account = self.get_account_by_address(recipient_address)
+                            if not recipient_account:
+                                continue
+
+                            # 模拟VPB传输：发送者构造VPB数据
+                            received_value = Value(0)  # 这里应该从实际的VPB数据中获取
+                            received_proof_units = []  # 这里应该从实际的证明数据中获取
+                            received_block_index = BlockIndexList([block.index], owner=recipient_address)
+
+                            # 接收者调用receive_vpb_from_others方法接收VPB
+                            success = recipient_account.receive_vpb_from_others(
+                                received_value=received_value,
+                                received_proof_units=received_proof_units,
+                                received_block_index=received_block_index
+                            )
+
+                            if success:
+                                vpb_transfer_count += 1
+                                print(f"   ✅ {sender_account.name} → {recipient_account.name} VPB传输成功")
+                            else:
+                                print(f"   ❌ {sender_account.name} → {recipient_account.name} VPB传输失败")
+
+                print(f"   完成对 {vpb_transfer_count} 个接收者的VPB传输")
+            except Exception as e:
+                print(f"   ❌ VPB传输过程异常: {e}")
+
+        # 步骤6.4：接收者本地验证VPB
+        print("\n🔍 6.4 接收者本地验证VPB...")
+        vpb_validation_count = 0
+        if vpb_distribution_data and package_data.selected_submit_tx_infos:
+            try:
+                for submit_tx_info in package_data.selected_submit_tx_infos:
+                    if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
+                        for txn in submit_tx_info.multi_transactions.single_txns:
+                            recipient_address = getattr(txn, 'recipient_address', None)
+                            if not recipient_address:
+                                continue
+
+                            recipient_account = self.get_account_by_address(recipient_address)
+                            if not recipient_account:
+                                continue
+
+                            # 获取需要验证的VPB数据
+                            test_value = Value(0)  # 这里应该从实际的VPB数据中获取
+                            test_proofs = []  # 这里应该从实际的证明数据中获取
+                            test_block_index = BlockIndexList([block.index], owner=recipient_address)
+
+                            # 使用VPBValidator进行验证
+                            verification_report = self.vpb_validator.verify_vpb_pair(
+                                value=test_value,
+                                proofs=test_proofs,
+                                block_index_list=test_block_index,
+                                main_chain_info={
+                                    'block_height': block.index,
+                                    'block_hash': block.get_hash(),
+                                    'blockchain': self.blockchain
+                                },
+                                account_address=recipient_address
+                            )
+
+                            if verification_report.is_valid:
+                                vpb_validation_count += 1
+                                print(f"   ✅ {recipient_account.name} VPB验证成功")
+                            else:
+                                print(f"   ❌ {recipient_account.name} VPB验证失败: {len(verification_report.errors)}个错误")
+                                for error in verification_report.errors:
+                                    print(f"      - {error.error_code}: {error.message}")
+
+                print(f"   完成对 {vpb_validation_count} 个接收者的VPB本地验证")
+            except Exception as e:
+                print(f"   ❌ VPB本地验证异常: {e}")
+
         # 步骤7：验证Account节点状态
         print("\n🔍 7. 验证最终状态...")
         final_total_balance = 0
@@ -483,5 +643,16 @@ def run_real_account_integration_tests():
 
 
 if __name__ == "__main__":
+    import sys
+
+    # 设置编码以支持中文字符和emoji
+    try:
+        if sys.platform == "win32":
+            # Windows下设置UTF-8编码
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except:
+        pass
+
     success = run_real_account_integration_tests()
     sys.exit(0 if success else 1)

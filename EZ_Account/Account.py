@@ -104,7 +104,7 @@ class Account:
                 print(f"创世初始化失败: {e}")
                 return False
 
-    def update_after_transaction_sent(self, target_value: Value, confirmed_multi_txns,
+    def update_vpb_after_transaction_sent(self, target_value: Value, confirmed_multi_txns,
                                      mt_proof, block_height: int, recipient_address: str) -> bool:
         """
         作为sender发送交易后更新VPB

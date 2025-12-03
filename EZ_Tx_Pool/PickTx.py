@@ -435,7 +435,7 @@ def pick_transactions_from_pool_with_proofs(tx_pool: TxPool,
                                           previous_hash: str,
                                           block_index: int,
                                           max_submit_tx_infos: int = 100,
-                                          selection_strategy: str = "fifo") -> Tuple[PackagedBlockData, Block, List[Tuple[str, Any]], int]:
+                                          selection_strategy: str = "fifo") -> Tuple[PackagedBlockData, Block, List[Tuple[str, Any]], int, List[str]]:
     """
     Convenience function for picking transactions from pool with Merkle proofs
 
@@ -448,11 +448,12 @@ def pick_transactions_from_pool_with_proofs(tx_pool: TxPool,
         selection_strategy: Selection strategy
 
     Returns:
-        (packaged_data, block, picked_txs_mt_proofs, block_index) tuple
+        (packaged_data, block, picked_txs_mt_proofs, block_index, sender_addrs) tuple
         packaged_data: PackagedBlockData object
         block: Block object
         picked_txs_mt_proofs: List of (multi_transactions_hash, MerkleTreeProof) tuples
         block_index: Block index number
+        sender_addrs: List of sender addresses corresponding one-to-one with picked_txs_mt_proofs
     """
     picker = TransactionPicker(max_submit_tx_infos_per_block=max_submit_tx_infos)
 
@@ -461,6 +462,13 @@ def pick_transactions_from_pool_with_proofs(tx_pool: TxPool,
         tx_pool=tx_pool,
         selection_strategy=selection_strategy
     )
+
+    # Extract sender addresses corresponding to picked_txs_mt_proofs
+    sender_addrs = []
+    for submit_tx_info in package_data.selected_submit_tx_infos:
+        # Get the sender address from each SubmitTxInfo
+        # This corresponds to the submitter_address in the transaction data
+        sender_addrs.append(submit_tx_info.submitter_address)
 
     # Create block
     block = picker.create_block_from_package(
@@ -483,5 +491,6 @@ def pick_transactions_from_pool_with_proofs(tx_pool: TxPool,
     print(f"Submitters added to bloom filter: {package_data.submitter_addresses}")
     print(f"MultiTransactions hashes: {picker.get_multi_transactions_hashes(package_data)}")
     print(f"Generated {len(picked_txs_mt_proofs)} Merkle proofs for transactions")
+    print(f"Sender addresses for VPB distribution: {sender_addrs}")
 
-    return package_data, block, picked_txs_mt_proofs, block_index
+    return package_data, block, picked_txs_mt_proofs, block_index, sender_addrs
