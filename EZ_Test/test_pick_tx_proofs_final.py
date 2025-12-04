@@ -179,7 +179,7 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         success, message = tx_pool.add_submit_tx_info(submit_tx_info, multi_txn)
         self.assertTrue(success, f"Failed to add real transaction: {message}")
 
-        package_data, block, proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="single_tx_miner",
             previous_hash="0" * 64,
@@ -192,6 +192,11 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         self.assertEqual(len(package_data.selected_submit_tx_infos), 1)
         self.assertEqual(len(proofs), 1)
         self.assertEqual(block_index, 2)
+
+        # Verify sender_addrs structure
+        self.assertIsInstance(sender_addrs, list)
+        self.assertEqual(len(sender_addrs), 1)
+        self.assertEqual(sender_addrs[0], multi_txn.sender)
 
         # Verify selected transaction is the one we added
         selected = package_data.selected_submit_tx_infos[0]
@@ -234,7 +239,7 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
             multi_txns.append(multi_txn)
             time.sleep(0.1)  # Ensure unique timestamps
 
-        package_data, block, proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="verification_miner",
             previous_hash="0" * 64,
@@ -247,6 +252,11 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         self.assertEqual(len(package_data.selected_submit_tx_infos), 3)
         self.assertEqual(len(proofs), 3)
         self.assertEqual(block_index, 99)
+
+        # Verify sender_addrs structure
+        self.assertIsInstance(sender_addrs, list)
+        self.assertEqual(len(sender_addrs), 3)
+        self.assertEqual(set(sender_addrs), set(submitters))
 
         # Verify output structure correctness
         self.assertIsInstance(package_data.selected_submit_tx_infos, list)
@@ -301,7 +311,7 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         db_path = self.create_temp_file()
         tx_pool = TxPool(db_path=db_path)
 
-        package_data, block, proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="test_miner_empty",
             previous_hash="0" * 64,
@@ -318,6 +328,255 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         self.assertEqual(block_index, 1)
         self.assertIsInstance(block, Block)
         self.assertEqual(block.index, 1)
+
+        # Verify sender_addrs structure for empty pool
+        self.assertIsInstance(sender_addrs, list)
+        self.assertEqual(len(sender_addrs), 0)
+
+    def test_sender_addrs_and_proofs_correspondence(self):
+        """Test that sender_addrs corresponds one-to-one with picked_txs_mt_proofs."""
+        from EZ_Tx_Pool.TXPool import TxPool
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        db_path = self.create_temp_file()
+        tx_pool = TxPool(db_path=db_path)
+
+        # Test with different numbers of transactions
+        test_cases = [1, 3, 5, 7]
+
+        for num_txs in test_cases:
+            # Clear pool for each test case
+            tx_pool.pool.clear()
+            if hasattr(tx_pool, 'hash_index'):
+                tx_pool.hash_index.clear()
+            if hasattr(tx_pool, 'multi_tx_hash_index'):
+                tx_pool.multi_tx_hash_index.clear()
+
+            # Create transactions with unique senders
+            senders = []
+            multi_txns = []
+            for i in range(num_txs):
+                sender = f"correspondence_sender_{i}_{num_txs}"
+                senders.append(sender)
+
+                multi_txn = self.create_real_multi_transactions(
+                    sender=sender,
+                    recipients=[f"recipient_{i}_1", f"recipient_{i}_2"],
+                    amounts=[float(i + 1) * 1.5, float(i + 1) * 2.0]
+                )
+                submit_tx_info = self.create_real_submit_tx_info(multi_txn)
+
+                success, message = tx_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+                self.assertTrue(success, f"Failed to add transaction {i} for case {num_txs}: {message}")
+                multi_txns.append(multi_txn)
+                time.sleep(0.05)  # Ensure unique timestamps
+
+            # Pick transactions with proofs
+            package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"correspondence_miner_{num_txs}",
+                previous_hash="0" * 64,
+                block_index=100 + num_txs,
+                max_submit_tx_infos=num_txs,
+                selection_strategy="fifo"
+            )
+
+            # Verify one-to-one correspondence
+            self.assertEqual(len(sender_addrs), len(proofs),
+                           f"Case {num_txs}: sender_addrs count ({len(sender_addrs)}) != proofs count ({len(proofs)})")
+            self.assertEqual(len(sender_addrs), len(package_data.selected_submit_tx_infos),
+                           f"Case {num_txs}: sender_addrs count ({len(sender_addrs)}) != selected transactions count ({len(package_data.selected_submit_tx_infos)})")
+            self.assertEqual(len(proofs), len(package_data.selected_submit_tx_infos),
+                           f"Case {num_txs}: proofs count ({len(proofs)}) != selected transactions count ({len(package_data.selected_submit_tx_infos)})")
+
+            # Verify each sender address corresponds to the correct transaction
+            selected_senders_from_package = [tx_info.submitter_address for tx_info in package_data.selected_submit_tx_infos]
+            self.assertEqual(set(sender_addrs), set(selected_senders_from_package),
+                           f"Case {num_txs}: sender_addrs don't match selected transaction submitters")
+
+            # Verify each proof corresponds to a selected transaction
+            proof_hashes = [proof_hash for proof_hash, _ in proofs]
+            selected_hashes = [tx_info.multi_transactions_hash for tx_info in package_data.selected_submit_tx_infos]
+            self.assertEqual(set(proof_hashes), set(selected_hashes),
+                           f"Case {num_txs}: proof hashes don't match selected transaction hashes")
+
+            # Verify the order correspondence (should be the same order)
+            for i, (sender_addr, (proof_hash, proof)) in enumerate(zip(sender_addrs, proofs)):
+                # Find the corresponding selected transaction
+                matching_tx_info = None
+                for tx_info in package_data.selected_submit_tx_infos:
+                    if tx_info.submitter_address == sender_addr and tx_info.multi_transactions_hash == proof_hash:
+                        matching_tx_info = tx_info
+                        break
+
+                self.assertIsNotNone(matching_tx_info,
+                                   f"Case {num_txs}, position {i}: No matching transaction found for sender {sender_addr} with hash {proof_hash}")
+
+            # Additional verification: ensure no duplicates in sender_addrs
+            self.assertEqual(len(sender_addrs), len(set(sender_addrs)),
+                           f"Case {num_txs}: Duplicate sender addresses found")
+
+    def test_sender_addrs_proofs_order_consistency(self):
+        """Test that sender_addrs and picked_txs_mt_proofs maintain consistent ordering."""
+        from EZ_Tx_Pool.TXPool import TxPool
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        db_path = self.create_temp_file()
+        tx_pool = TxPool(db_path=db_path)
+
+        # Create transactions with deterministic order
+        ordered_senders = ["alpha_sender", "beta_sender", "gamma_sender", "delta_sender"]
+        multi_txns = []
+
+        for i, sender in enumerate(ordered_senders):
+            multi_txn = self.create_real_multi_transactions(
+                sender=sender,
+                recipients=[f"recipient_{i}"],
+                amounts=[float(i + 1) * 10.0]
+            )
+            submit_tx_info = self.create_real_submit_tx_info(multi_txn)
+            success, message = tx_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+            self.assertTrue(success, f"Failed to add ordered transaction {i}: {message}")
+            multi_txns.append(multi_txn)
+            time.sleep(0.1)  # Ensure predictable ordering based on timestamps
+
+        # Pick transactions multiple times to verify consistency
+        for iteration in range(3):
+            package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"order_miner_{iteration}",
+                previous_hash="0" * 64,
+                block_index=200 + iteration,
+                max_submit_tx_infos=4,
+                selection_strategy="fifo"
+            )
+
+            # Verify all counts match
+            self.assertEqual(len(sender_addrs), len(proofs))
+            self.assertEqual(len(sender_addrs), len(package_data.selected_submit_tx_infos))
+
+            # Verify order consistency between sender_addrs and selected transactions
+            expected_senders = [tx_info.submitter_address for tx_info in package_data.selected_submit_tx_infos]
+            self.assertEqual(sender_addrs, expected_senders,
+                           f"Iteration {iteration}: sender_addrs order doesn't match selected transactions order")
+
+            # Verify order consistency between proofs and selected transactions
+            expected_hashes = [tx_info.multi_transactions_hash for tx_info in package_data.selected_submit_tx_infos]
+            actual_hashes = [proof_hash for proof_hash, _ in proofs]
+            self.assertEqual(actual_hashes, expected_hashes,
+                           f"Iteration {iteration}: proofs order doesn't match selected transactions order")
+
+            # Verify one-to-one mapping with correct positions
+            for i, (sender_addr, (proof_hash, proof)) in enumerate(zip(sender_addrs, proofs)):
+                corresponding_tx_info = package_data.selected_submit_tx_infos[i]
+                self.assertEqual(sender_addr, corresponding_tx_info.submitter_address,
+                               f"Iteration {iteration}, position {i}: Sender address mismatch")
+                self.assertEqual(proof_hash, corresponding_tx_info.multi_transactions_hash,
+                               f"Iteration {iteration}, position {i}: Proof hash mismatch")
+
+    def test_sender_addrs_proofs_edge_cases(self):
+        """Test edge cases for sender_addrs and proofs correspondence."""
+        from EZ_Tx_Pool.TXPool import TxPool
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        db_path = self.create_temp_file()
+        tx_pool = TxPool(db_path=db_path)
+
+        # Edge Case 1: Maximum allowed transactions
+        tx_pool.pool.clear()
+        max_txs = 10
+        for i in range(max_txs):
+            sender = f"edge_max_sender_{i}"
+            multi_txn = self.create_real_multi_transactions(
+                sender=sender,
+                recipients=[f"edge_recipient_{i}"],
+                amounts=[1.0]
+            )
+            submit_tx_info = self.create_real_submit_tx_info(multi_txn)
+            success, message = tx_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+            self.assertTrue(success, f"Failed to add max edge transaction {i}: {message}")
+            time.sleep(0.01)
+
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_max_miner",
+            previous_hash="0" * 64,
+            block_index=300,
+            max_submit_tx_infos=max_txs,
+            selection_strategy="fifo"
+        )
+
+        self.assertEqual(len(sender_addrs), len(proofs))
+        self.assertEqual(len(sender_addrs), max_txs)
+        self.assertEqual(len(proofs), max_txs)
+
+        # Edge Case 2: Transaction limit smaller than pool size
+        # Re-populate pool for this test case
+        for i in range(15):  # Create 15 transactions again
+            sender = f"edge_limit_sender_{i}"
+            multi_txn = self.create_real_multi_transactions(
+                sender=sender,
+                recipients=[f"edge_limit_recipient_{i}"],
+                amounts=[float(i + 1)]
+            )
+            submit_tx_info = self.create_real_submit_tx_info(multi_txn)
+            success, message = tx_pool.add_submit_tx_info(submit_tx_info, multi_txn)
+            self.assertTrue(success, f"Failed to add limit edge transaction {i}: {message}")
+            time.sleep(0.01)
+
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_limit_miner",
+            previous_hash="0" * 64,
+            block_index=301,
+            max_submit_tx_infos=5,  # Less than available transactions
+            selection_strategy="fifo"
+        )
+
+        self.assertEqual(len(sender_addrs), len(proofs))
+        self.assertEqual(len(sender_addrs), 5)
+        self.assertEqual(len(proofs), 5)
+
+        # Edge Case 3: Duplicate submitters (should be filtered to unique at TransactionPicker level)
+        # Note: TxPool already enforces submitter uniqueness, so we test TransactionPicker filtering
+        # by directly adding to pool to bypass TxPool's submitter_index check
+
+        tx_pool.pool.clear()
+        # Also clear the submitter index to allow testing duplicate scenarios
+        if hasattr(tx_pool, 'submitter_index'):
+            tx_pool.submitter_index.clear()
+
+        duplicate_sender = "duplicate_test_sender"
+        multi_txns = []
+
+        for i in range(5):  # Create 5 transactions with same sender
+            multi_txn = self.create_real_multi_transactions(
+                sender=duplicate_sender,
+                recipients=[f"dup_recipient_{i}"],
+                amounts=[float(i + 1)]
+            )
+            submit_tx_info = self.create_real_submit_tx_info(multi_txn)
+
+            # Directly add to pool to bypass TxPool's duplicate submitter validation
+            # This tests the TransactionPicker level filtering
+            tx_pool.pool.append(submit_tx_info)
+            multi_txns.append(multi_txn)
+            time.sleep(0.01)
+
+        package_data, block, proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_duplicate_miner",
+            previous_hash="0" * 64,
+            block_index=302,
+            max_submit_tx_infos=10,
+            selection_strategy="fifo"
+        )
+
+        # Should only have one transaction due to TransactionPicker's submitter uniqueness filter
+        self.assertEqual(len(sender_addrs), len(proofs))
+        self.assertEqual(len(sender_addrs), 1)
+        self.assertEqual(len(proofs), 1)
+        self.assertEqual(sender_addrs[0], duplicate_sender)
 
 
 def run_correct_api_tests():
@@ -379,3 +638,4 @@ if __name__ == "__main__":
     # Then run all tests
     success = run_correct_api_tests()
     sys.exit(0 if success else 1)
+    

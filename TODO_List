@@ -15,4 +15,11 @@
 2）sender本地化处理（通过account的update_vpb_after_transaction_sent方法）
 3）sender发送vpb给recipient（通过account的receive_vpb_from_others方法）
 4）recipient本地验证（通过VPBValidator类）
-12/3：修改的pick_transactions_from_pool_with_proofs，还未设计测试。
+
+12/3：修改的pick_transactions_from_pool_with_proofs，还未设计测试。【ok】
+
+12/4：目前pick_transactions_from_pool_with_proofs测试在6.2步骤有问题，具体地：
+# 获取发送者的相关交易数据
+if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
+这里想要从submit_tx_info中提取multi_transactions本体，但这是错的。
+应当在account本地中提取对应信息，目前正在编制account相关方法（提交交易池缓冲队列），待完成。

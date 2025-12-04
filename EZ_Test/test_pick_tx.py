@@ -780,7 +780,7 @@ class PickTxCompleteTest:
         # 导入新函数
         from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
 
-        package_data, block, picked_txs_mt_proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="test_miner",
             previous_hash="prev_hash",
@@ -793,6 +793,7 @@ class PickTxCompleteTest:
         assert isinstance(block, Block)
         assert isinstance(picked_txs_mt_proofs, list)
         assert isinstance(block_index, int)
+        assert isinstance(sender_addrs, list)
 
         # 验证基本属性
         assert block.index == 1
@@ -810,12 +811,19 @@ class PickTxCompleteTest:
         # 验证 block_index 正确性
         assert block_index == 1
 
+        # 验证 sender_addrs 结构和内容
+        assert len(sender_addrs) == len(package_data.selected_submit_tx_infos)
+        assert all(isinstance(addr, str) for addr in sender_addrs)
+        assert set(sender_addrs) == set(package_data.submitter_addresses)
+
         return {
             "package_data_type": type(package_data).__name__,
             "block_type": type(block).__name__,
             "picked_proofs_count": len(picked_txs_mt_proofs),
             "selected_transactions_count": len(package_data.selected_submit_tx_infos),
             "block_index": block_index,
+            "sender_addrs_count": len(sender_addrs),
+            "sender_addrs_match_submitters": set(sender_addrs) == set(package_data.submitter_addresses),
             "merkle_root_matches": block.m_tree_root == package_data.merkle_root,
             "proofs_valid": all(proof is not None for _, proof in picked_txs_mt_proofs)
         }
@@ -841,7 +849,7 @@ class PickTxCompleteTest:
         from EZ_Units.MerkleTree import MerkleTree
 
         # 获取带证明的交易
-        package_data, block, picked_txs_mt_proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="proof_test_miner",
             previous_hash="proof_prev_hash",
@@ -875,10 +883,21 @@ class PickTxCompleteTest:
         selected_hashes = set(tx_info.multi_transactions_hash for tx_info in package_data.selected_submit_tx_infos)
         assert proof_hashes == selected_hashes
 
+        # 验证 sender_addrs 结构和内容
+        assert isinstance(sender_addrs, list)
+        assert len(sender_addrs) == len(package_data.selected_submit_tx_infos)
+        assert all(isinstance(addr, str) for addr in sender_addrs)
+
+        # 验证 sender_addrs 与选中的交易匹配
+        expected_senders = [tx_info.submitter_address for tx_info in package_data.selected_submit_tx_infos]
+        assert set(sender_addrs) == set(expected_senders)
+
         return {
             "leaf_count": len(leaf_hashes),
             "proof_count": len(picked_txs_mt_proofs),
             "selected_count": len(package_data.selected_submit_tx_infos),
+            "sender_addrs_count": len(sender_addrs),
+            "sender_addrs_match_selected": set(sender_addrs) == set(expected_senders),
             "merkle_root_valid": package_data.merkle_root == expected_root,
             "all_selected_have_proofs": proof_hashes == selected_hashes,
             "block_index": block_index
@@ -892,7 +911,7 @@ class PickTxCompleteTest:
         # 导入新函数
         from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
 
-        package_data, block, picked_txs_mt_proofs, block_index = pick_transactions_from_pool_with_proofs(
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool,
             miner_address="empty_pool_miner",
             previous_hash="empty_prev_hash",
@@ -908,10 +927,15 @@ class PickTxCompleteTest:
         assert block_index == 10
         assert isinstance(block, Block)
 
+        # 验证空池的 sender_addrs
+        assert isinstance(sender_addrs, list)
+        assert len(sender_addrs) == 0
+
         return {
             "empty_pool_handled": True,
             "no_transactions_selected": len(package_data.selected_submit_tx_infos) == 0,
             "no_proofs_generated": len(picked_txs_mt_proofs) == 0,
+            "no_sender_addrs": len(sender_addrs) == 0,
             "block_index_preserved": block_index == 10,
             "block_created": isinstance(block, Block)
         }
@@ -950,7 +974,7 @@ class PickTxCompleteTest:
         )
 
         # 调用带证明函数
-        package_data_proof, block_proof, picked_txs_mt_proofs, block_index_proof = pick_transactions_from_pool_with_proofs(
+        package_data_proof, block_proof, picked_txs_mt_proofs, block_index_proof, sender_addrs_proof = pick_transactions_from_pool_with_proofs(
             tx_pool=tx_pool2,
             miner_address="proof_miner",
             previous_hash="proof_prev_hash",
@@ -978,14 +1002,328 @@ class PickTxCompleteTest:
         selected_tx_hashes = set(tx_info.multi_transactions_hash for tx_info in package_data_proof.selected_submit_tx_infos)
         assert proof_tx_hashes == selected_tx_hashes
 
+        # 验证 sender_addrs_proof 结构和内容
+        assert isinstance(sender_addrs_proof, list)
+        assert len(sender_addrs_proof) == len(package_data_proof.selected_submit_tx_infos)
+        assert set(sender_addrs_proof) == set(package_data_proof.submitter_addresses)
+
         return {
             "transaction_counts_equal": len(package_data_std.selected_submit_tx_infos) == len(package_data_proof.selected_submit_tx_infos),
             "merkle_roots_equal": package_data_std.merkle_root == package_data_proof.merkle_root,
             "submitters_equal": set(package_data_std.submitter_addresses) == set(package_data_proof.submitter_addresses),
+            "sender_addrs_count": len(sender_addrs_proof),
+            "sender_addrs_match_submitters": set(sender_addrs_proof) == set(package_data_proof.submitter_addresses),
             "proofs_count_correct": len(picked_txs_mt_proofs) == len(package_data_proof.selected_submit_tx_infos),
             "proof_hashes_match_selected": proof_tx_hashes == selected_tx_hashes,
             "block_index_correct": block_index_proof == 1
         }
+
+    def test_sender_addrs_proofs_quantity_correspondence(self):
+        """测试sender_addrs与picked_txs_mt_proofs的数量对应关系"""
+        db_path = self.create_temp_file('.db')
+        tx_pool = TxPool(db_path=db_path)
+
+        # 测试不同数量的交易
+        test_quantities = [1, 2, 5, 8]
+
+        results = {}
+
+        for quantity in test_quantities:
+            # 清空交易池
+            tx_pool.pool.clear()
+
+            # 创建测试数据
+            submit_tx_infos = []
+            for i in range(quantity):
+                submit_tx_info = MockSubmitTxInfo(
+                    f"quantity_hash_{quantity}_{i}",
+                    f"quantity_sender_{quantity}_{i}"
+                )
+                submit_tx_infos.append(submit_tx_info)
+                tx_pool.pool.append(submit_tx_info)
+
+            # 导入函数
+            from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+            # 调用函数
+            package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"quantity_miner_{quantity}",
+                previous_hash="0" * 64,
+                block_index=quantity * 10,
+                max_submit_tx_infos=quantity,
+                selection_strategy="fifo"
+            )
+
+            # 验证数量对应关系
+            assert len(sender_addrs) == len(picked_txs_mt_proofs), \
+                f"数量{quantity}: sender_addrs({len(sender_addrs)}) != picked_txs_mt_proofs({len(picked_txs_mt_proofs)})"
+            assert len(sender_addrs) == len(package_data.selected_submit_tx_infos), \
+                f"数量{quantity}: sender_addrs({len(sender_addrs)}) != selected_txs({len(package_data.selected_submit_tx_infos)})"
+            assert len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos), \
+                f"数量{quantity}: picked_txs_mt_proofs({len(picked_txs_mt_proofs)}) != selected_txs({len(package_data.selected_submit_tx_infos)})"
+
+            # 验证一一对应关系
+            for i, (sender_addr, (multi_hash, merkle_proof)) in enumerate(zip(sender_addrs, picked_txs_mt_proofs)):
+                # 检查对应位置的选中交易
+                if i < len(package_data.selected_submit_tx_infos):
+                    selected_tx = package_data.selected_submit_tx_infos[i]
+                    assert sender_addr == selected_tx.submitter_address, \
+                        f"数量{quantity}, 位置{i}: sender_addr不匹配"
+                    assert multi_hash == selected_tx.multi_transactions_hash, \
+                        f"数量{quantity}, 位置{i}: multi_hash不匹配"
+
+            results[quantity] = {
+                "sender_addrs_count": len(sender_addrs),
+                "proofs_count": len(picked_txs_mt_proofs),
+                "selected_count": len(package_data.selected_submit_tx_infos),
+                "all_equal": len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos)
+            }
+
+        return results
+
+    def test_sender_addrs_proofs_order_validation(self):
+        """测试sender_addrs和picked_txs_mt_proofs的顺序一致性"""
+        db_path = self.create_temp_file('.db')
+        tx_pool = TxPool(db_path=db_path)
+
+        # 创建有序的测试数据
+        ordered_senders = ["first_sender", "second_sender", "third_sender", "fourth_sender"]
+        ordered_hashes = ["hash_001", "hash_002", "hash_003", "hash_004"]
+
+        submit_tx_infos = []
+        for sender, hash_val in zip(ordered_senders, ordered_hashes):
+            submit_tx_info = MockSubmitTxInfo(hash_val, sender)
+            submit_tx_infos.append(submit_tx_info)
+            tx_pool.pool.append(submit_tx_info)
+
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        # 多次运行以验证一致性
+        consistency_results = []
+
+        for run in range(3):
+            package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"order_miner_{run}",
+                previous_hash="0" * 64,
+                block_index=400 + run,
+                max_submit_tx_infos=4,
+                selection_strategy="fifo"
+            )
+
+            # 验证数量
+            assert len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos) == 4
+
+            # 验证顺序一致性
+            expected_senders = [tx.submitter_address for tx in package_data.selected_submit_tx_infos]
+            expected_hashes = [tx.multi_transactions_hash for tx in package_data.selected_submit_tx_infos]
+            actual_hashes = [proof_hash for proof_hash, _ in picked_txs_mt_proofs]
+
+            # 检查sender_addrs顺序
+            assert sender_addrs == expected_senders, f"运行{run}: sender_addrs顺序不匹配"
+
+            # 检查proofs顺序
+            assert actual_hashes == expected_hashes, f"运行{run}: proofs顺序不匹配"
+
+            # 检查位置对应关系
+            for i, (sender_addr, (proof_hash, proof)) in enumerate(zip(sender_addrs, picked_txs_mt_proofs)):
+                assert sender_addr == expected_senders[i], f"运行{run}, 位置{i}: sender地址不匹配"
+                assert proof_hash == expected_hashes[i], f"运行{run}, 位置{i}: proof哈希不匹配"
+
+            consistency_results.append({
+                "run": run,
+                "order_consistent": True,
+                "sender_addrs_order": sender_addrs.copy(),
+                "proofs_order": actual_hashes.copy()
+            })
+
+        return {
+            "consistency_verified": all(result["order_consistent"] for result in consistency_results),
+            "total_runs": len(consistency_results),
+            "results": consistency_results
+        }
+
+    def test_sender_addrs_proofs_edge_cases_comprehensive(self):
+        """测试sender_addrs和picked_txs_mt_proofs的边界情况"""
+        db_path = self.create_temp_file('.db')
+        tx_pool = TxPool(db_path=db_path)
+
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        edge_case_results = {}
+
+        # 边界情况1: 空池
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_empty_miner",
+            previous_hash="0" * 64,
+            block_index=1000,
+            max_submit_tx_infos=10,
+            selection_strategy="fifo"
+        )
+
+        assert len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos) == 0
+        edge_case_results["empty_pool"] = {"all_zero": True}
+
+        # 边界情况2: 大量交易，限制数量
+        for i in range(15):  # 创建15个交易
+            submit_tx_info = MockSubmitTxInfo(f"edge_hash_{i}", f"edge_sender_{i}")
+            tx_pool.pool.append(submit_tx_info)
+
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_limit_miner",
+            previous_hash="0" * 64,
+            block_index=1001,
+            max_submit_tx_infos=8,  # 限制为8个
+            selection_strategy="fifo"
+        )
+
+        assert len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos) == 8
+        edge_case_results["limited_pool"] = {
+            "pool_size": 15,
+            "selected_count": 8,
+            "counts_equal": len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos)
+        }
+
+        # 边界情况3: 重复发送者（应该被过滤）
+        tx_pool.pool.clear()
+        duplicate_sender = "duplicate_edge_sender"
+        for i in range(6):
+            submit_tx_info = MockSubmitTxInfo(f"dup_hash_{i}", duplicate_sender)
+            tx_pool.pool.append(submit_tx_info)
+
+        package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+            tx_pool=tx_pool,
+            miner_address="edge_duplicate_miner",
+            previous_hash="0" * 64,
+            block_index=1002,
+            max_submit_tx_infos=10,
+            selection_strategy="fifo"
+        )
+
+        # 由于发送者唯一性过滤，应该只有1个交易
+        assert len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos) == 1
+        assert sender_addrs[0] == duplicate_sender
+        edge_case_results["duplicate_senders"] = {
+            "original_count": 6,
+            "filtered_count": 1,
+            "sender_correct": sender_addrs[0] == duplicate_sender
+        }
+
+        # 边界情况4: 测试不同选择策略
+        tx_pool.pool.clear()
+        strategies = ["fifo", "fee"]
+        strategy_results = {}
+
+        for strategy in strategies:
+            # 重新创建测试数据
+            for i in range(5):
+                submit_tx_info = MockSubmitTxInfo(f"strategy_hash_{strategy}_{i}", f"strategy_sender_{strategy}_{i}")
+                tx_pool.pool.append(submit_tx_info)
+
+            package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"strategy_miner_{strategy}",
+                previous_hash="0" * 64,
+                block_index=1003,
+                max_submit_tx_infos=5,
+                selection_strategy=strategy
+            )
+
+            # 验证数量一致性
+            counts_equal = len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos)
+            strategy_results[strategy] = {
+                "counts_equal": counts_equal,
+                "selected_count": len(package_data.selected_submit_tx_infos)
+            }
+
+            tx_pool.pool.clear()
+
+        edge_case_results["strategies"] = strategy_results
+
+        return edge_case_results
+
+    def test_sender_addrs_proofs_comprehensive_validation(self):
+        """综合验证sender_addrs和picked_txs_mt_proofs的完整对应关系"""
+        db_path = self.create_temp_file('.db')
+        tx_pool = TxPool(db_path=db_path)
+
+        from EZ_Tx_Pool.PickTx import pick_transactions_from_pool_with_proofs
+
+        # 创建复杂测试场景
+        test_scenarios = [
+            {"name": "small_set", "count": 3},
+            {"name": "medium_set", "count": 7},
+            {"name": "large_set", "count": 12}
+        ]
+
+        validation_results = {}
+
+        for scenario in test_scenarios:
+            # 清空并重新填充交易池
+            tx_pool.pool.clear()
+
+            # 创建测试数据
+            expected_senders = []
+            expected_hashes = []
+
+            for i in range(scenario["count"]):
+                sender = f"{scenario['name']}_sender_{i}"
+                hash_val = f"{scenario['name']}_hash_{i}"
+
+                expected_senders.append(sender)
+                expected_hashes.append(hash_val)
+
+                submit_tx_info = MockSubmitTxInfo(hash_val, sender)
+                tx_pool.pool.append(submit_tx_info)
+
+            # 执行选择
+            package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
+                tx_pool=tx_pool,
+                miner_address=f"{scenario['name']}_miner",
+                previous_hash="0" * 64,
+                block_index=2000 + len(validation_results),
+                max_submit_tx_infos=scenario["count"],
+                selection_strategy="fifo"
+            )
+
+            # 综合验证
+            validation_checks = {
+                "quantity_check": len(sender_addrs) == len(picked_txs_mt_proofs) == len(package_data.selected_submit_tx_infos),
+                "sender_check": set(sender_addrs) == set(tx.submitter_address for tx in package_data.selected_submit_tx_infos),
+                "hash_check": set(proof_hash for proof_hash, _ in picked_txs_mt_proofs) == set(tx.multi_transactions_hash for tx in package_data.selected_submit_tx_infos),
+                "uniqueness_check": len(sender_addrs) == len(set(sender_addrs)),
+                "position_check": True  # 默认为True，如果下面检查失败则设为False
+            }
+
+            # 验证位置对应关系
+            for i, (sender_addr, (proof_hash, proof)) in enumerate(zip(sender_addrs, picked_txs_mt_proofs)):
+                if i >= len(package_data.selected_submit_tx_infos):
+                    validation_checks["position_check"] = False
+                    break
+
+                selected_tx = package_data.selected_submit_tx_infos[i]
+                if sender_addr != selected_tx.submitter_address or proof_hash != selected_tx.multi_transactions_hash:
+                    validation_checks["position_check"] = False
+                    break
+
+            # 验证与package_data.submitter_addresses的一致性
+            validation_checks["package_consistency"] = set(sender_addrs) == set(package_data.submitter_addresses)
+
+            validation_results[scenario["name"]] = {
+                "scenario": scenario,
+                "counts": {
+                    "sender_addrs": len(sender_addrs),
+                    "proofs": len(picked_txs_mt_proofs),
+                    "selected_txs": len(package_data.selected_submit_tx_infos)
+                },
+                "validation_checks": validation_checks,
+                "all_checks_passed": all(validation_checks.values())
+            }
+
+        return validation_results
 
     def run_all_tests(self) -> List[TestResult]:
         """运行所有测试（单元测试 + 集成测试 + 性能测试）"""
@@ -1016,6 +1354,12 @@ class PickTxCompleteTest:
         self.run_test("默克尔证明结构测试", self.test_merkle_proof_structure, "unit")
         self.run_test("空池带证明测试", self.test_empty_pool_with_proofs, "unit")
         self.run_test("证明函数与标准函数对比测试", self.test_proofs_vs_standard_function, "unit")
+
+        # 新增：sender_addrs与proofs数量对应关系测试
+        self.run_test("sender_addrs与proofs数量对应关系测试", self.test_sender_addrs_proofs_quantity_correspondence, "unit")
+        self.run_test("sender_addrs与proofs顺序一致性测试", self.test_sender_addrs_proofs_order_validation, "unit")
+        self.run_test("sender_addrs与proofs边界情况测试", self.test_sender_addrs_proofs_edge_cases_comprehensive, "unit")
+        self.run_test("sender_addrs与proofs综合验证测试", self.test_sender_addrs_proofs_comprehensive_validation, "unit")
 
         # 集成测试
         print("\n--- 集成测试 ---")

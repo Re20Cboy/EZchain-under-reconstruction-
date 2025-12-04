@@ -75,6 +75,11 @@ class Account:
         self.transaction_history: List[Dict] = []
         self.history_lock = threading.RLock()
 
+        # Submitted transactions queue - tracks transactions submitted to tx pool
+        # Structure: {multi_tx_hash: multi_tx_data}
+        self.submitted_transactions: Dict[str, Any] = {}
+        self.submitted_tx_lock = threading.RLock()
+
         print(f"Account {self.name} ({address}) initialized with VPBManager")
 
     # ========== VPB管理接口（通过VPBManager） ==========
@@ -297,6 +302,52 @@ class Account:
             print(f"创建SubmitTxInfo失败: {e}")
             return None
 
+    def submit_tx_infos_to_pool(self, submit_tx_info: SubmitTxInfo, tx_pool, multi_txn_result: Dict = None) -> bool:
+        """
+        提交SubmitTxInfo至交易池，并同步添加到本地提交队列
+
+        Args:
+            submit_tx_info: 要提交的SubmitTxInfo
+            tx_pool: 交易池实例
+            multi_txn_result: 原始的多交易结果字典（可选）
+
+        Returns:
+            bool: 提交成功返回True，失败返回False
+        """
+        try:
+            # 提交到交易池
+            success, message = tx_pool.add_submit_tx_info(submit_tx_info)
+
+            if success:
+                # 提交成功后，同步添加到本地队列
+                multi_tx_hash = submit_tx_info.multi_transactions_hash
+
+                # 获取多交易数据用于存储
+                if multi_txn_result:
+                    multi_tx_data = multi_txn_result.get("multi_transactions")
+                else:
+                    # 如果没有提供multi_txn_result，至少存储基本信息
+                    multi_tx_data = {
+                        'hash': multi_tx_hash,
+                        'submit_timestamp': submit_tx_info.submit_timestamp,
+                        'submitter': submit_tx_info.submitter_address,
+                        'transaction_count': getattr(multi_tx_data, 'transaction_count', 'unknown') if multi_tx_data else 'unknown',
+                        'total_amount': getattr(multi_tx_data, 'total_amount', 'unknown') if multi_tx_data else 'unknown'
+                    }
+
+                self._add_to_submitted_queue(multi_tx_hash, multi_tx_data)
+
+                print(f"交易已成功提交至交易池并添加到本地队列: {multi_tx_hash[:16]}...")
+                self.last_activity = datetime.now()
+                return True
+            else:
+                print(f"提交交易至交易池失败: {message}")
+                return False
+
+        except Exception as e:
+            print(f"提交交易失败: {e}")
+            return False
+
     # ========== 账户信息和管理接口 ==========
 
     def get_account_info(self) -> Dict:
@@ -316,7 +367,8 @@ class Account:
             'vpb_summary': self.get_vpb_summary(),
             'created_at': self.created_at.isoformat(),
             'last_activity': self.last_activity.isoformat(),
-            'transaction_history_count': len(self.transaction_history)
+            'transaction_history_count': len(self.transaction_history),
+            'submitted_transactions_count': self.get_submitted_transactions_count()
         }
 
     def validate_integrity(self) -> bool:
@@ -346,6 +398,8 @@ class Account:
                     # 清除交易历史
                     with self.history_lock:
                         self.transaction_history.clear()
+                    # 清除提交交易队列
+                    self.clear_submitted_transactions()
                     print(f"已清除{self.name}的所有数据")
                     self.last_activity = datetime.now()
                 return success
@@ -387,6 +441,107 @@ class Account:
                     self.transaction_history = self.transaction_history[-1000:]
         except Exception as e:
             print(f"记录多交易历史失败: {e}")
+
+    # ========== 提交交易队列管理方法 ==========
+
+    def _add_to_submitted_queue(self, multi_tx_hash: str, multi_tx_data: Any) -> None:
+        """
+        添加多交易到本地提交队列
+
+        Args:
+            multi_tx_hash: 多交易哈希值，作为字典索引
+            multi_tx_data: 多交易数据本身
+        """
+        try:
+            with self.submitted_tx_lock:
+                self.submitted_transactions[multi_tx_hash] = multi_tx_data
+                print(f"交易已添加到本地提交队列: {multi_tx_hash[:16]}...")
+        except Exception as e:
+            print(f"添加交易到本地队列失败: {e}")
+
+    def remove_from_submitted_queue(self, multi_tx_hash: str) -> bool:
+        """
+        从本地提交队列中移除已确认的交易
+
+        Args:
+            multi_tx_hash: 要移除的多交易哈希值
+
+        Returns:
+            bool: 成功移除返回True，否则返回False
+        """
+        try:
+            with self.submitted_tx_lock:
+                if multi_tx_hash in self.submitted_transactions:
+                    del self.submitted_transactions[multi_tx_hash]
+                    print(f"已从本地队列移除已确认交易: {multi_tx_hash[:16]}...")
+                    return True
+                else:
+                    print(f"本地队列中未找到交易: {multi_tx_hash[:16]}...")
+                    return False
+        except Exception as e:
+            print(f"从本地队列移除交易失败: {e}")
+            return False
+
+    def get_submitted_transaction(self, multi_tx_hash: str) -> Optional[Any]:
+        """
+        从本地提交队列中获取交易数据
+
+        Args:
+            multi_tx_hash: 多交易哈希值
+
+        Returns:
+            多交易数据，如果不存在则返回None
+        """
+        try:
+            with self.submitted_tx_lock:
+                return self.submitted_transactions.get(multi_tx_hash)
+        except Exception as e:
+            print(f"获取本地队列交易失败: {e}")
+            return None
+
+    def get_all_submitted_transactions(self) -> Dict[str, Any]:
+        """
+        获取本地提交队列中的所有交易
+
+        Returns:
+            Dict: 包含所有提交交易的字典
+        """
+        try:
+            with self.submitted_tx_lock:
+                return self.submitted_transactions.copy()
+        except Exception as e:
+            print(f"获取本地队列失败: {e}")
+            return {}
+
+    def get_submitted_transactions_count(self) -> int:
+        """
+        获取本地提交队列中的交易数量
+
+        Returns:
+            int: 队列中的交易数量
+        """
+        try:
+            with self.submitted_tx_lock:
+                return len(self.submitted_transactions)
+        except Exception as e:
+            print(f"获取本地队列大小失败: {e}")
+            return 0
+
+    def clear_submitted_transactions(self) -> bool:
+        """
+        清空本地提交队列
+
+        Returns:
+            bool: 清空成功返回True，失败返回False
+        """
+        try:
+            with self.submitted_tx_lock:
+                self.submitted_transactions.clear()
+                print("本地提交队列已清空")
+                return True
+        except Exception as e:
+            print(f"清空本地队列失败: {e}")
+            return False
 
     def __del__(self):
         """析构函数"""
