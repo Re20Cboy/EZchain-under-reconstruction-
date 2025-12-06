@@ -20,6 +20,7 @@ from EZ_Tx_Pool.TXPool import TxPool
 from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_Main_Chain.Block import Block
 from EZ_Units.MerkleTree import MerkleTree
+from EZ_Units.MerkleProof import MerkleTreeProof
 
 
 @dataclass
@@ -141,8 +142,10 @@ class TransactionPicker:
             if merkle_tree and merkle_tree.prf_list:
                 for multi_transactions_hash, leaf_index in leaf_info_list:
                     if leaf_index < len(merkle_tree.prf_list):
-                        proof = merkle_tree.prf_list[leaf_index]
-                        picked_txs_mt_proofs.append((multi_transactions_hash, proof))
+                        proof_hashes = merkle_tree.prf_list[leaf_index]
+                        # Wrap the hash list in a MerkleTreeProof object
+                        merkle_tree_proof = MerkleTreeProof(mt_prf_list=proof_hashes)
+                        picked_txs_mt_proofs.append((multi_transactions_hash, merkle_tree_proof))
 
             package_data = PackagedBlockData(
                 selected_submit_tx_infos=selected_submit_tx_infos,

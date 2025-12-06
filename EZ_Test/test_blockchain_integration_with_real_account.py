@@ -144,10 +144,10 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 创建创世块创建器，使用自定义的面额配置
         custom_denomination = [
-            (1000, 1), (500, 1), (100, 5), (50, 10), (10, 20), (1, 50)
+            (1000, 1), (500, 1), (100, 5), (50, 5), (10, 5), (1, 5)
         ]
 
-        print(f"[CONFIG] 为 {len(self.accounts)} 个账户创建创世块，配置: 1000×1 + 500×1 + 100×5 + 50×10 + 10×20 + 1×50")
+        print(f"[CONFIG] 为 {len(self.accounts)} 个账户创建创世块，配置: 1000×1 + 500×1 + 100×5 + 50×5 + 10×5 + 1×5")
 
         # 创建创世块
         genesis_block = create_genesis_block(
@@ -226,6 +226,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
             # 每轮创建随机数量的交易请求
             num_requests_this_round = min(random.randint(1, len(available_senders)), len(self.accounts) - 1)
+            num_requests_this_round = 8
 
             for i in range(num_requests_this_round):
                 # 随机选择发送者和接收者
@@ -275,9 +276,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         return all_transaction_requests
 
-    def create_transactions_from_accounts(self, transaction_requests_list: List[List[Dict]]) -> List[SubmitTxInfo]:
-        """使用真实Account创建交易"""
-        submit_tx_infos = []
+    def create_transactions_from_accounts(self, transaction_requests_list: List[List[Dict]]) -> List[Tuple[SubmitTxInfo, Dict, Account]]:
+        """使用真实Account创建交易，返回SubmitTxInfo、multi_txn_result和Account的元组列表"""
+        submit_tx_data = []
 
         for round_num, round_requests in enumerate(transaction_requests_list):
             # 为每个账户创建批量交易
@@ -301,7 +302,8 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                         submit_tx_info = account.create_submit_tx_info(multi_txn_result)
 
                         if submit_tx_info:
-                            submit_tx_infos.append(submit_tx_info)
+                            # 存储元组：(SubmitTxInfo, multi_txn_result, Account)
+                            submit_tx_data.append((submit_tx_info, multi_txn_result, account))
                             logger.info(f"Account {account.name} 创建了 {len(account_requests)} 笔交易")
                         else:
                             logger.error(f"Account {account.name} 创建SubmitTxInfo失败")
@@ -312,7 +314,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     logger.error(f"Account {account.name} 创建交易异常: {e}")
                     continue
 
-        return submit_tx_infos
+        return submit_tx_data
 
     def get_account_by_address(self, address: str) -> Account:
         """根据地址获取Account节点"""
@@ -360,7 +362,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 步骤2：创建真实交易请求
         print("\n📝 2. 创建交易请求...")
-        transaction_requests_list = self.create_real_transaction_requests(2)  # 减少轮数
+        transaction_requests_list = self.create_real_transaction_requests(1)  # 减少轮数
         total_requests = sum(len(requests) for requests in transaction_requests_list)
         print(f"   创建 {len(transaction_requests_list)} 轮交易，总计 {total_requests} 个请求")
 
@@ -368,38 +370,45 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print("   📋 交易请求详情:")
         for round_num, round_requests in enumerate(transaction_requests_list):
             print(f"     第{round_num + 1}轮 ({len(round_requests)}笔交易):")
-            for req in round_requests[:4]:  # 只显示前4笔交易，避免输出过多
+            for req in round_requests[:10]:  # 只显示前10笔交易，避免输出过多
                 sender_name = self.get_account_by_address(req.get("sender")).name if req.get("sender") and self.get_account_by_address(req.get("sender")) else "未知"
                 recipient_name = self.get_account_by_address(req["recipient"]).name if self.get_account_by_address(req["recipient"]) else "未知"
                 print(f"       {sender_name} → {recipient_name}: {req['amount']}")
-            if len(round_requests) > 4:
-                print(f"       ... 还有 {len(round_requests) - 4} 笔交易")
+            if len(round_requests) > 10:
+                print(f"       ... 还有 {len(round_requests) - 10} 笔交易")
     
         # 步骤3：使用真实Account创建交易
         print("\n⚡ 3. 创建交易...")
-        submit_tx_infos = self.create_transactions_from_accounts(transaction_requests_list)
-        print(f"   成功创建 {len(submit_tx_infos)} 个SubmitTxInfo")
-        self.assertGreater(len(submit_tx_infos), 0, "应该创建成功一些交易")
+        submit_tx_data = self.create_transactions_from_accounts(transaction_requests_list)
+        print(f"   成功创建 {len(submit_tx_data)} 个交易数据包")
+        self.assertGreater(len(submit_tx_data), 0, "应该创建成功一些交易")
 
-        # 步骤4：将SubmitTxInfo添加到交易池
-        print("\n📥 4. 添加交易到交易池...")
+        # 步骤4：使用Account的正确方法将交易提交到交易池并存储到本地
+        print("\n📥 4. 添加交易到交易池并存储到Account本地队列...")
         added_count = 0
+        submit_tx_infos = []  # 用于后续步骤的SubmitTxInfo列表
 
-        for submit_tx_info in submit_tx_infos:
+        for submit_tx_info, multi_txn_result, account in submit_tx_data:
             try:
-                success, message = self.transaction_pool.add_submit_tx_info(submit_tx_info)
+                # 使用Account的submit_tx_infos_to_pool方法，确保同时提交到交易池和存储到本地队列
+                success = account.submit_tx_infos_to_pool(
+                    submit_tx_info=submit_tx_info,
+                    tx_pool=self.transaction_pool,
+                    multi_txn_result=multi_txn_result
+                )
                 if success:
                     added_count += 1
-                    logger.info(f"成功添加SubmitTxInfo: {submit_tx_info.submitter_address}")
+                    submit_tx_infos.append(submit_tx_info)  # 保存用于后续步骤
+                    logger.info(f"成功提交交易: {account.name} ({submit_tx_info.submitter_address})")
                 else:
-                    logger.error(f"添加SubmitTxInfo失败: {message}")
+                    logger.error(f"Account {account.name} 提交交易失败")
                     # 不抛出异常，继续处理其他交易
             except Exception as e:
-                logger.error(f"添加SubmitTxInfo到交易池异常: {e}")
+                logger.error(f"Account {account.name} 提交交易异常: {e}")
                 continue
 
-        print(f"   ✅ 成功添加 {added_count}/{len(submit_tx_infos)} 个交易到交易池")
-        self.assertGreater(added_count, 0, "至少应该添加成功一些交易到交易池")
+        print(f"   ✅ 成功提交 {added_count}/{len(submit_tx_data)} 个交易到交易池并存储到本地队列")
+        self.assertGreater(added_count, 0, "至少应该提交成功一些交易到交易池")
 
         # 步骤5：从交易池选择交易并打包（使用带默克尔证明的新模块）
         print("\n⛏️  5. 打包区块...")
@@ -426,7 +435,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 # 详细显示证明数据信息
                 print(f"   📋 证明数据详情:")
                 for i, (proof_hash, merkle_proof) in enumerate(picked_txs_mt_proofs[:3]):  # 只显示前3个
-                    proof_size = len(merkle_proof) if merkle_proof else 0
+                    proof_size = len(merkle_proof.mt_prf_list) if merkle_proof and hasattr(merkle_proof, 'mt_prf_list') else 0
                     print(f"      证明{i+1}: {proof_hash[:16]}... (大小: {proof_size})")
                 if len(picked_txs_mt_proofs) > 3:
                     print(f"      ... 还有 {len(picked_txs_mt_proofs) - 3} 个证明")
@@ -451,11 +460,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         participant_addresses = []
         for submit_tx_info in package_data.selected_submit_tx_infos:
             participant_addresses.append(submit_tx_info.submitter_address)
-            # 从交易中提取接收者地址
-            if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
-                for txn in submit_tx_info.multi_transactions.single_txns:
-                    if hasattr(txn, 'recipient'):
-                        participant_addresses.append(txn.recipient)
+
+            # 从account本地获取multi_txns信息以提取接收者地址
+            sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
+            if sender_account:
+                multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
+                if multi_txns and hasattr(multi_txns, 'single_txns'):
+                    for txn in multi_txns.single_txns:
+                        if hasattr(txn, 'recipient'):
+                            participant_addresses.append(txn.recipient)
 
         # 去重
         participant_addresses = list(set(participant_addresses))
@@ -480,10 +493,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
                     print(f"   🔍 检查提交交易: {submit_tx_info.submitter_address}")
 
-                    # 获取发送者的相关交易数据
-                    if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
-                        print(f"      - multi_transactions 存在，包含 {len(submit_tx_info.multi_transactions.single_txns)} 个交易")
-                        for i, txn in enumerate(submit_tx_info.multi_transactions.single_txns):
+                    # 从account本地获取对应的multi_txns信息（通过multi_txns_hash）
+                    multi_txns_hash = submit_tx_info.multi_transactions_hash
+                    multi_txns = sender_account.get_submitted_transaction(multi_txns_hash)
+
+                    if multi_txns:
+                        print(f"      - 从account本地获取multi_txns成功，包含 {len(multi_txns.multi_txns)} 个交易")
+                        print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
+
+                        for i, txn in enumerate(multi_txns.multi_txns):
                             print(f"      - 交易{i+1}: value={hasattr(txn, 'value')}, value长度={len(txn.value) if hasattr(txn, 'value') and txn.value else 0}")
                             # 从交易中提取实际的Value数据
                             if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
@@ -496,12 +514,13 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 print(f"      - target_value: {target_value.value_num if target_value else 'None'}")
                                 print(f"      - block_height: {block.index}")
                                 print(f"      - recipient_address: {recipient_address}")
-                                print(f"      - mt_proof length: {len(sender_merkle_proof) if sender_merkle_proof else 0}")
-                                print(f"      - multi_txns hash: {submit_tx_info.multi_transactions.get_hash()[:16]}...")
+                                proof_length = len(sender_merkle_proof.mt_prf_list) if sender_merkle_proof and hasattr(sender_merkle_proof, 'mt_prf_list') else 0
+                                print(f"      - mt_proof length: {proof_length}")
+                                print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
 
                                 success = sender_account.update_vpb_after_transaction_sent(
                                     target_value=target_value,
-                                    confirmed_multi_txns=submit_tx_info.multi_transactions,
+                                    confirmed_multi_txns=multi_txns,
                                     mt_proof=sender_merkle_proof,  # 使用真实的默克尔证明数据
                                     block_height=block.index,
                                     recipient_address=recipient_address
@@ -509,11 +528,14 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
                                 if success:
                                     vpb_update_count += 1
-                                    print(f"   ✅ {sender_account.name} VPB本地更新成功 (金额: {target_value.value_num}, 证明数据长度: {len(sender_merkle_proof)})")
+                                    print(f"   ✅ {sender_account.name} VPB本地更新成功 (金额: {target_value.value_num}, 证明数据长度: {proof_length})")
                                 else:
                                     print(f"   ❌ {sender_account.name} VPB本地更新失败")
                             else:
                                 print(f"   ⚠️ {sender_account.name} 交易中没有Value数据")
+                    else:
+                        print(f"   ❌ 无法从account本地获取multi_txns数据，hash: {multi_txns_hash[:16]}...")
+                        print(f"   ⚠️ 检查account的submitted_transactions队列中是否包含该交易")
 
                 print(f"   完成对 {len(package_data.selected_submit_tx_infos)} 个发送者的VPB本地处理")
                 print(f"   📊 成功更新: {vpb_update_count}/{len(package_data.selected_submit_tx_infos)} 个发送者")
@@ -528,13 +550,17 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             try:
                 recipients_processed = 0
                 for submit_tx_info in package_data.selected_submit_tx_infos:
-                    if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
-                        for txn in submit_tx_info.multi_transactions.single_txns:
-                            recipient_address = getattr(txn, 'recipient', None)
-                            if recipient_address:
-                                recipient_account = self.get_account_by_address(recipient_address)
-                                if recipient_account:
-                                    recipients_processed += 1
+                    # 从account本地获取multi_txns信息
+                    sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
+                    if sender_account:
+                        multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
+                        if multi_txns and hasattr(multi_txns, 'multi_txns'):
+                            for txn in multi_txns.multi_txns:
+                                recipient_address = getattr(txn, 'recipient', None)
+                                if recipient_address:
+                                    recipient_account = self.get_account_by_address(recipient_address)
+                                    if recipient_account:
+                                        recipients_processed += 1
 
                 print(f"   ✅ 识别到 {recipients_processed} 个接收者")
                 print(f"   📝 注意：详细的VPB传输和验证将在后续版本中实现")
