@@ -116,7 +116,8 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             try:
                 # 生成真实的密钥对
                 private_key_pem, public_key_pem = secure_signature_handler.signer.generate_key_pair()
-                address = f"{name}_real_address_{i:03d}"
+                # 生成符合以太坊格式的地址
+                address = self._create_eth_address(f"{name}_{i}")
 
                 # 创建真实的Account节点
                 account = Account(
@@ -204,6 +205,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 raise RuntimeError(f"账户 {account.name} VPB初始化失败")
 
         print(f"[COMPLETE] 所有账户创世初始化完成！")
+
+    def _create_eth_address(self, name: str) -> str:
+        """创建有效的以太坊地址格式"""
+        import hashlib
+        hash_bytes = hashlib.sha256(name.encode()).digest()
+        return f"0x{hash_bytes[:20].hex()}"
 
     def create_real_transaction_requests(self, num_transactions: int = 5) -> List[List[Dict]]:
         """使用真实Account创建交易请求，使用随机选择发送者和接收者，随机金额"""
@@ -544,26 +551,132 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 import traceback
                 traceback.print_exc()
 
-        # 步骤6.3：接收者同步处理（简化版）
+        # 步骤6.3：接收者同步处理（完整版）
         print("\n📤 6.3 接收者同步处理...")
         if package_data.selected_submit_tx_infos:
             try:
                 recipients_processed = 0
+                vpb_verification_success = 0
+                vpb_receive_success = 0
+
+                # 收集所有需要发送给接收者的数据
+                sender_to_recipients_data = {}
+
                 for submit_tx_info in package_data.selected_submit_tx_infos:
                     # 从account本地获取multi_txns信息
                     sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
-                    if sender_account:
-                        multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
-                        if multi_txns and hasattr(multi_txns, 'multi_txns'):
-                            for txn in multi_txns.multi_txns:
-                                recipient_address = getattr(txn, 'recipient', None)
-                                if recipient_address:
-                                    recipient_account = self.get_account_by_address(recipient_address)
-                                    if recipient_account:
-                                        recipients_processed += 1
+                    if not sender_account:
+                        continue
 
-                print(f"   ✅ 识别到 {recipients_processed} 个接收者")
-                print(f"   📝 注意：详细的VPB传输和验证将在后续版本中实现")
+                    multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
+                    if not multi_txns or not hasattr(multi_txns, 'multi_txns'):
+                        continue
+
+                    # 为每个发送者初始化接收者数据列表
+                    if sender_account.address not in sender_to_recipients_data:
+                        sender_to_recipients_data[sender_account.address] = []
+
+                    # 遍历多笔交易，为每个接收者准备VPB数据
+                    for txn in multi_txns.multi_txns:
+                        recipient_address = getattr(txn, 'recipient', None)
+                        if not recipient_address:
+                            continue
+
+                        recipient_account = self.get_account_by_address(recipient_address)
+                        if not recipient_account:
+                            continue
+
+                        # 获取交易中转移的Value（第一个Value作为转移的Value）
+                        if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
+                            transferred_value = txn.value[0]  # 转移的Value
+
+                            # 从发送者的VPB管理器获取对应的证明数据
+                            received_proof_units = sender_account.vpb_manager.get_proof_units_for_value(transferred_value)
+                            received_block_index = sender_account.vpb_manager.get_block_index_for_value(transferred_value)
+
+                            if received_proof_units and received_block_index:
+                                # 准备发送给接收者的数据
+                                recipient_data = {
+                                    'recipient_account': recipient_account,
+                                    'recipient_address': recipient_address,
+                                    'received_value': transferred_value,
+                                    'received_proof_units': received_proof_units,
+                                    'received_block_index': received_block_index
+                                }
+                                sender_to_recipients_data[sender_account.address].append(recipient_data)
+                                recipients_processed += 1
+                                print(f"   📦 准备发送数据: {sender_account.name} → {recipient_account.name}, 金额: {transferred_value.value_num}")
+                            else:
+                                print(f"   ⚠️ 无法获取 {sender_account.name} → {recipient_account.name} 的VPB证明数据")
+
+                print(f"   ✅ 收集到 {recipients_processed} 个接收者数据")
+
+                # 为每个接收者进行VPB验证和接收
+                for sender_address, recipients_data in sender_to_recipients_data.items():
+                    sender_account = self.get_account_by_address(sender_address)
+                    if not sender_account:
+                        continue
+
+                    print(f"   🔍 处理发送者 {sender_account.name} 的 {len(recipients_data)} 个接收者...")
+
+                    for data in recipients_data:
+                        recipient_account = data['recipient_account']
+                        recipient_address = data['recipient_address']
+                        received_value = data['received_value']
+                        received_proof_units = data['received_proof_units']
+                        received_block_index = data['received_block_index']
+
+                        try:
+                            # 步骤1: VPB合法性验证（使用上帝视角输入main_chain_info）
+                            print(f"      🔍 验证VPB合法性: {recipient_account.name} 接收金额 {received_value.value_num}")
+
+                            # 构造上帝视角的main_chain_info
+                            main_chain_info = {
+                                'blockchain': self.blockchain,
+                                'current_height': self.blockchain.get_latest_block_index()
+                            }
+
+                            # 使用VPBValidator进行验证
+                            verification_report = self.vpb_validator.verify_vpb_pair(
+                                value=received_value,
+                                proof_units=received_proof_units,
+                                block_index_list=received_block_index,
+                                main_chain_info=main_chain_info,
+                                account_address=recipient_address
+                            )
+
+                            if verification_report.is_valid:
+                                print(f"         ✅ VPB验证成功")
+                                vpb_verification_success += 1
+
+                                # 步骤2: 若验证通过，调用receive_vpb_from_others更新本地VPB数据
+                                receive_success = recipient_account.receive_vpb_from_others(
+                                    received_value=received_value,
+                                    received_proof_units=received_proof_units,
+                                    received_block_index=received_block_index
+                                )
+
+                                if receive_success:
+                                    print(f"         ✅ VPB接收成功，{recipient_account.name} 本地数据已更新")
+                                    vpb_receive_success += 1
+                                else:
+                                    print(f"         ❌ VPB接收失败，{recipient_account.name} 本地数据更新失败")
+                            else:
+                                print(f"         ❌ VPB验证失败")
+                                if verification_report.errors:
+                                    for error in verification_report.errors:
+                                        print(f"            错误: {error.error_type} - {error.error_message}")
+
+                        except Exception as e:
+                            print(f"         💥 处理 {recipient_account.name} VPB时异常: {e}")
+                            import traceback
+                            traceback.print_exc()
+
+                print(f"   📊 接收者处理完成:")
+                print(f"      - 总接收者: {recipients_processed}")
+                print(f"      - VPB验证成功: {vpb_verification_success}")
+                print(f"      - VPB接收成功: {vpb_receive_success}")
+
             except Exception as e:
                 print(f"   ❌ 接收者处理异常: {e}")
                 import traceback

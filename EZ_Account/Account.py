@@ -22,7 +22,8 @@ from EZ_VPB.VPBManager import VPBManager
 from EZ_Transaction.CreateMultiTransactions import CreateMultiTransactions
 from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
-
+from EZ_VPB.proofs.ProofUnit import ProofUnit
+from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 
 class Account:
     """
@@ -137,7 +138,8 @@ class Account:
                 print(f"发送交易后更新VPB失败: {e}")
                 return False
 
-    def receive_vpb_from_others(self, received_value, received_proof_units, received_block_index) -> bool:
+    def receive_vpb_from_others(self, received_value: Value, received_proof_units: List[ProofUnit], 
+                                received_block_index: BlockIndexList) -> bool:
         """
         作为receiver接收其他账户发送的VPB
 

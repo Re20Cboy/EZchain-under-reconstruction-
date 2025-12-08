@@ -170,6 +170,27 @@ except ImportError as e:
     sys.exit(1)
 
 
+def convert_proofs_to_proof_units(proofs):
+    """
+    将Proofs对象转换为ProofUnit列表，以兼容新的VPBValidator接口
+
+    Args:
+        proofs: Proofs对象或ProofUnit列表
+
+    Returns:
+        List[ProofUnit]: ProofUnit列表
+    """
+    if hasattr(proofs, 'get_proof_units'):
+        # 这是一个Proofs对象
+        return proofs.get_proof_units()
+    elif isinstance(proofs, list):
+        # 这已经是一个ProofUnit列表
+        return proofs
+    else:
+        # 其他情况，返回空列表
+        return []
+
+
 class VPBTestDataGenerator:
     """VPB测试数据生成器"""
 
@@ -223,6 +244,53 @@ class VPBTestDataGenerator:
         return mock_proofs
 
     @staticmethod
+    def create_real_proofs(count: int, value_id: str = "0x1000") -> List[ProofUnit]:
+        """创建真实的ProofUnit对象列表，完全避免使用Mock对象"""
+        from EZ_Transaction.MultiTransactions import MultiTransactions
+        from EZ_Transaction.SingleTransaction import Transaction
+        from EZ_Units.MerkleProof import MerkleTreeProof
+        from EZ_VPB.values.Value import Value
+
+        proof_units = []
+
+        for i in range(count):
+            # 生成有效的以太坊地址
+            address_suffix = format(i, '040x')
+            owner = f"0x{address_suffix[-40:]}"  # 确保总长度42字符(0x + 40字符)
+
+            # 创建完全真实的Transaction对象
+            tx_value = Value(f"0x{i:04x}", 100)  # 真实的Value对象
+
+            # 创建真实的Transaction（需要正确的参数）
+            real_tx = Transaction(
+                sender=owner,
+                recipient="0x" + "0" * 40,  # 简化的接收者地址
+                nonce=i,
+                signature=b"test_signature",  # 简化的签名
+                value=[tx_value],  # value应该是列表
+                time=f"2024-01-01T00:00:{i:02d}"  # 简化的时间戳
+            )
+
+            # 创建真实的MultiTransactions，包含sender和multi_txns参数
+            owner_multi_txns = MultiTransactions(sender=owner, multi_txns=[real_tx])
+
+            # 创建简单的MerkleTreeProof
+            owner_mt_proof = MerkleTreeProof([f"0x{'0'*63}{j:01x}" for j in range(2)])
+
+            # 创建真实的ProofUnit
+            unit_id = f"0x{'0'*63}{i:01x}"  # 64字符hex
+            proof_unit = ProofUnit(
+                owner=owner,
+                owner_multi_txns=owner_multi_txns,
+                owner_mt_proof=owner_mt_proof,
+                unit_id=unit_id
+            )
+
+            proof_units.append(proof_unit)
+
+        return proof_units
+
+    @staticmethod
     def create_block_index_list(indexes: List[int], owners: List[Tuple[int, str]]) -> BlockIndexList:
         """创建BlockIndexList对象"""
         return BlockIndexList(indexes, owners)
@@ -260,6 +328,7 @@ class VPBTestDataGenerator:
 class TestCase1_SimpleNormalWithCheckpoint:
     """案例1：简单正常交易，有checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例1的测试数据"""
         # 目标value
@@ -380,7 +449,7 @@ class TestCase1_SimpleNormalWithCheckpoint:
                 # 执行验证
                 report = validator.verify_vpb_pair(
                     test_data['target_value'],
-                    test_data['proofs'],
+                    convert_proofs_to_proof_units(test_data['proofs']),
                     test_data['block_index_list'],
                     test_data['main_chain_info'],
                     test_data['account_address']
@@ -416,6 +485,7 @@ class TestCase1_SimpleNormalWithCheckpoint:
 class TestCase2_SimpleNormalWithoutCheckpoint:
     """案例2：简单正常交易，无checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例2的测试数据"""
         # 目标value
@@ -521,7 +591,7 @@ class TestCase2_SimpleNormalWithoutCheckpoint:
         # 执行验证
         report = validator.verify_vpb_pair(
             test_data['target_value'],
-            test_data['proofs'],
+            convert_proofs_to_proof_units(test_data['proofs']),
             test_data['block_index_list'],
             test_data['main_chain_info'],
             test_data['account_address']
@@ -547,6 +617,7 @@ class TestCase2_SimpleNormalWithoutCheckpoint:
 class TestCase3_SimpleDoubleSpendWithCheckpoint:
     """案例3：简单双花交易，有checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例3的测试数据"""
         target_value = VPBTestDataGenerator.create_value("0x1000", 100)
@@ -664,7 +735,7 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
                 # 执行验证
                 report = validator.verify_vpb_pair(
                     test_data['target_value'],
-                    test_data['proofs'],
+                    convert_proofs_to_proof_units(test_data['proofs']),
                     test_data['block_index_list'],
                     test_data['main_chain_info'],
                     test_data['account_address']
@@ -713,6 +784,7 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
 class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
     """案例4：简单双花交易，无checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例4的测试数据"""
         target_value = VPBTestDataGenerator.create_value("0x1000", 100)
@@ -818,7 +890,7 @@ class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
         # 执行验证
         report = validator.verify_vpb_pair(
             test_data['target_value'],
-            test_data['proofs'],
+            convert_proofs_to_proof_units(test_data['proofs']),
             test_data['block_index_list'],
             test_data['main_chain_info'],
             test_data['account_address']
@@ -848,6 +920,7 @@ class TestCase4_SimpleDoubleSpendWithoutCheckpoint:
 class TestCase5_CombinedNormalWithCheckpoint:
     """案例5：组合正常交易，有checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例5的测试数据（真正的组合交易）"""
         # 根据VPB_test_demo.md案例5，这是dave->qian的组合交易，包含两个value
@@ -1024,7 +1097,7 @@ class TestCase5_CombinedNormalWithCheckpoint:
                 # 验证value_1：qian没有value_1的历史，所以从头开始验证
                 report_1 = validator.verify_vpb_pair(
                     test_data['target_value_1'],
-                    test_data['proofs_1'],
+                    convert_proofs_to_proof_units(test_data['proofs_1']),
                     test_data['block_index_list_1'],
                     test_data['main_chain_info'],
                     test_data['account_address']  # qian验证value_1
@@ -1034,7 +1107,7 @@ class TestCase5_CombinedNormalWithCheckpoint:
                 # 验证value_2：qian有checkpoint，所以从区块38开始验证
                 report_2 = validator.verify_vpb_pair(
                     test_data['target_value_2'],
-                    test_data['proofs_2'],
+                    convert_proofs_to_proof_units(test_data['proofs_2']),
                     test_data['block_index_list_2'],
                     test_data['main_chain_info'],
                     test_data['account_address']  # qian验证value_2
@@ -1082,6 +1155,7 @@ class TestCase5_CombinedNormalWithCheckpoint:
 class TestCase6_CombinedNormalWithoutCheckpoint:
     """案例6：组合正常交易，无checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例6的测试数据（组合交易，无checkpoint）"""
         # 根据VPB_test_demo.md案例6，这是dave->eve的组合交易，包含两个value
@@ -1249,7 +1323,7 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
         # 验证value_1：eve没有value_1的历史，所以从头开始验证
         report_1 = validator.verify_vpb_pair(
             test_data['target_value_1'],
-            test_data['proofs_1'],
+            convert_proofs_to_proof_units(test_data['proofs_1']),
             test_data['block_index_list_1'],
             test_data['main_chain_info'],
             test_data['account_address']  # eve验证value_1
@@ -1259,7 +1333,7 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
         # 验证value_2：eve没有value_2的历史，所以从头开始验证
         report_2 = validator.verify_vpb_pair(
             test_data['target_value_2'],
-            test_data['proofs_2'],
+            convert_proofs_to_proof_units(test_data['proofs_2']),
             test_data['block_index_list_2'],
             test_data['main_chain_info'],
             test_data['account_address']  # eve验证value_2
@@ -1295,6 +1369,7 @@ class TestCase6_CombinedNormalWithoutCheckpoint:
 class TestCase7_CombinedDoubleSpendWithCheckpoint:
     """案例7：组合双花交易，有checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例7的测试数据（组合双花交易，有checkpoint）"""
         # 根据VPB_test_demo.md案例7，这是dave->sun的组合交易，dave在区块46对value_2进行了双花
@@ -1488,7 +1563,7 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
                 # 验证value_1：sun没有value_1的历史，所以从头开始验证
                 report_1 = validator.verify_vpb_pair(
                     test_data['target_value_1'],
-                    test_data['proofs_1'],
+                    convert_proofs_to_proof_units(test_data['proofs_1']),
                     test_data['block_index_list_1'],
                     test_data['main_chain_info'],
                     test_data['account_address']  # sun验证value_1
@@ -1498,7 +1573,7 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
                 # 验证value_2：sun有checkpoint，所以从区块38开始验证，应该检测到双花
                 report_2 = validator.verify_vpb_pair(
                     test_data['target_value_2'],
-                    test_data['proofs_2'],
+                    convert_proofs_to_proof_units(test_data['proofs_2']),
                     test_data['block_index_list_2'],
                     test_data['main_chain_info'],
                     test_data['account_address']  # sun验证value_2
@@ -1556,6 +1631,7 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
 class TestCase8_CombinedDoubleSpendWithoutCheckpoint:
     """案例8：组合双花交易，无checkpoint"""
 
+    @pytest.fixture
     def test_data(self):
         """设置案例8的测试数据（组合双花交易，无checkpoint）"""
         # 根据VPB_test_demo.md案例8，这是dave->eve的组合交易，dave在区块46对value_2进行了双花
@@ -1738,7 +1814,7 @@ class TestCase8_CombinedDoubleSpendWithoutCheckpoint:
         # 验证value_1：eve没有value_1的历史，所以从头开始验证
         report_1 = validator.verify_vpb_pair(
             test_data['target_value_1'],
-            test_data['proofs_1'],
+            convert_proofs_to_proof_units(test_data['proofs_1']),
             test_data['block_index_list_1'],
             test_data['main_chain_info'],
             test_data['account_address']  # eve验证value_1
@@ -1748,7 +1824,7 @@ class TestCase8_CombinedDoubleSpendWithoutCheckpoint:
         # 验证value_2：eve没有value_2的历史，所以从头开始验证，应该检测到双花
         report_2 = validator.verify_vpb_pair(
             test_data['target_value_2'],
-            test_data['proofs_2'],
+            convert_proofs_to_proof_units(test_data['proofs_2']),
             test_data['block_index_list_2'],
             test_data['main_chain_info'],
             test_data['account_address']  # eve验证value_2
@@ -1807,7 +1883,7 @@ class TestEdgeCasesAndStress:
         empty_main_chain = MainChainInfo({}, {}, 0)
 
         report = validator.verify_vpb_pair(
-            empty_value, empty_proofs, empty_block_index, empty_main_chain, "0xtest"
+            empty_value, convert_proofs_to_proof_units(empty_proofs), empty_block_index, empty_main_chain, "0xtest"
         )
 
         # 应该返回失败
@@ -1832,7 +1908,7 @@ class TestEdgeCasesAndStress:
         invalid_main_chain.current_block_height = 0
 
         report = validator.verify_vpb_pair(
-            "not_a_value", invalid_proofs, invalid_block_index, invalid_main_chain, "0xtest"
+            "not_a_value", convert_proofs_to_proof_units(invalid_proofs), invalid_block_index, invalid_main_chain, "0xtest"
         )
 
         # 应该返回失败而不是抛出异常
@@ -1858,7 +1934,7 @@ class TestEdgeCasesAndStress:
                 proof_unit.verify_proof_unit = Mock(return_value=(True, ""))
 
             report = validator.verify_vpb_pair(
-                target_value, proofs, block_index_list, main_chain, "0xowner2"
+                target_value, convert_proofs_to_proof_units(proofs), block_index_list, main_chain, "0xowner2"
             )
 
             # 大多数应该成功（简化测试）
@@ -1886,7 +1962,7 @@ class TestEdgeCasesAndStress:
                     proof_unit.verify_proof_unit = Mock(return_value=(True, ""))
 
                 report = validator.verify_vpb_pair(
-                    target_value, proofs, block_index_list, main_chain, "0xowner2"
+                    target_value, convert_proofs_to_proof_units(proofs), block_index_list, main_chain, "0xowner2"
                 )
 
                 results.append((worker_id, report.result, report.verification_time_ms))
@@ -1932,17 +2008,23 @@ class TestVPBValidatorIntegration:
         alice_addr = "0x1234567890abcdef1234567890abcdef12345678"
         bob_addr = "0xabcdef1234567890abcdef1234567890abcdef12"
 
-        # 创建完整的proofs - 包含创世块和交易路径
-        proofs = VPBTestDataGenerator.create_mock_proofs(2, target_value.begin_index)  # 简化为2个proof units
+        # 创建完整的proof_units - 包含创世块和交易路径
+        proof_units = VPBTestDataGenerator.create_real_proofs(2, target_value.begin_index)  # 简化为2个proof units
 
         # 设置完整的交易路径
         def create_test_transaction(sender: str, receiver: str, value: Value):
-            mock_tx = Mock()
-            mock_tx.sender = sender
-            mock_tx.receiver = receiver
-            mock_tx.input_values = [value]
-            mock_tx.output_values = [value]
-            return mock_tx
+            from EZ_Transaction.SingleTransaction import Transaction
+
+            # 创建真实的Transaction对象
+            real_tx = Transaction(
+                sender=sender,
+                recipient=receiver,
+                nonce=0,  # 使用固定的nonce
+                signature=b"test_signature",  # 简化的签名
+                value=[value],  # value应该是列表
+                time="2024-01-01T00:00:00"  # 简化的时间戳
+            )
+            return real_tx
 
         # 交易路径：创世块(GOD->alice) -> 转账(alice->bob)
         block_heights = [0, 15]
@@ -1953,11 +2035,7 @@ class TestVPBValidatorIntegration:
 
         # 设置proof units
         for i, (height, txs) in enumerate(zip(block_heights, transactions)):
-            proofs.proof_units[i].owner_multi_txns = Mock()
-            proofs.proof_units[i].owner_multi_txns.sender = proofs.proof_units[i].owner
-            proofs.proof_units[i].owner_multi_txns.multi_txns = txs
-            proofs.proof_units[i].block_height = height
-            proofs.proof_units[i].verify_proof_unit = Mock(return_value=(True, ""))
+            proof_units[i].owner_multi_txns.multi_txns = txs
 
         # 创建对应的BlockIndexList
         block_index_list = BlockIndexList(
@@ -1983,7 +2061,7 @@ class TestVPBValidatorIntegration:
 
         # 执行验证
         report = validator.verify_vpb_pair(
-            target_value, proofs, block_index_list, main_chain, bob_addr
+            target_value, proof_units, block_index_list, main_chain, bob_addr
         )
 
         # 检查验证是否成功
@@ -2034,7 +2112,7 @@ class TestVPBValidatorIntegration:
 
                 # 执行完整验证
                 report = validator.verify_vpb_pair(
-                    target_value, proofs, block_index_list, main_chain, "0xowner3"
+                    target_value, convert_proofs_to_proof_units(proofs), block_index_list, main_chain, "0xowner3"
                 )
 
                 # 验证完整流程

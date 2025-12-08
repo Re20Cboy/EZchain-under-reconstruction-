@@ -52,13 +52,27 @@ class AccountPickValues:
         # 获取可用的未花销Value
         available_values = self.account_collection.find_by_state(ValueState.UNSPENT)
 
-        # 贪心算法选择Value
+        # 智能选择Value：优先寻找精确匹配
+        exact_match_value = None
         for value in available_values:
-            if total_selected >= required_amount:
+            if value.value_num == required_amount:
+                exact_match_value = value
                 break
 
-            selected_values.append(value)
-            total_selected += value.value_num
+        if exact_match_value:
+            # 找到精确匹配的值，直接使用
+            selected_values.append(exact_match_value)
+            total_selected = exact_match_value.value_num
+        else:
+            # 没有精确匹配，使用优化的贪心算法
+            # 按值大小排序，优先使用较大的值以减少找零
+            sorted_values = sorted(available_values, key=lambda v: v.value_num, reverse=True)
+
+            for value in sorted_values:
+                if total_selected >= required_amount:
+                    break
+                selected_values.append(value)
+                total_selected += value.value_num
 
         # 检查余额是否足够
         if total_selected < required_amount:

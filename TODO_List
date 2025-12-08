@@ -23,3 +23,72 @@
 if hasattr(submit_tx_info, 'multi_transactions') and submit_tx_info.multi_transactions:
 这里想要从submit_tx_info中提取multi_transactions本体，但这是错的。
 应当在account本地中提取对应信息，目前正在编制account相关方法（提交交易池缓冲队列），待完成。
+
+12/6：
+运行test_blockchain_integration_with_real_account测试输出：
+📋 交易请求详情:
+  第1轮 (8笔交易):
+    charlie → alice: 100
+    alice → bob: 100
+    alice → charlie: 10
+    alice → charlie: 50
+    alice → bob: 100
+    bob → alice: 100
+    charlie → bob: 100
+    charlie → david: 10
+
+这里Alice作为发送者确实有3笔交易：
+alice → bob: 100
+alice → charlie: 10
+alice → charlie: 50
+
+但是在6.2步骤中显示：
+🔍 检查提交交易: alice_real_address_000
+   - 从account本地获取multi_txns成功，包含 6 个交易
+
+问题来了：为什么显示6个交易而不是3个？
+
+找到问题了！ 在 CreateMultiTransactions.create_multi_transactions 方法中，我发现了关键的代码： 第108-126行：Change Transaction 逻辑
+# Handle change transaction if needed
+change_txn_obj = None
+if change_value:
+    change_transaction = Transaction(
+        sender=self.sender_address,
+        recipient=self.sender_address,  # 找零给自己
+        nonce=nonce,
+        signature=None,
+        value=[change_value],
+        time=timestamp
+    )
+    # Sign the change transaction
+    change_transaction.sig_txn(private_key_pem)
+    change_txn_obj = change_transaction
+    change_values_list.append(change_value)
+
+transactions.append(main_transaction)
+if change_txn_obj:
+    transactions.append(change_txn_obj)  # 这里是关键！
+
+根因分析结果
+问题不是Bug，而是VPB系统的找零机制导致的正常行为！
+交易拆分逻辑解释：
+Alice的3笔交易请求：
+alice → bob: 100
+alice → charlie: 10
+alice → charlie: 50
+VPB值选择机制：每笔交易都需要选择合适的Value来凑够金额，这会产生找零
+找零交易：每笔交易如果需要找零，都会创建一个额外的找零交易（Alice → Alice）
+实际交易数量计算：
+主交易：3笔（给Bob和Charlie的）
+找零交易：可能3笔（每笔主交易对应一笔找零）
+总计：6笔交易（正好匹配输出中的数量）
+为什么是6笔交易？
+Alice的每笔交易都可能触发了VPB的找零机制：
+alice → bob: 100 → 可能需要1个找零交易
+alice → charlie: 10 → 可能需要1个找零交易
+alice → charlie: 50 → 可能需要1个找零交易
+总计：3 + 3 = 6笔交易
+结论
+这不是一个Bug，而是VPB（Value Proof Block）系统的正确工作方式。系统为了保证交易的精确性，
+会为每笔需要找零的主交易创建额外的找零交易，这些找零交易也记录在Alice的MultiTransactions中。
+输出中显示的"6个交易"是准确的，包含了3笔主交易和3笔找零交易。
