@@ -41,16 +41,26 @@ class ProofUnit:  # value proof within a block
             tuple[bool, str]: (is_valid, error_message)
         """
         try:
-            # 1. Verify that all transactions in owner_multi_txns have sender/payer equal to owner
-            if self.owner_multi_txns.sender != self.owner:
-                return False, f"MultiTransactions sender '{self.owner_multi_txns.sender}' does not match owner '{self.owner}'"
+            # 1. Verify that owner is involved in the transactions (as sender or recipient)
+            owner_is_sender = (self.owner_multi_txns.sender == self.owner)
+            owner_is_recipient = False
+            owner_involved_count = 0
 
-            # Additionally check individual transactions within the MultiTransactions
             for i, txn in enumerate(self.owner_multi_txns.multi_txns):
-                if hasattr(txn, 'sender') and txn.sender != self.owner:
-                    return False, f"Transaction {i} sender '{txn.sender}' does not match owner '{self.owner}'"
-                if hasattr(txn, 'payer') and txn.payer != self.owner:
-                    return False, f"Transaction {i} payer '{txn.payer}' does not match owner '{self.owner}'"
+                # Check if owner is involved in this transaction (as sender, payer, or recipient)
+                txn_sender_match = hasattr(txn, 'sender') and txn.sender == self.owner
+                txn_payer_match = hasattr(txn, 'payer') and txn.payer == self.owner
+                txn_recipient_match = hasattr(txn, 'recipient') and txn.recipient == self.owner
+
+                if txn_sender_match or txn_payer_match or txn_recipient_match:
+                    owner_involved_count += 1
+
+                if txn_recipient_match:
+                    owner_is_recipient = True
+
+            # Owner must be either the overall sender or involved in at least one transaction
+            if not owner_is_sender and not owner_is_recipient and owner_involved_count == 0:
+                return False, f"Owner '{self.owner}' is not involved in any transactions (neither as sender nor recipient)"
 
             # 2. Check if owner_mt_proof is correctly structured (basic validation)
             if not self.owner_mt_proof.mt_prf_list:

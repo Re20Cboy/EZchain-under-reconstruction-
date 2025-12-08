@@ -149,11 +149,43 @@ class DataStructureValidator(ValidatorBase):
             if not hasattr(proof_unit.owner_multi_txns, 'sender'):
                 return False, "owner_multi_txns.sender is missing"
 
-            if proof_unit.owner_multi_txns.sender != proof_unit.owner:
-                return False, f"owner_multi_txns.sender '{proof_unit.owner_multi_txns.sender}' does not match owner '{proof_unit.owner}'"
+            # 验证owner与交易参与方的关系
+            # owner可能是发送者（原始拥有者）或接收者（所有权转移后的新拥有者）
+            owner_is_sender = (proof_unit.owner_multi_txns.sender == proof_unit.owner)
 
-            if not hasattr(proof_unit.owner_multi_txns, 'digest') or not proof_unit.owner_multi_txns.digest:
-                return False, "owner_multi_txns.digest is missing or empty"
+            # 检查是否为创世块（通过sender地址识别）
+            is_genesis_block = proof_unit.owner_multi_txns.sender.startswith("0x0000000000000000000000000000000")
+
+            # 检查owner是否是任何交易的接收者
+            owner_is_recipient = False
+            if hasattr(proof_unit.owner_multi_txns, 'multi_txns'):
+                for txn in proof_unit.owner_multi_txns.multi_txns:
+                    if hasattr(txn, 'recipient') and txn.recipient == proof_unit.owner:
+                        owner_is_recipient = True
+                        break
+
+            # 对于非创世块，owner必须参与交易
+            if not is_genesis_block:
+                if not owner_is_sender and not owner_is_recipient:
+                    return False, f"owner '{proof_unit.owner}' is neither the sender nor any recipient in the transactions"
+
+            # 创世块特殊处理：允许digest为None
+            if is_genesis_block:
+                # 创世块的digest可能为None，这是允许的
+                if not hasattr(proof_unit.owner_multi_txns, 'digest'):
+                    self.logger.warning("Genesis block proof unit missing digest attribute, but continuing validation")
+                elif proof_unit.owner_multi_txns.digest is None:
+                    self.logger.info("Genesis block proof unit has None digest, this is allowed")
+                    # 尝试自动设置digest（可选）
+                    try:
+                        proof_unit.owner_multi_txns.set_digest()
+                        self.logger.info("Auto-set digest for genesis block MultiTransactions")
+                    except Exception as e:
+                        self.logger.warning(f"Cannot auto-set digest for genesis block: {str(e)}")
+            else:
+                # 非创世块必须有digest
+                if not hasattr(proof_unit.owner_multi_txns, 'digest') or not proof_unit.owner_multi_txns.digest:
+                    return False, "owner_multi_txns.digest is missing or empty"
 
             # 验证multi_txns列表
             if not hasattr(proof_unit.owner_multi_txns, 'multi_txns'):
