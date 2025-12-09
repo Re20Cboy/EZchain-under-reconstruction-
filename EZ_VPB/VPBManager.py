@@ -180,9 +180,9 @@ class VPBManager:
 
             print(f"Added genesis value mapping to ProofManager for {value_id}")
 
-            # 为每个ProofUnit建立映射
+            # 为每个ProofUnit建立映射（使用优化的添加方法）
             for proof_unit in genesis_proof_units:
-                if not self.proof_manager.add_proof_unit(value_id, proof_unit):
+                if not self.proof_manager.add_proof_unit_optimized(value_id, proof_unit):
                     print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis value {value_id}")
 
             # 4. 添加BlockIndex到本地数据库（使用node_id作为key）
@@ -255,8 +255,8 @@ class VPBManager:
                 owner_mt_proof=mt_proof
             )
 
-            if not self.proof_manager.add_proof_unit_direct(target_value_id, new_proof_unit):
-                print(f"Error: Failed to add new proof unit for target value {target_value_id}")
+            if not self.proof_manager.add_proof_unit_optimized(target_value_id, new_proof_unit):
+                print(f"Error: Failed to add new proof unit for target value with begin_index={target_value_id}")
                 return False
 
             # 5. 对于本地所有非目标且状态为"未花销"的value，仅在BlockIndex中添加高度h
@@ -269,11 +269,11 @@ class VPBManager:
                         value_block_index.index_lst.append(block_height)
 
             # 6. 对于本地所有状态为"未花销"的value（包括目标和非目标），
-            # 对其proof映射新增一个对前述proof unit的映射
+            # 对其proof映射新增一个对前述proof unit的映射（使用优化的添加方法）
             all_unspent_values = self.value_collection.find_by_state(ValueState.UNSPENT)
             for value in all_unspent_values:
                 value_id = value.begin_index
-                self.proof_manager.add_proof_unit(value_id, new_proof_unit)
+                self.proof_manager.add_proof_unit_optimized(value_id, new_proof_unit)
 
             # 7. 对目标Value进行标记为"已花销"状态更新（通过AccountValueCollection）
             if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
@@ -310,9 +310,9 @@ class VPBManager:
             if received_node_id:
                 print(f"Value {received_value_id} already exists, merging with existing data...")
 
-                # 1. 对proofs的proof unit挨个添加到本地数据库中，进行本地化查重
+                # 1. 对proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
                 for proof_unit in received_proof_units:
-                    if not self.proof_manager.add_proof_unit(received_value_id, proof_unit):
+                    if not self.proof_manager.add_proof_unit_optimized(received_value_id, proof_unit):
                         print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing value {received_value_id}")
 
                 # 2. 对blockIndex进行添加操作
@@ -355,9 +355,9 @@ class VPBManager:
 
                 print(f"Added received value mapping to ProofManager for {received_value_id}")
 
-                # 3. 将proofs的proof unit挨个添加到本地数据库中，进行本地化查重
+                # 3. 将proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
                 for proof_unit in received_proof_units:
-                    if not self.proof_manager.add_proof_unit(received_value_id, proof_unit):
+                    if not self.proof_manager.add_proof_unit_optimized(received_value_id, proof_unit):
                         print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new value {received_value_id}")
 
                 # 4. 对blockIndex进行添加操作

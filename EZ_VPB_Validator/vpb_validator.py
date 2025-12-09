@@ -71,17 +71,10 @@ class VPBValidator(ValidatorBase):
             self.verification_stats['total'] += 1
 
             try:
-                # 将List[ProofUnit]转换为Proofs对象以兼容验证步骤
-                self.logger.info("Converting List[ProofUnit] to Proofs object")
-                proofs = self._convert_proof_units_to_proofs(proof_units, value, account_address)
-                if proofs is None:
-                    errors.append(VerificationError("PROOFS_CONVERSION_FAILED", "Failed to convert ProofUnit list to Proofs object"))
-                    return self._create_failure_report(errors, verified_epochs, checkpoint_used, start_time)
-
                 # Step 1: 基础数据结构验证
                 self.logger.info("Step 1: Basic data structure validation")
                 is_valid, error_msg = self.data_structure_validator.validate_basic_data_structure(
-                    value, proofs, block_index_list
+                    value, proof_units, block_index_list
                 )
                 if not is_valid:
                     errors.append(VerificationError("DATA_STRUCTURE_VALIDATION_FAILED", error_msg))
@@ -90,7 +83,7 @@ class VPBValidator(ValidatorBase):
                 # Step 2: VPB切片生成（含检查点处理）
                 self.logger.info("Step 2: VPB slice generation")
                 vpb_slice, checkpoint_used = self.slice_generator.generate_vpb_slice(
-                    value, proofs, block_index_list, account_address
+                    value, proof_units, block_index_list, account_address
                 )
 
                 # Step 3: 布隆过滤器一致性验证
@@ -130,43 +123,7 @@ class VPBValidator(ValidatorBase):
             VerificationResult.FAILURE, False, errors, verified_epochs, checkpoint_used, report_time
         )
 
-    def _convert_proof_units_to_proofs(self, proof_units, value, account_address: str):
-        """
-        将List[ProofUnit]转换为Proofs对象以兼容验证步骤
-
-        Args:
-            proof_units: ProofUnit列表
-            value: Value对象
-            account_address: 账户地址
-
-        Returns:
-            Proofs: 转换后的Proofs对象，失败返回None
-        """
-        try:
-            from EZ_VPB.proofs.Proofs import Proofs
-            from EZ_VPB.proofs.AccountProofManager import AccountProofManager
-
-            # 创建临时的AccountProofManager来持有ProofUnits
-            temp_proof_manager = AccountProofManager(f"temp_{account_address}")
-
-            # 将每个ProofUnit添加到临时管理器中
-            for proof_unit in proof_units:
-                temp_proof_manager.add_proof_unit(value.begin_index, proof_unit)
-
-            # 创建Proofs对象，使用临时的AccountProofManager
-            proofs = Proofs(
-                value_id=value.begin_index,
-                account_address=account_address,
-                account_proof_manager=temp_proof_manager
-            )
-
-            self.logger.info(f"Successfully converted {len(proof_units)} ProofUnits to Proofs object")
-            return proofs
-
-        except Exception as e:
-            self.logger.error(f"Failed to convert ProofUnits to Proofs: {e}")
-            return None
-
+  
     def _create_final_report(self, errors, verified_epochs, checkpoint_used, start_time) -> VPBVerificationReport:
         """创建最终验证报告的辅助方法"""
         is_valid = len(errors) == 0

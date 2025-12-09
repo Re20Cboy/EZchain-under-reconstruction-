@@ -1,14 +1,95 @@
 import sqlite3
 import json
 import os
+import hashlib
 from typing import Dict, List, Set, Optional, Tuple
 from collections import defaultdict
+from bitarray import bitarray
+import math
 
 import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_VPB.values.Value import Value
+
+class BloomFilter:
+    """
+    高效的布隆过滤器实现，用于快速检测ProofUnit是否已存在
+    """
+
+    def __init__(self, expected_items: int = 10000, false_positive_rate: float = 0.01):
+        """
+        初始化布隆过滤器
+
+        Args:
+            expected_items: 预期要存储的项目数量
+            false_positive_rate: 期望的假阳性率
+        """
+        self.expected_items = expected_items
+        self.false_positive_rate = false_positive_rate
+
+        # 计算最优的位数组大小和哈希函数数量
+        self.size = self._calculate_size(expected_items, false_positive_rate)
+        self.hash_count = self._calculate_hash_count(self.size, expected_items)
+
+        # 初始化位数组
+        self.bit_array = bitarray(self.size)
+        self.bit_array.setall(0)
+
+        # 已添加的项目计数
+        self.item_count = 0
+
+    def _calculate_size(self, n: int, p: float) -> int:
+        """计算所需的位数组大小"""
+        return int(-(n * math.log(p)) / (math.log(2) ** 2))
+
+    def _calculate_hash_count(self, m: int, n: int) -> int:
+        """计算最优的哈希函数数量"""
+        return int((m / n) * math.log(2))
+
+    def _get_hashes(self, item: str) -> List[int]:
+        """生成项目的多个哈希值"""
+        hashes = []
+        # 使用双重哈希技术生成多个哈希值
+        hash1 = int(hashlib.sha256(item.encode()).hexdigest(), 16)
+        hash2 = int(hashlib.md5(item.encode()).hexdigest(), 16)
+
+        for i in range(self.hash_count):
+            combined_hash = (hash1 + i * hash2) % self.size
+            hashes.append(combined_hash)
+
+        return hashes
+
+    def add(self, item: str) -> None:
+        """添加项目到布隆过滤器"""
+        hashes = self._get_hashes(item)
+        for hash_val in hashes:
+            self.bit_array[hash_val] = 1
+        self.item_count += 1
+
+    def __contains__(self, item: str) -> bool:
+        """检查项目可能是否存在于过滤器中"""
+        hashes = self._get_hashes(item)
+        for hash_val in hashes:
+            if not self.bit_array[hash_val]:
+                return False
+        return True
+
+    def get_current_false_positive_rate(self) -> float:
+        """获取当前假阳性率的估算值"""
+        if self.item_count == 0:
+            return 0.0
+        return (1 - math.exp(-self.hash_count * self.item_count / self.size)) ** self.hash_count
+
+    def reset(self) -> None:
+        """重置布隆过滤器"""
+        self.bit_array.setall(0)
+        self.item_count = 0
+
+    def __len__(self) -> int:
+        """返回已添加的项目数量"""
+        return self.item_count
 
 class AccountProofStorage:
     """
@@ -250,13 +331,20 @@ class AccountProofManager:
     负责管理该Account下的所有Value与ProofUnit的映射关系及存储
     """
 
-    def __init__(self, account_address: str, storage: Optional[AccountProofStorage] = None):
+    def __init__(self, account_address: str, storage: Optional[AccountProofStorage] = None,
+                 bloom_filter_expected_items: int = 10000, bloom_filter_false_positive_rate: float = 0.01):
         self.account_address = account_address
         self.storage = storage or AccountProofStorage()
 
         # 内存缓存
         self._value_proof_mapping: Dict[str, Set[str]] = defaultdict(set)  # value_id -> set of unit_ids
         self._proof_units_cache: Dict[str, ProofUnit] = {}  # unit_id -> ProofUnit
+
+        # 布隆过滤器用于快速重复检测
+        self._proof_unit_bloom_filter = BloomFilter(
+            expected_items=bloom_filter_expected_items,
+            false_positive_rate=bloom_filter_false_positive_rate
+        )
 
         # 加载现有映射
         self._load_existing_mappings()
@@ -268,6 +356,8 @@ class AccountProofManager:
             for value_id, proof_unit in all_mappings:
                 self._value_proof_mapping[value_id].add(proof_unit.unit_id)
                 self._proof_units_cache[proof_unit.unit_id] = proof_unit
+                # 将已存在的ProofUnit添加到布隆过滤器
+                self._proof_unit_bloom_filter.add(proof_unit.unit_id)
         except Exception as e:
             print(f"Error loading existing mappings: {e}")
 
@@ -392,6 +482,187 @@ class AccountProofManager:
         except Exception as e:
             print(f"Error adding proof unit directly: {e}")
             return False
+
+    def add_proof_unit_optimized(self, value_id: str, proof_unit: ProofUnit) -> bool:
+        """
+        优化的ProofUnit添加方法，使用布隆过滤器进行高效重复检测
+
+        该方法结合了内存中布隆过滤器的快速检测和数据库的准确性验证：
+        1. 首先使用布隆过滤器快速检测是否可能重复
+        2. 如果布隆过滤器显示可能重复，才进行数据库查询确认
+        3. 如果确认为新ProofUnit，则存储并添加到布隆过滤器
+
+        Args:
+            value_id: Value的标识符（begin_index）
+            proof_unit: 要添加的ProofUnit
+
+        Returns:
+            bool: 添加是否成功
+            Tuple[bool, str]: (是否成功, 操作描述)
+        """
+        try:
+            unit_id = proof_unit.unit_id
+
+            # 第一步：布隆过滤器快速检测
+            if unit_id in self._proof_unit_bloom_filter:
+                # 布隆过滤器显示可能存在，需要进行数据库查询确认
+                existing_unit = self.storage.load_proof_unit(unit_id)
+                if existing_unit:
+                    # 确认已存在，增加引用计数
+                    existing_unit.increment_reference()
+                    if not self.storage.store_proof_unit(existing_unit):
+                        return False
+
+                    unit_to_use = existing_unit
+                    operation = "existing_proof_unit_updated"
+                else:
+                    # 布隆过滤器误报（假阳性），实际不存在，添加为新ProofUnit
+                    if not self.storage.store_proof_unit(proof_unit):
+                        return False
+
+                    self._proof_unit_bloom_filter.add(unit_id)
+                    unit_to_use = proof_unit
+                    operation = "new_proof_unit_added_bloom_false_positive"
+            else:
+                # 布隆过滤器确认不存在，直接添加为新ProofUnit
+                if not self.storage.store_proof_unit(proof_unit):
+                    return False
+
+                # 添加到布隆过滤器
+                self._proof_unit_bloom_filter.add(unit_id)
+                unit_to_use = proof_unit
+                operation = "new_proof_unit_added"
+
+            # 添加映射关系
+            if self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id):
+                # 更新内存缓存
+                self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
+                self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
+
+                print(f"[AccountProofManager] Optimized add proof unit: {operation} - {unit_id}")
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"Error adding proof unit optimized: {e}")
+            return False
+
+    def add_proof_unit_optimized_with_stats(self, value_id: str, proof_unit: ProofUnit) -> Tuple[bool, dict]:
+        """
+        优化的ProofUnit添加方法（带统计信息），使用布隆过滤器进行高效重复检测
+
+        Args:
+            value_id: Value的标识符（begin_index）
+            proof_unit: 要添加的ProofUnit
+
+        Returns:
+            Tuple[bool, dict]: (是否成功, 统计信息字典)
+        """
+        stats = {
+            'operation_type': '',
+            'bloom_check_time': 0,
+            'db_query_time': 0,
+            'bloom_false_positive': False,
+            'current_bloom_false_positive_rate': 0.0,
+            'bloom_size': len(self._proof_unit_bloom_filter)
+        }
+
+        import time
+        start_time = time.time()
+
+        try:
+            unit_id = proof_unit.unit_id
+
+            # 布隆过滤器检测计时
+            bloom_start = time.time()
+            bloom_result = unit_id in self._proof_unit_bloom_filter
+            stats['bloom_check_time'] = time.time() - bloom_start
+
+            if bloom_result:
+                # 布隆过滤器显示可能存在
+                db_start = time.time()
+                existing_unit = self.storage.load_proof_unit(unit_id)
+                stats['db_query_time'] = time.time() - db_start
+
+                if existing_unit:
+                    # 确认已存在
+                    existing_unit.increment_reference()
+                    if not self.storage.store_proof_unit(existing_unit):
+                        return False, stats
+
+                    unit_to_use = existing_unit
+                    stats['operation_type'] = 'existing_proof_unit_updated'
+                else:
+                    # 布隆过滤器误报
+                    stats['bloom_false_positive'] = True
+                    if not self.storage.store_proof_unit(proof_unit):
+                        return False, stats
+
+                    self._proof_unit_bloom_filter.add(unit_id)
+                    unit_to_use = proof_unit
+                    stats['operation_type'] = 'new_proof_unit_added_bloom_false_positive'
+            else:
+                # 布隆过滤器确认不存在
+                stats['db_query_time'] = 0  # 无需数据库查询
+
+                if not self.storage.store_proof_unit(proof_unit):
+                    return False, stats
+
+                self._proof_unit_bloom_filter.add(unit_id)
+                unit_to_use = proof_unit
+                stats['operation_type'] = 'new_proof_unit_added'
+
+            # 添加映射关系
+            if self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id):
+                # 更新内存缓存
+                self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
+                self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
+
+                # 更新统计信息
+                stats['current_bloom_false_positive_rate'] = self._proof_unit_bloom_filter.get_current_false_positive_rate()
+                stats['total_time'] = time.time() - start_time
+
+                return True, stats
+
+            return False, stats
+
+        except Exception as e:
+            print(f"Error adding proof unit optimized with stats: {e}")
+            stats['total_time'] = time.time() - start_time
+            return False, stats
+
+    def get_bloom_filter_stats(self) -> dict:
+        """
+        获取布隆过滤器的统计信息
+
+        Returns:
+            dict: 布隆过滤器统计信息
+        """
+        return {
+            'expected_items': self._proof_unit_bloom_filter.expected_items,
+            'current_items': len(self._proof_unit_bloom_filter),
+            'target_false_positive_rate': self._proof_unit_bloom_filter.false_positive_rate,
+            'current_false_positive_rate': self._proof_unit_bloom_filter.get_current_false_positive_rate(),
+            'bit_array_size': self._proof_unit_bloom_filter.size,
+            'hash_count': self._proof_unit_bloom_filter.hash_count
+        }
+
+    def reset_bloom_filter(self) -> None:
+        """
+        重置布隆过滤器（谨慎使用，仅在确认需要时调用）
+        重置后会重新从数据库加载所有现有的ProofUnit到新的布隆过滤器
+        """
+        self._proof_unit_bloom_filter.reset()
+
+        # 重新加载所有现有的ProofUnit到布隆过滤器
+        try:
+            all_mappings = self.storage.get_all_proof_units_for_account(self.account_address)
+            for value_id, proof_unit in all_mappings:
+                self._proof_unit_bloom_filter.add(proof_unit.unit_id)
+            print(f"[AccountProofManager] Bloom filter reset and reloaded with {len(all_mappings)} proof units")
+        except Exception as e:
+            print(f"Error reloading bloom filter after reset: {e}")
 
     def batch_add_values(self, values: List[Value]) -> bool:
         """
@@ -541,6 +812,15 @@ class AccountProofManager:
         except Exception as e:
             print(f"Error getting value for proof unit: {e}")
             return None
+
+    def get_all_values(self) -> List[str]:
+        """
+        获取账户的所有Value ID列表（别名方法，为了向后兼容）
+
+        Returns:
+            List[str]: Value ID列表
+        """
+        return self.get_all_value_ids()
 
     def get_all_value_ids(self) -> List[str]:
         """

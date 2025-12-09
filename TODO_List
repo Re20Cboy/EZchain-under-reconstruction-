@@ -1,3 +1,6 @@
+12/9 最新的proofs的架构（利用account proof manager 管理所有proof units）与vpb检验器的架构接口不一致有冲突。
+
+
 11/21：目前的vpb_updater的更新逻辑还是有问题的，例如下面两点：
 1）_get_account_vpbs函数并未真正实现读取账户本地vpb功能
 2）实际的更新并非是将所有vpb列表读取进内存然后挨个更新，而是一种更巧妙的方式，具体地，可详细阅读Proofs.py及Proof readme.md。

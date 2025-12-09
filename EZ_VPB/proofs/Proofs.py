@@ -247,8 +247,8 @@ class Proofs:
                 print(f"Error adding proof unit: {e}")
                 return False
         else:
-            # New implementation using AccountProofManager
-            return self.account_proof_manager.add_proof_unit(self.value_id, proof_unit)
+            # New implementation using AccountProofManager with optimized method
+            return self.account_proof_manager.add_proof_unit_optimized(self.value_id, proof_unit)
 
     def remove_proof_unit(self, unit_id: str) -> bool:
         """
@@ -373,9 +373,9 @@ class Proofs:
             new_manager = AccountProofManager(account_address)
 
             if self.use_legacy_storage:
-                # 从旧系统迁移数据
+                # 从旧系统迁移数据（使用优化的添加方法）
                 for proof_unit in self.get_proof_units():
-                    new_manager.add_proof_unit(self.value_id, proof_unit)
+                    new_manager.add_proof_unit_optimized(self.value_id, proof_unit)
 
             # 切换到新系统
             self.account_proof_manager = new_manager

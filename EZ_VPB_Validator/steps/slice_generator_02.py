@@ -24,13 +24,13 @@ class VPBSliceGenerator(ValidatorBase):
         super().__init__(logger)
         self.checkpoint = checkpoint
 
-    def generate_vpb_slice(self, value, proofs, block_index_list, account_address: str) -> Tuple[VPBSlice, Optional[CheckPointRecord]]:
+    def generate_vpb_slice(self, value, proof_units, block_index_list, account_address: str) -> Tuple[VPBSlice, Optional[CheckPointRecord]]:
         """
         第二步：检查点匹配和历史切片生成
 
         Args:
             value: Value对象
-            proofs: Proofs对象
+            proof_units: ProofUnit列表
             block_index_list: BlockIndexList对象
             account_address: 进行验证的账户地址
 
@@ -65,7 +65,9 @@ class VPBSliceGenerator(ValidatorBase):
         index_slice = []
         owner_slice = []
 
-        if proofs.proof_units and block_index_list.index_lst:
+        # proof_units已经是传入的列表，无需转换
+
+        if proof_units and block_index_list.index_lst:
             # 特殊处理创世块（height = 0）
             genesis_index = -1
             if 0 in block_index_list.index_lst:
@@ -91,7 +93,7 @@ class VPBSliceGenerator(ValidatorBase):
                 self.logger.debug(f"Genesis block at index {genesis_index} will be truncated due to checkpoint at {start_height-1}")
 
             # 生成切片
-            proofs_slice = proofs.proof_units[start_index:] if start_index < len(proofs.proof_units) else []
+            proofs_slice = proof_units[start_index:] if start_index < len(proof_units) else []
             index_slice = block_index_list.index_lst[start_index:] if start_index < len(block_index_list.index_lst) else []
 
             # 检查截断后是否出现空数组的情况

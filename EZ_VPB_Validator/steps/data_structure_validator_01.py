@@ -13,15 +13,15 @@ from ..core.types import VerificationError
 class DataStructureValidator(ValidatorBase):
     """数据结构验证器"""
 
-    def validate_basic_data_structure(self, value, proofs, block_index_list) -> Tuple[bool, str]:
+    def validate_basic_data_structure(self, value, proof_units, block_index_list) -> Tuple[bool, str]:
         """
         第一步：基础数据结构合法性验证
 
-        提供严格的VPB数据结构验证，包括Value、Proofs和BlockIndexList的深度验证。
+        提供严格的VPB数据结构验证，包括Value、ProofUnits和BlockIndexList的深度验证。
 
         Args:
             value: Value对象
-            proofs: Proofs对象
+            proof_units: ProofUnit列表
             block_index_list: BlockIndexList对象
 
         Returns:
@@ -32,10 +32,10 @@ class DataStructureValidator(ValidatorBase):
         if not is_valid:
             return False, f"Value validation failed: {error_msg}"
 
-        # 2. 严格的Proofs数据结构验证
-        is_valid, error_msg = self._validate_proofs_structure(proofs)
+        # 2. 严格的ProofUnits数据结构验证
+        is_valid, error_msg = self._validate_proof_units_structure(proof_units)
         if not is_valid:
-            return False, f"Proofs validation failed: {error_msg}"
+            return False, f"ProofUnits validation failed: {error_msg}"
 
         # 3. 严格的BlockIndexList数据结构验证
         is_valid, error_msg = self._validate_block_index_list_structure(block_index_list)
@@ -43,7 +43,7 @@ class DataStructureValidator(ValidatorBase):
             return False, f"BlockIndexList validation failed: {error_msg}"
 
         # 4. VPB特定的数据一致性校验
-        is_valid, error_msg = self._validate_vpb_consistency(value, proofs, block_index_list)
+        is_valid, error_msg = self._validate_vpb_consistency(value, proof_units, block_index_list)
         if not is_valid:
             return False, f"VPB consistency validation failed: {error_msg}"
 
@@ -81,33 +81,19 @@ class DataStructureValidator(ValidatorBase):
 
         return True, ""
 
-    def _validate_proofs_structure(self, proofs) -> Tuple[bool, str]:
+    def _validate_proof_units_structure(self, proof_units) -> Tuple[bool, str]:
         """
-        严格的Proofs数据结构验证
+        严格的ProofUnits数据结构验证
 
         验证内容：
-        1. Proofs对象类型检查
-        2. value_id格式验证
-        3. proof_units列表验证
-        4. 每个ProofUnit的深度验证
+        1. proof_units列表类型检查
+        2. 每个ProofUnit的深度验证
         """
-        from EZ_VPB.proofs.Proofs import Proofs
-
         # 1. 类型检查
-        if not isinstance(proofs, Proofs):
-            return False, "proofs is not a valid Proofs object"
+        if not isinstance(proof_units, list):
+            return False, "proof_units must be a list of ProofUnit objects"
 
-        # 2. value_id验证
-        if not hasattr(proofs, 'value_id') or not proofs.value_id:
-            return False, "proofs.value_id is missing or empty"
-
-        # 3. 获取proof_units进行验证
-        try:
-            proof_units = proofs.get_proof_units()
-        except Exception as e:
-            return False, f"Failed to get proof_units: {str(e)}"
-
-        # 4. 验证每个ProofUnit
+        # 2. 验证每个ProofUnit
         for i, proof_unit in enumerate(proof_units):
             is_valid, error_msg = self._validate_proof_unit_structure(proof_unit)
             if not is_valid:
@@ -304,20 +290,16 @@ class DataStructureValidator(ValidatorBase):
 
         return True, ""
 
-    def _validate_vpb_consistency(self, value, proofs, block_index_list) -> Tuple[bool, str]:
+    def _validate_vpb_consistency(self, value, proof_units, block_index_list) -> Tuple[bool, str]:
         """
         VPB特定的数据一致性验证
 
         验证内容：
-        1. Proofs和BlockIndexList的元素数量一致性
+        1. ProofUnits和BlockIndexList的元素数量一致性
         2. value_id与Value的关联性
         """
-        # 1. 验证Proofs和BlockIndexList的元素数量一致
-        try:
-            proof_count = len(proofs.get_proof_units())
-        except Exception as e:
-            return False, f"Failed to get proof count: {str(e)}"
-
+        # 1. 验证ProofUnits和BlockIndexList的元素数量一致
+        proof_count = len(proof_units)
         block_count = len(block_index_list.index_lst)
 
         if proof_count != block_count:
