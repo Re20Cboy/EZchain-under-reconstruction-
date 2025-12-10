@@ -6,8 +6,11 @@ This module defines the core data types used throughout the VPB validation syste
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 from EZ_CheckPoint.CheckPoint import CheckPointRecord
+
+if TYPE_CHECKING:
+    from EZ_Units.Bloom import BloomFilter
 
 
 class VerificationResult(Enum):
@@ -59,42 +62,85 @@ class VPBVerificationReport:
 
 @dataclass
 class MainChainInfo:
-    """主链信息数据结构"""
-    merkle_roots: Dict[int, str]  # block_height -> merkle_root_hash
-    bloom_filters: Dict[int, Any]  # block_height -> bloom_filter_data
+    """
+    主链信息数据结构
+
+    包含VPB验证所需的主链核心信息：
+    - Merkle根哈希：用于验证区块的Merkle证明
+    - 布隆过滤器：用于快速检测地址是否在区块中提交过交易
+    - 区块高度信息：用于验证区块范围的合法性
+    """
+    merkle_roots: Dict[int, str]        # block_height -> merkle_root_hash
+    bloom_filters: Dict[int, 'BloomFilter']  # block_height -> bloom_filter_object
     current_block_height: int
     genesis_block_height: int = 0
 
     def get_blocks_in_range(self, start_height: int, end_height: int) -> List[int]:
-        """获取指定范围内的区块高度列表"""
+        """
+        获取指定范围内的区块高度列表
+
+        Args:
+            start_height: 起始区块高度
+            end_height: 结束区块高度
+
+        Returns:
+            List[int]: 范围内存在的区块高度列表
+        """
         return [h for h in range(start_height, end_height + 1) if h in self.merkle_roots]
 
-    def get_owner_transaction_blocks(self, owner_address: str, start_height: int, end_height: int) -> List[int]:
-        """通过布隆过滤器获取指定所有者在指定范围内提交交易的区块高度"""
-        transaction_blocks = []
-        for height in range(start_height, end_height + 1):
-            if height in self.bloom_filters:
-                bloom_filter = self.bloom_filters[height]
-                # 使用真实的布隆过滤器检测
-                if self._check_bloom_filter(bloom_filter, owner_address):
-                    transaction_blocks.append(height)
-        return transaction_blocks
+    def has_block_data(self, block_height: int) -> bool:
+        """
+        检查指定区块是否有完整的验证数据
 
-    def _check_bloom_filter(self, bloom_filter: Any, owner_address: str) -> bool:
-        """检查布隆过滤器"""
-        from EZ_Units.Bloom import BloomFilter
+        Args:
+            block_height: 区块高度
 
-        if isinstance(bloom_filter, BloomFilter):
-            return owner_address in bloom_filter
-        elif isinstance(bloom_filter, dict):
-            # 兼容旧的字典格式
-            return bloom_filter.get(owner_address, False)
-        else:
-            # 其他格式，尝试直接检查
-            try:
-                return owner_address in bloom_filter
-            except (TypeError, AttributeError):
-                return False
+        Returns:
+            bool: 是否同时有Merkle根和布隆过滤器
+        """
+        return (block_height in self.merkle_roots and
+                block_height in self.bloom_filters)
+
+    def validate_data_consistency(self) -> List[str]:
+        """
+        验证数据一致性
+
+        Returns:
+            List[str]: 发现的问题列表，空列表表示没有问题
+        """
+        issues = []
+
+        # 检查merkle_roots和bloom_filters的区块高度是否一致
+        merkle_heights = set(self.merkle_roots.keys())
+        bloom_heights = set(self.bloom_filters.keys())
+
+        # 只在merkle_roots中的区块
+        merkle_only = merkle_heights - bloom_heights
+        if merkle_only:
+            issues.append(f"区块缺少布隆过滤器: {sorted(merkle_only)}")
+
+        # 只在bloom_filters中的区块
+        bloom_only = bloom_heights - merkle_heights
+        if bloom_only:
+            issues.append(f"区块缺少Merkle根: {sorted(bloom_only)}")
+
+        return issues
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        获取主链信息统计
+
+        Returns:
+            Dict[str, Any]: 统计信息
+        """
+        return {
+            'total_blocks_with_merkle': len(self.merkle_roots),
+            'total_blocks_with_bloom': len(self.bloom_filters),
+            'current_block_height': self.current_block_height,
+            'genesis_block_height': self.genesis_block_height,
+            'block_range': f"{self.genesis_block_height}-{self.current_block_height}",
+            'data_consistency_issues': len(self.validate_data_consistency())
+        }
 
 @dataclass
 class VPBSlice:

@@ -86,10 +86,16 @@ class VPBValidator(ValidatorBase):
                     value, proof_units, block_index_list, account_address
                 )
 
+                # Step 2.5: MainChainInfo切片处理
+                self.logger.info("Step 2.5: MainChainInfo slicing")
+                sliced_main_chain_info = self.slice_generator.slice_main_chain_info(
+                    main_chain_info, vpb_slice.start_block_height, vpb_slice.end_block_height
+                )
+
                 # Step 3: 布隆过滤器一致性验证
                 self.logger.info("Step 3: Bloom filter consistency verification")
                 is_valid, error_msg = self.bloom_filter_validator.verify_bloom_filter_consistency(
-                    vpb_slice, main_chain_info
+                    vpb_slice, sliced_main_chain_info
                 )
                 if not is_valid:
                     errors.append(VerificationError("BLOOM_FILTER_VALIDATION_FAILED", error_msg))
@@ -97,7 +103,7 @@ class VPBValidator(ValidatorBase):
                 # Step 4: 证明单元验证和双花检测
                 self.logger.info("Step 4: Proof verification and double-spend detection")
                 is_valid, proof_errors, verified_epochs = self.proof_validator.verify_proof_units_and_detect_double_spend(
-                    vpb_slice, main_chain_info, checkpoint_used
+                    vpb_slice, sliced_main_chain_info, checkpoint_used
                 )
                 if not is_valid:
                     errors.extend(proof_errors)

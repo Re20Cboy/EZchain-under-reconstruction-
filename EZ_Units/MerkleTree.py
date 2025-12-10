@@ -24,14 +24,20 @@ class MerkleTreeNode:
 
 
 class MerkleTree:
-    def __init__(self, values, is_genesis_block=False):
+    def __init__(self, values, is_genesis_block=False, values_are_hashed=False):
         self.leaves = []
         self.prf_list = None
-        self.build_tree(values, is_genesis_block)
+        self.build_tree(values, is_genesis_block, values_are_hashed)
 
-    def build_tree(self, leaves, is_genesis_block):
-        leaves = [MerkleTreeNode(None, None, sha256_hash(e), e, leaf_index=index) for index, e in
-                  enumerate(leaves, start=0)]
+    def build_tree(self, leaves, is_genesis_block, values_are_hashed=False):
+        if values_are_hashed:
+            # Input values are already hashed, use them directly
+            leaves = [MerkleTreeNode(None, None, e, e, leaf_index=index) for index, e in
+                      enumerate(leaves, start=0)]
+        else:
+            # Input values are not hashed, hash them first
+            leaves = [MerkleTreeNode(None, None, sha256_hash(e), e, leaf_index=index) for index, e in
+                      enumerate(leaves, start=0)]
 
         for item in leaves:
             self.leaves.append(item)

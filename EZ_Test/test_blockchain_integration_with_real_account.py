@@ -55,7 +55,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         self.config = ChainConfig(
             confirmation_blocks=2,  # 2个区块确认
             max_fork_height=3,      # 3个区块后孤儿
-            debug_mode=True
+            debug_mode=True,
+            data_directory=os.path.join(self.temp_dir, "test_blockchain_data"),  # 使用临时目录存储区块链数据
+            auto_save=False  # 禁用自动保存，避免影响测试
         )
 
         # 创建区块链实例
@@ -151,14 +153,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print(f"[CONFIG] 为 {len(self.accounts)} 个账户创建创世块，配置: 1000×1 + 500×1 + 100×5 + 50×5 + 10×5 + 1×5")
 
         # 创建创世块
-        genesis_block = create_genesis_block(
+        genesis_block, genesis_submit_tx_infos = create_genesis_block(
             accounts=self.accounts,
             denomination_config=custom_denomination,
-            custom_sender="0x0000000000000000000000000000000000000",
+            custom_sender="0x0000000000000000000000000000000000000",  # 兼容旧地址格式
             custom_miner="ezchain_test_genesis_miner"
         )
 
         print(f"[SUCCESS] 创世块已创建 (#{genesis_block.index})")
+        print(f"[SUCCESS] 生成了 {len(genesis_submit_tx_infos)} 个SubmitTxInfo交易")
 
         # 将创世块添加到区块链
         main_chain_updated = self.blockchain.add_block(genesis_block)
@@ -383,7 +386,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 print(f"       {sender_name} → {recipient_name}: {req['amount']}")
             if len(round_requests) > 10:
                 print(f"       ... 还有 {len(round_requests) - 10} 笔交易")
-    
+
         # 步骤3：使用真实Account创建交易
         print("\n⚡ 3. 创建交易...")
         submit_tx_data = self.create_transactions_from_accounts(transaction_requests_list)
@@ -630,11 +633,38 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                             # 步骤1: VPB合法性验证（使用上帝视角输入main_chain_info）
                             print(f"      🔍 验证VPB合法性: {recipient_account.name} 接收金额 {received_value.value_num}")
 
-                            # 构造上帝视角的main_chain_info
-                            main_chain_info = {
-                                'blockchain': self.blockchain,
-                                'current_height': self.blockchain.get_latest_block_index()
-                            }
+                            # 构造上帝视角的main_chain_info，使用MainChainInfo类
+                            from EZ_VPB_Validator.core.types import MainChainInfo
+                            from EZ_Units.Bloom import BloomFilter
+
+                            # 提取区块的Merkle根和布隆过滤器
+                            merkle_roots = {}
+                            bloom_filters = {}
+
+                            # 获取VPB相关区块的高度范围
+                            if received_block_index and hasattr(received_block_index, 'index_lst'):
+                                for block_height in received_block_index.index_lst:
+                                    if block_height == 0:
+                                        # 创世块处理
+                                        genesis_block = self.blockchain.get_block_by_index(0)
+                                        if genesis_block:
+                                            merkle_roots[block_height] = genesis_block.get_m_tree_root()
+                                            # 创世块的布隆过滤器
+                                            bloom_filters[block_height] = genesis_block.get_bloom()
+                                    else:
+                                        # 普通区块处理
+                                        block_node = self.blockchain.get_fork_node_by_index(block_height)
+                                        if block_node and block_node.block:
+                                            merkle_roots[block_height] = block_node.block.get_m_tree_root()
+                                            # 直接使用区块的布隆过滤器
+                                            bloom_filters[block_height] = block_node.block.get_bloom()
+
+                            main_chain_info = MainChainInfo(
+                                merkle_roots=merkle_roots,
+                                bloom_filters=bloom_filters,
+                                current_block_height=self.blockchain.get_latest_block_index(),
+                                genesis_block_height=0
+                            )
 
                             # 使用VPBValidator进行验证
                             verification_report = self.vpb_validator.verify_vpb_pair(

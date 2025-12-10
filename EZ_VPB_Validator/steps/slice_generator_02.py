@@ -6,7 +6,7 @@ This module implements the second step of VPB validation: checkpoint matching an
 
 from typing import Tuple, Optional
 from ..core.validator_base import ValidatorBase
-from ..core.types import VPBSlice
+from ..core.types import VPBSlice, MainChainInfo
 from EZ_CheckPoint.CheckPoint import CheckPointRecord
 
 
@@ -156,3 +156,33 @@ class VPBSliceGenerator(ValidatorBase):
 
         self.logger.debug(f"Generated VPB slice: start_height={start_height}, end_height={vpb_slice.end_block_height}, proof_units={len(proofs_slice)}, previous_owner={previous_owner}")
         return vpb_slice, checkpoint_used
+
+    def slice_main_chain_info(self, main_chain_info: MainChainInfo, start_height: int, end_height: int) -> MainChainInfo:
+        """
+        根据VPB切片的范围对MainChainInfo进行切片
+
+        Args:
+            main_chain_info: 原始的MainChainInfo对象
+            start_height: VPB切片的起始区块高度
+            end_height: VPB切片的结束区块高度
+
+        Returns:
+            MainChainInfo: 切片后的MainChainInfo对象
+        """
+        sliced_merkle_roots = {}
+        sliced_bloom_filters = {}
+
+        # 只保留VPB切片范围内的区块数据
+        for block_height in range(start_height, end_height + 1):
+            if block_height in main_chain_info.merkle_roots:
+                sliced_merkle_roots[block_height] = main_chain_info.merkle_roots[block_height]
+            if block_height in main_chain_info.bloom_filters:
+                sliced_bloom_filters[block_height] = main_chain_info.bloom_filters[block_height]
+
+        # 创建切片后的MainChainInfo
+        return MainChainInfo(
+            merkle_roots=sliced_merkle_roots,
+            bloom_filters=sliced_bloom_filters,
+            current_block_height=main_chain_info.current_block_height,
+            genesis_block_height=main_chain_info.genesis_block_height
+        )

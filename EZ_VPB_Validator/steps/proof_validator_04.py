@@ -248,8 +248,17 @@ class ProofValidator(ValidatorBase):
                 # 验证创世交易的发送者是否为预期的创世地址
                 if hasattr(genesis_proof_unit.owner_multi_txns, 'sender'):
                     sender = genesis_proof_unit.owner_multi_txns.sender
-                    # 检查是否为创世地址（通常以0x0000...开头）
-                    if not sender.startswith("0x0000000000000000000000000000000"):
+                    # 检查是否为创世地址（新格式以0xGENESIS开头）
+                    from EZ_GENESIS.genesis_account import get_genesis_manager
+                    genesis_manager = get_genesis_manager()
+
+                    # 允许新旧两种创世地址格式（向后兼容）
+                    is_valid_genesis_address = (
+                        sender.startswith("0xGENESIS") and genesis_manager.is_genesis_address(sender) or
+                        sender.startswith("0x0000000000000000000000000000000")  # 兼容旧格式
+                    )
+
+                    if not is_valid_genesis_address:
                         return False, f"Genesis block sender should be genesis address, got: {sender}"
 
                 # 对于digest为None的创世块，我们只验证基本结构
