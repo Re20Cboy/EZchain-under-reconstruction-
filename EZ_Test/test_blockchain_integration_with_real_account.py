@@ -341,7 +341,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             for submit_tx_info in package_data.selected_submit_tx_infos:
                 if submit_tx_info.submitter_address == sender_address:
                     # 找到对应的默克尔证明
-                    multi_hash = submit_tx_info.multi_transactions_hash
+                    multi_hash = submit_tx_info.get_hash()
                     for proof_hash, merkle_proof in picked_txs_mt_proofs:
                         if proof_hash == multi_hash:
                             return merkle_proof if merkle_proof else []

@@ -1,3 +1,11 @@
+12/11 运行test_blockchain_integration_with_real_account报错，猜测是其调用的VPBManager中的
+initialize_from_genesis_batch方法有问题：
+其# 3. 优化ProofUnits添加 - 使用批量操作避免不必要的嵌套循环
+            # 构建value_proof_pairs列表用于批量添加
+是否是在批量添加时出现了问题，应该使用统一的接口进行添加？
+待修复。
+
+
 12/9 最新的proofs的架构（利用account proof manager 管理所有proof units）与vpb检验器的架构接口不一致有冲突。
 
 
