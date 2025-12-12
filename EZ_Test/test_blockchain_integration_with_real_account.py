@@ -156,7 +156,6 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         genesis_block, genesis_submit_tx_infos = create_genesis_block(
             accounts=self.accounts,
             denomination_config=custom_denomination,
-            custom_sender="0x0000000000000000000000000000000000000",  # 兼容旧地址格式
             custom_miner="ezchain_test_genesis_miner"
         )
 
@@ -169,9 +168,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 获取创世数据（避免重复创建）
         genesis_creator = GenesisBlockCreator(custom_denomination)
+        # 使用创世管理器获取正确的创世地址
+        from EZ_GENESIS.genesis_account import get_genesis_manager
+        genesis_manager = get_genesis_manager()
         genesis_multi_txns = genesis_creator._create_genesis_transactions(
             accounts=self.accounts,
-            sender_address="0x0000000000000000000000000000000000000"
+            sender_address=genesis_manager.get_genesis_address()
         )
         merkle_tree, _ = genesis_creator._build_genesis_merkle_tree(genesis_multi_txns)
 

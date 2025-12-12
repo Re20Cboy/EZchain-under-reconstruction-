@@ -1,3 +1,10 @@
+12/12 由于目前最新是采用向交易池提交submit_tx_info，而不是multi_transactions本体，
+因此在test_blockchain_integration_with_real_account.py中，步骤6.2及6.4后续的检查，
+是有问题的。最重要的是缺少了submit_tx_info与multi_transactions之间的转换过程。
+需要在account中添加相关方法，完成submit_tx_info到multi_transactions的转换检测。
+目前构建默克尔书证明是基于submit_tx_info的，但multi_transactions本体才是最终的交易集合，用于检测双花等。
+因此submit_tx_info与multi_transactions之间的转换过程检查是必要的。
+
 12/11 运行test_blockchain_integration_with_real_account报错，猜测是其调用的VPBManager中的
 initialize_from_genesis_batch方法有问题：
 其# 3. 优化ProofUnits添加 - 使用批量操作避免不必要的嵌套循环

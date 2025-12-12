@@ -252,14 +252,13 @@ class ProofValidator(ValidatorBase):
                     from EZ_GENESIS.genesis_account import get_genesis_manager
                     genesis_manager = get_genesis_manager()
 
-                    # 允许新旧两种创世地址格式（向后兼容）
+                    # 只接受新的创世地址格式 - 不再支持向后兼容
                     is_valid_genesis_address = (
-                        sender.startswith("0xGENESIS") and genesis_manager.is_genesis_address(sender) or
-                        sender.startswith("0x0000000000000000000000000000000")  # 兼容旧格式
+                        sender.startswith("0xGENESIS") and genesis_manager.is_genesis_address(sender)
                     )
 
                     if not is_valid_genesis_address:
-                        return False, f"Genesis block sender should be genesis address, got: {sender}"
+                        return False, f"Genesis block sender should be valid genesis address (0xGENESIS*), got: {sender}"
 
                 # 对于digest为None的创世块，我们只验证基本结构
                 return True, "Genesis proof unit structure verification successful (digest None allowed for genesis)"

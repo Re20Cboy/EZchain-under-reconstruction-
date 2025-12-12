@@ -139,8 +139,11 @@ class DataStructureValidator(ValidatorBase):
             # owner可能是发送者（原始拥有者）或接收者（所有权转移后的新拥有者）
             owner_is_sender = (proof_unit.owner_multi_txns.sender == proof_unit.owner)
 
-            # 检查是否为创世块（通过sender地址识别）
-            is_genesis_block = proof_unit.owner_multi_txns.sender.startswith("0x0000000000000000000000000000000")
+            # 检查是否为创世块（通过sender地址识别）- 只接受新的创世地址格式
+            from EZ_GENESIS.genesis_account import get_genesis_manager
+            genesis_manager = get_genesis_manager()
+            is_genesis_block = (proof_unit.owner_multi_txns.sender.startswith("0xGENESIS") and
+                              genesis_manager.is_genesis_address(proof_unit.owner_multi_txns.sender))
 
             # 检查owner是否是任何交易的接收者
             owner_is_recipient = False

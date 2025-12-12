@@ -56,7 +56,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Genesis constants
-GENESIS_SENDER = "0x0000000000000000000000000000000000000000"
 GENESIS_MINER = "genesis_miner"
 GENESIS_BLOCK_INDEX = 0
 
@@ -100,14 +99,12 @@ class GenesisBlockCreator:
 
     def create_genesis_block(self,
                            accounts: List["Account"],
-                           custom_sender: Optional[str] = None,
                            custom_miner: Optional[str] = None) -> Tuple[Block, List[SubmitTxInfo]]:
         """
         Create genesis block with initial value distribution
 
         Args:
             accounts: List of Account objects to receive initial values
-            custom_sender: Custom sender address (default: use genesis account)
             custom_miner: Custom miner address (default: GENESIS_MINER)
 
         Returns:
@@ -119,16 +116,10 @@ class GenesisBlockCreator:
         if not accounts:
             raise ValueError("At least one account must be provided for genesis block")
 
-        # Use genesis account as sender if not custom provided
-        if custom_sender:
-            sender_address = custom_sender
-            # For custom sender, we don't have keys, so we'll use genesis account keys for signing
-            private_key_pem = self.genesis_manager.get_private_key_pem()
-            public_key_pem = self.genesis_manager.get_public_key_pem()
-        else:
-            sender_address = self.genesis_manager.get_genesis_address()
-            private_key_pem = self.genesis_manager.get_private_key_pem()
-            public_key_pem = self.genesis_manager.get_public_key_pem()
+        # Always use genesis account as sender - no backward compatibility for custom_sender
+        sender_address = self.genesis_manager.get_genesis_address()
+        private_key_pem = self.genesis_manager.get_private_key_pem()
+        public_key_pem = self.genesis_manager.get_public_key_pem()
 
         miner_address = custom_miner or GENESIS_MINER
 
@@ -617,7 +608,6 @@ class GenesisBlockCreator:
 # Convenience functions for external use
 def create_genesis_block(accounts: List["Account"],
                         denomination_config: Optional[List[Tuple[int, int]]] = None,
-                        custom_sender: Optional[str] = None,
                         custom_miner: Optional[str] = None) -> Tuple[Block, List[SubmitTxInfo]]:
     """
     Convenience function to create a genesis block
@@ -625,14 +615,13 @@ def create_genesis_block(accounts: List["Account"],
     Args:
         accounts: List of Account objects to receive initial values
         denomination_config: Custom denomination configuration
-        custom_sender: Custom sender address
         custom_miner: Custom miner address
 
     Returns:
         Tuple[Block, List[SubmitTxInfo]]: The created genesis block and SubmitTxInfo list
     """
     creator = GenesisBlockCreator(denomination_config)
-    return creator.create_genesis_block(accounts, custom_sender, custom_miner)
+    return creator.create_genesis_block(accounts, custom_miner)
 
 
 def create_genesis_vpb_for_account(account_addr: str,

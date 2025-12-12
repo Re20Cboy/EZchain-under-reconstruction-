@@ -10,7 +10,6 @@ from .genesis import (
     create_genesis_block,
     create_genesis_vpb_for_account,
     validate_genesis_block,
-    GENESIS_SENDER,
     GENESIS_MINER,
     GENESIS_BLOCK_INDEX,
     DEFAULT_DENOMINATION_CONFIG
@@ -21,7 +20,6 @@ __all__ = [
     'create_genesis_block',
     'create_genesis_vpb_for_account',
     'validate_genesis_block',
-    'GENESIS_SENDER',
     'GENESIS_MINER',
     'GENESIS_BLOCK_INDEX',
     'DEFAULT_DENOMINATION_CONFIG'

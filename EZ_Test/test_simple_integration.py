@@ -91,10 +91,9 @@ class TestSimpleIntegration(unittest.TestCase):
         print(f"[CONFIG] Each account gets total: {total_per_account}")
 
         # Create genesis block
-        genesis_block = create_genesis_block(
+        genesis_block, genesis_submit_tx_infos = create_genesis_block(
             accounts=self.accounts,
             denomination_config=custom_denomination,
-            custom_sender="0x0000000000000000000000000000000000",
             custom_miner="genesis_miner"
         )
 
@@ -105,10 +104,13 @@ class TestSimpleIntegration(unittest.TestCase):
         print(f"[{'SUCCESS' if main_chain_updated else 'WARNING'}] Genesis block {'added' if main_chain_updated else 'not added'} to main chain")
 
         # Initialize VPB for each account
-        genesis_creator = __import__('EZ_GENESIS.genesis').genesis.GenesisBlockCreator(custom_denomination)
+        genesis_creator = GenesisBlockCreator(custom_denomination)
+        # 使用创世管理器获取正确的创世地址
+        from EZ_GENESIS.genesis_account import get_genesis_manager
+        genesis_manager = get_genesis_manager()
         genesis_multi_txns = genesis_creator._create_genesis_transactions(
             accounts=self.accounts,
-            sender_address="0x0000000000000000000000000000000000"
+            sender_address=genesis_manager.get_genesis_address()
         )
         merkle_tree, _ = genesis_creator._build_genesis_merkle_tree(genesis_multi_txns)
 

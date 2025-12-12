@@ -15,7 +15,6 @@ sys.path.insert(0, os.path.dirname(__file__) + '/..')
 from EZ_GENESIS.genesis import (
     GenesisBlockCreator,
     DEFAULT_DENOMINATION_CONFIG,
-    GENESIS_SENDER,
     GENESIS_MINER,
     GENESIS_BLOCK_INDEX,
     create_genesis_block,
@@ -360,7 +359,6 @@ class TestGenesisConstantsReal(unittest.TestCase):
 
     def test_genesis_constants(self):
         """Verify genesis constants are properly defined"""
-        self.assertEqual(GENESIS_SENDER, "0x0000000000000000000000000000000000000000")
         self.assertEqual(GENESIS_MINER, "genesis_miner")
         self.assertEqual(GENESIS_BLOCK_INDEX, 0)
 
