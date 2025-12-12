@@ -56,7 +56,9 @@ class TestGenesisBlockCreatorReal(unittest.TestCase):
     def test_real_genesis_block_creation(self):
         """Test creating real genesis block with actual modules"""
         try:
-            genesis_block = self.creator.create_genesis_block(self.test_accounts)
+            # create_genesis_block returns a tuple: (genesis_block, genesis_submit_tx_infos)
+            result = self.creator.create_genesis_block(self.test_accounts)
+            genesis_block, genesis_submit_tx_infos = result
 
             # Verify block structure
             self.assertIsNotNone(genesis_block)
@@ -73,6 +75,7 @@ class TestGenesisBlockCreatorReal(unittest.TestCase):
             print(f"   Block index: {genesis_block.index}")
             print(f"   Merkle root: {genesis_block.m_tree_root}")
             print(f"   Miner: {genesis_block.miner}")
+            print(f"   SubmitTxInfo count: {len(genesis_submit_tx_infos)}")
 
         except Exception as e:
             self.fail(f"Failed to create genesis block: {e}")

@@ -21,7 +21,7 @@ from EZ_Main_Chain.Blockchain import Blockchain, ChainConfig
 from EZ_Tx_Pool.TXPool import TxPool
 from EZ_Tx_Pool.PickTx import pick_transactions_from_pool
 from EZ_Account.Account import Account
-from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_account
+from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_account, GenesisBlockCreator
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 
 
@@ -61,7 +61,7 @@ class TestSimpleIntegration(unittest.TestCase):
         print("[INIT] Creating test accounts...")
 
         for i, name in enumerate(names):
-            private_key_pem, public_key_pem = secure_signature_handler.generate_key_pair()
+            private_key_pem, public_key_pem = secure_signature_handler.signer.generate_key_pair()
             address = f"{name}_address_{i:03d}"
 
             account = Account(
@@ -91,7 +91,7 @@ class TestSimpleIntegration(unittest.TestCase):
         print(f"[CONFIG] Each account gets total: {total_per_account}")
 
         # Create genesis block
-        genesis_block, genesis_submit_tx_infos = create_genesis_block(
+        genesis_block, genesis_submit_tx_infos, genesis_multi_txns = create_genesis_block(
             accounts=self.accounts,
             denomination_config=custom_denomination,
             custom_miner="genesis_miner"
@@ -105,26 +105,21 @@ class TestSimpleIntegration(unittest.TestCase):
 
         # Initialize VPB for each account
         genesis_creator = GenesisBlockCreator(custom_denomination)
-        # 使用创世管理器获取正确的创世地址
-        from EZ_GENESIS.genesis_account import get_genesis_manager
-        genesis_manager = get_genesis_manager()
-        genesis_multi_txns = genesis_creator._create_genesis_transactions(
-            accounts=self.accounts,
-            sender_address=genesis_manager.get_genesis_address()
-        )
-        merkle_tree, _ = genesis_creator._build_genesis_merkle_tree(genesis_multi_txns)
+        # Build the correct merkle tree using SubmitTxInfo hashes
+        merkle_tree, _ = genesis_creator._build_genesis_merkle_tree_from_submit_tx_infos(genesis_submit_tx_infos)
 
         total_values = 0
         for i, account in enumerate(self.accounts):
             try:
-                account_genesis_txn = genesis_multi_txns[i]
-                merkle_proof = genesis_creator.create_merkle_proof(account_genesis_txn, merkle_tree)
+                account_genesis_submit_tx_info = genesis_submit_tx_infos[i]
+                merkle_proof = genesis_creator.create_merkle_proof_for_submit_tx_info(account_genesis_submit_tx_info, merkle_tree)
                 block_index = genesis_creator.create_block_index(account.address)
 
                 genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
                     account_addr=account.address,
                     genesis_block=genesis_block,
-                    genesis_multi_txn=account_genesis_txn,
+                    genesis_submit_tx_info=account_genesis_submit_tx_info,
+                    genesis_multi_txn=genesis_multi_txns[i],
                     merkle_tree=merkle_tree,
                     denomination_config=custom_denomination
                 )

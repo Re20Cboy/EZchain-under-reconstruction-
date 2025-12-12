@@ -70,9 +70,8 @@ class ProofUnit:  # value proof within a block
             if self.owner_multi_txns.digest is None:
                 return False, "MultiTransactions digest is None"
 
-            # The first element of mt_prf_list should be the hash of the MultiTransactions digest
-            from EZ_Tool_Box.Hash import sha256_hash
-            expected_leaf_hash = sha256_hash(self.owner_multi_txns.digest)
+            # The first element of mt_prf_list should be the MultiTransactions digest
+            expected_leaf_hash = self.owner_multi_txns.digest
             actual_leaf_hash = self.owner_mt_proof.mt_prf_list[0]
 
             if expected_leaf_hash != actual_leaf_hash:

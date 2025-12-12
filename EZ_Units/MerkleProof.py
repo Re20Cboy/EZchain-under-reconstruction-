@@ -10,34 +10,38 @@ class MerkleTreeProof:
     def __init__(self, mt_prf_list=[]):
         self.mt_prf_list = mt_prf_list
 
-    def check_prf(self, acc_txns_digest, true_root):
+    def check_prf(self, acc_txns_digest, true_root, values_are_hashed=True):
         check_flag = True
-        hashed_encode_acc_txns = sha256_hash(acc_txns_digest)
+        # If values are already hashed, use them directly; otherwise hash them
+        if values_are_hashed:
+            current_hash = acc_txns_digest
+        else:
+            current_hash = sha256_hash(acc_txns_digest)
 
         if len(self.mt_prf_list) == 0:
             return False
 
         if len(self.mt_prf_list) == 1:
-            if (hashed_encode_acc_txns != self.mt_prf_list[0] or true_root != self.mt_prf_list[0] or
-                    true_root != hashed_encode_acc_txns):
+            if (current_hash != self.mt_prf_list[0] or true_root != self.mt_prf_list[0] or
+                    true_root != current_hash):
                 check_flag = False
             return check_flag
 
         # For Merkle proof structure, the first element should be the leaf hash
         # If it doesn't match, then the proof is invalid for this data
         # 这里验证mt_prf_list首位元素是否为data的hash，与之前的检测逻辑不同，之前是检测前两位是否相同。
-        if hashed_encode_acc_txns != self.mt_prf_list[0]:
+        if current_hash != self.mt_prf_list[0]:
             check_flag = False
-        
+
         if self.mt_prf_list[-1] != true_root:
             check_flag = False
-        
+
         # Check if proof has correct structure (odd number of elements: pairs + root)
         if len(self.mt_prf_list) % 2 != 1:
             return False
-        
+
         # Verify the proof path from leaf to root
-        current_hash = hashed_encode_acc_txns
+        # current_hash is already set above
         
         # Process each pair in the proof (sibling hash, parent hash)
         for i in range(len(self.mt_prf_list) // 2):

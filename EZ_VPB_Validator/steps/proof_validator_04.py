@@ -199,6 +199,7 @@ class ProofValidator(ValidatorBase):
     def _verify_genesis_proof_unit(self, genesis_proof_unit, genesis_merkle_root) -> Tuple[bool, str]:
         """
         验证创世块的proof unit，特殊处理digest为None的情况
+        基于SubmitTxInfo构建的Merkle树验证
 
         Args:
             genesis_proof_unit: 创世块的proof unit
@@ -225,22 +226,50 @@ class ProofValidator(ValidatorBase):
 
             # 重新检查digest状态
             if genesis_proof_unit.owner_multi_txns.digest is not None:
-                # 正常的验证流程
-                from EZ_Tool_Box.Hash import sha256_hash
-                expected_leaf_hash = sha256_hash(genesis_proof_unit.owner_multi_txns.digest)
-                actual_leaf_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
+                # 基于SubmitTxInfo的Merkle树验证：重建SubmitTxInfo并验证其哈希
+                try:
+                    # 重建对应的SubmitTxInfo（使用创世密钥）
+                    from EZ_GENESIS.genesis_account import get_genesis_manager
+                    from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 
-                if expected_leaf_hash != actual_leaf_hash:
-                    return False, f"Merkle proof leaf hash mismatch: expected '{expected_leaf_hash}', got '{actual_leaf_hash}'"
+                    genesis_manager = get_genesis_manager()
+                    genesis_private_key = genesis_manager.get_private_key_pem()
+                    genesis_public_key = genesis_manager.get_public_key_pem()
 
-                # 深度验证Merkle证明
-                if genesis_proof_unit.owner_mt_proof.check_prf(
-                    acc_txns_digest=genesis_proof_unit.owner_multi_txns.digest,
-                    true_root=genesis_merkle_root
-                ):
-                    return True, "Genesis proof unit verification successful"
-                else:
-                    return False, f"Merkle proof validation failed for genesis digest '{genesis_proof_unit.owner_multi_txns.digest}' against root '{genesis_merkle_root}'"
+                    # 从MultiTransactions重建SubmitTxInfo
+                    reconstructed_submit_tx_info = SubmitTxInfo(
+                        multi_transactions=genesis_proof_unit.owner_multi_txns,
+                        private_key_pem=genesis_private_key,
+                        public_key_pem=genesis_public_key
+                    )
+
+                    # 验证重建的SubmitTxInfo哈希是否匹配Merkle证明叶子节点
+                    expected_leaf_hash = reconstructed_submit_tx_info.multi_transactions_hash
+                    actual_leaf_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
+
+                    if expected_leaf_hash != actual_leaf_hash:
+                        return False, (f"Merkle proof leaf hash mismatch: "
+                                      f"expected MultiTransactions hash '{expected_leaf_hash}', "
+                                      f"got '{actual_leaf_hash}'")
+
+                    # SubmitTxInfo哈希验证通过，现在验证SubmitTxInfo与MultiTransactions的对应关系
+                    if not reconstructed_submit_tx_info.verify(genesis_proof_unit.owner_multi_txns):
+                        return False, "SubmitTxInfo to MultiTransactions correspondence verification failed"
+
+                    self.logger.info("SubmitTxInfo to MultiTransactions correspondence verified")
+
+                    # 深度验证Merkle证明
+                    if genesis_proof_unit.owner_mt_proof.check_prf(
+                        acc_txns_digest=genesis_proof_unit.owner_multi_txns.digest,
+                        true_root=genesis_merkle_root
+                    ):
+                        return True, "Genesis proof unit verification successful"
+                    else:
+                        return False, f"Merkle proof validation failed for genesis digest '{genesis_proof_unit.owner_multi_txns.digest}' against root '{genesis_merkle_root}'"
+
+                except Exception as e:
+                    self.logger.debug(f"SubmitTxInfo reconstruction failed: {str(e)}")
+                    return False, f"Failed to reconstruct SubmitTxInfo for validation: {str(e)}"
             else:
                 # digest仍然为None的特殊情况：我们只验证Merkle证明的结构，但不验证digest
                 self.logger.info("Genesis block with None digest - performing structure-only validation")

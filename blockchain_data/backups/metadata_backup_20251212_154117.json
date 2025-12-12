@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "saved_at": "2025-12-12T15:41:17.107035",
+  "chain_length": 200,
+  "latest_block_hash": "7e67489beb5754a987fd1b857ee27063252a1c575820bad29ab8d9837b99dd68",
+  "checksum": "9d7f26029a94bb063ebf07af6d5d6289e0afa93a5e9bc78cc4926ce939f76754",
+  "fork_statistics": {
+    "total_nodes": 222,
+    "main_chain_nodes": 200,
+    "fork_nodes": 22,
+    "confirmed_nodes": 221,
+    "orphaned_nodes": 0,
+    "max_forks_at_height": 2,
+    "current_height": 199,
+    "confirmed_height": 198
+  }
+}

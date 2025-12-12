@@ -34,7 +34,7 @@ from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Account.Account import Account
 from EZ_VPB.values.Value import Value
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
-from EZ_GENESIS.genesis import GenesisBlockCreator, create_genesis_block, create_genesis_vpb_for_account
+from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_account
 from EZ_Miner.miner import Miner
 from EZ_VPB_Validator.vpb_validator import VPBValidator
 
@@ -152,8 +152,8 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         print(f"[CONFIG] 为 {len(self.accounts)} 个账户创建创世块，配置: 1000×1 + 500×1 + 100×5 + 50×5 + 10×5 + 1×5")
 
-        # 创建创世块
-        genesis_block, genesis_submit_tx_infos = create_genesis_block(
+        # 创建创世块（现在返回一致的数据：区块、SubmitTxInfo、MultiTransactions、默克尔树）
+        genesis_block, genesis_submit_tx_infos, genesis_multi_txns, merkle_tree = create_genesis_block(
             accounts=self.accounts,
             denomination_config=custom_denomination,
             custom_miner="ezchain_test_genesis_miner"
@@ -161,36 +161,32 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         print(f"[SUCCESS] 创世块已创建 (#{genesis_block.index})")
         print(f"[SUCCESS] 生成了 {len(genesis_submit_tx_infos)} 个SubmitTxInfo交易")
+        print(f"[SUCCESS] 创建了 {len(genesis_multi_txns)} 个MultiTransactions")
+        print(f"[SUCCESS] 创建了基于SubmitTxInfo的一致性默克尔树")
 
         # 将创世块添加到区块链
         main_chain_updated = self.blockchain.add_block(genesis_block)
         print(f"[{'SUCCESS' if main_chain_updated else 'WARNING'}] 创世块{'已' if main_chain_updated else '未'}添加到主链")
 
-        # 获取创世数据（避免重复创建）
-        genesis_creator = GenesisBlockCreator(custom_denomination)
-        # 使用创世管理器获取正确的创世地址
-        from EZ_GENESIS.genesis_account import get_genesis_manager
-        genesis_manager = get_genesis_manager()
-        genesis_multi_txns = genesis_creator._create_genesis_transactions(
-            accounts=self.accounts,
-            sender_address=genesis_manager.get_genesis_address()
-        )
-        merkle_tree, _ = genesis_creator._build_genesis_merkle_tree(genesis_multi_txns)
-
         # 为每个账户初始化VPB
         for i, account in enumerate(self.accounts):
             print(f"为账户 {account.name} 创世初始化...")
 
-            # 获取对应账户的创世交易（简化验证）
-            account_genesis_txn = genesis_multi_txns[i]
-            if not account_genesis_txn or not account_genesis_txn.multi_txns:
-                raise RuntimeError(f"账户 {account.name} 的创世交易无效")
+            # 获取对应账户的SubmitTxInfo和MultiTransactions
+            account_submit_tx_info = genesis_submit_tx_infos[i]
+            account_multi_txn = genesis_multi_txns[i]
 
-            # 使用创世块的VPB创建函数
+            if not account_submit_tx_info:
+                raise RuntimeError(f"账户 {account.name} 的创世SubmitTxInfo无效")
+            if not account_multi_txn or not account_multi_txn.multi_txns:
+                raise RuntimeError(f"账户 {account.name} 的创世MultiTransactions无效")
+
+            # 使用修改后的创世VPB创建函数（基于SubmitTxInfo + MultiTransactions）
             genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
                 account_addr=account.address,
                 genesis_block=genesis_block,
-                genesis_multi_txn=account_genesis_txn,
+                genesis_submit_tx_info=account_submit_tx_info,  # 提供SubmitTxInfo用于默克尔证明
+                genesis_multi_txn=account_multi_txn,  # 提供MultiTransactions用于交易数据
                 merkle_tree=merkle_tree,
                 denomination_config=custom_denomination
             )
@@ -343,7 +339,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             for submit_tx_info in package_data.selected_submit_tx_infos:
                 if submit_tx_info.submitter_address == sender_address:
                     # 找到对应的默克尔证明
-                    multi_hash = submit_tx_info.get_hash()
+                    multi_hash = submit_tx_info.multi_transactions_hash
                     for proof_hash, merkle_proof in picked_txs_mt_proofs:
                         if proof_hash == multi_hash:
                             return merkle_proof if merkle_proof else []

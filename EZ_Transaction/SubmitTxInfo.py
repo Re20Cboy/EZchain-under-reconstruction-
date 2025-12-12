@@ -48,6 +48,8 @@ class SubmitTxInfo:
             public_key_pem: Sender的公钥（用于验证）
         """
         # 自动生成所有信息
+        # multi_transactions_hash用于生成默克尔树（作为叶子节点）
+        # SubmitTxInfo.get_hash()用于唯一标识SubmitTxInfo实例（后续可能用于交易池查重等）
         self.multi_transactions_hash, self.submit_timestamp, self.version, self.submitter_address, self.signature, self.public_key = self._generate_submit_tx_info(multi_transactions, private_key_pem, public_key_pem)
         self._hash: Optional[str] = None
 

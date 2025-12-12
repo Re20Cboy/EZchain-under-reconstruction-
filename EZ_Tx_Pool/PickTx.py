@@ -251,7 +251,7 @@ class TransactionPicker:
         # Use SubmitTxInfo's multi_transactions_hash as merkle tree leaf nodes
         leaf_hashes = []
         for submit_tx_info in submit_tx_infos:
-            leaf_hashes.append(submit_tx_info.get_hash())
+            leaf_hashes.append(submit_tx_info.multi_transactions_hash)
 
         # Build merkle tree
         merkle_tree = MerkleTree(leaf_hashes, values_are_hashed=True)
@@ -275,7 +275,7 @@ class TransactionPicker:
         leaf_hashes = []
         leaf_info_list = []
         for i, submit_tx_info in enumerate(submit_tx_infos):
-            leaf_hash = submit_tx_info.get_hash()
+            leaf_hash = submit_tx_info.multi_transactions_hash
             leaf_hashes.append(leaf_hash)
             leaf_info_list.append((leaf_hash, i))
 

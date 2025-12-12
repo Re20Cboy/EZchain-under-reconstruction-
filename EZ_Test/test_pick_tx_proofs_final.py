@@ -141,18 +141,19 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
         # Keys are used by SubmitTxInfo for transaction validation
         return SubmitTxInfo(multi_txn, private_key_pem, public_key_pem)
 
-    def verify_merkle_proof_using_correct_api(self, multi_hash: str, merkle_proof: List, expected_root: str) -> bool:
+    def verify_merkle_proof_using_correct_api(self, multi_hash: str, merkle_proof, expected_root: str) -> bool:
         """Verify Merkle proof using EZChain's MerkleTreeProof.check_prf API."""
         from EZ_Units.MerkleProof import MerkleTreeProof
 
         try:
             # Use EZChain's built-in Merkle proof verification
-            if isinstance(merkle_proof, (list, tuple)) and len(merkle_proof) > 0:
-                # Create MerkleTreeProof instance
+            if isinstance(merkle_proof, MerkleTreeProof):
+                # Use existing check_prf method with values_are_hashed=True
+                return merkle_proof.check_prf(acc_txns_digest=multi_hash, true_root=expected_root, values_are_hashed=True)
+            elif isinstance(merkle_proof, (list, tuple)) and len(merkle_proof) > 0:
+                # Handle case where proof is passed as a list (for backward compatibility)
                 merkle_tree_proof = MerkleTreeProof(mt_prf_list=list(merkle_proof))
-
-                # Use existing check_prf method
-                return merkle_tree_proof.check_prf(acc_txns_digest=multi_hash, true_root=expected_root)
+                return merkle_tree_proof.check_prf(acc_txns_digest=multi_hash, true_root=expected_root, values_are_hashed=True)
             else:
                 return False
 
@@ -281,7 +282,7 @@ class TestPickTxProofsWithRealData(unittest.TestCase):
 
         # Cross-verify Merkle root using independent MerkleTree
         leaf_hashes = [info.multi_transactions_hash for info in package_data.selected_submit_tx_infos]
-        manual_merkle_tree = MerkleTree(leaf_hashes)
+        manual_merkle_tree = MerkleTree(leaf_hashes, values_are_hashed=True)
         expected_root = manual_merkle_tree.get_root_hash()
         self.assertEqual(package_data.merkle_root, expected_root)
         self.assertEqual(block.m_tree_root, expected_root)
