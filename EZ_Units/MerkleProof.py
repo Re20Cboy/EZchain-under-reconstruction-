@@ -42,27 +42,104 @@ class MerkleTreeProof:
 
         # Verify the proof path from leaf to root
         # current_hash is already set above
-        
+
         # Process each pair in the proof (sibling hash, parent hash)
         for i in range(len(self.mt_prf_list) // 2):
             sibling_hash = self.mt_prf_list[2 * i + 1]
             parent_hash = self.mt_prf_list[2 * i + 2]
-            
+
             # Try both orders for hash combination
             combined_hash1 = sha256_hash(current_hash + sibling_hash)
             combined_hash2 = sha256_hash(sibling_hash + current_hash)
-            
+
             # The parent should match one of the combinations
             if combined_hash1 != parent_hash and combined_hash2 != parent_hash:
                 check_flag = False
                 break
-            
-            current_hash = parent_hash
-        
+            else:
+                current_hash = parent_hash
+
         # Final verification: current_hash should match the root
         if current_hash != self.mt_prf_list[-1]:
             check_flag = False
 
+        return check_flag
+
+    def debug_check_prf(self, acc_txns_digest, true_root, values_are_hashed=True):
+        """Debug version of check_prf with detailed logging"""
+        print(f"[DEBUG] MerkleTreeProof.debug_check_prf start")
+        print(f"[DEBUG] acc_txns_digest: {acc_txns_digest}")
+        print(f"[DEBUG] true_root: {true_root}")
+        print(f"[DEBUG] merkle proof list: {self.mt_prf_list}")
+        print(f"[DEBUG] proof length: {len(self.mt_prf_list)}")
+
+        check_flag = True
+        # If values are already hashed, use them directly; otherwise hash them
+        if values_are_hashed:
+            current_hash = acc_txns_digest
+        else:
+            current_hash = sha256_hash(acc_txns_digest)
+
+        print(f"[DEBUG] current_hash: {current_hash}")
+
+        if len(self.mt_prf_list) == 0:
+            print("[DEBUG] Empty merkle proof list")
+            return False
+
+        if len(self.mt_prf_list) == 1:
+            print("[DEBUG] Single element proof")
+            if (current_hash != self.mt_prf_list[0] or true_root != self.mt_prf_list[0] or
+                    true_root != current_hash):
+                check_flag = False
+            print(f"[DEBUG] Single element validation result: {check_flag}")
+            return check_flag
+
+        # Check leaf hash match
+        if current_hash != self.mt_prf_list[0]:
+            print(f"[DEBUG] Leaf hash mismatch: current={current_hash}, proof[0]={self.mt_prf_list[0]}")
+            check_flag = False
+
+        # Check root hash match
+        if self.mt_prf_list[-1] != true_root:
+            print(f"[DEBUG] Root hash mismatch: proof[-1]={self.mt_prf_list[-1]}, true_root={true_root}")
+            check_flag = False
+
+        # Check if proof has correct structure (odd number of elements: pairs + root)
+        if len(self.mt_prf_list) % 2 != 1:
+            print(f"[DEBUG] Invalid proof structure length: {len(self.mt_prf_list)} (should be odd)")
+            return False
+
+        # Verify the proof path from leaf to root
+        for i in range(len(self.mt_prf_list) // 2):
+            sibling_hash = self.mt_prf_list[2 * i + 1]
+            parent_hash = self.mt_prf_list[2 * i + 2]
+
+            print(f"[DEBUG] Step {i}: current_hash={current_hash}")
+            print(f"[DEBUG] Step {i}: sibling_hash={sibling_hash}")
+            print(f"[DEBUG] Step {i}: parent_hash={parent_hash}")
+
+            # Try both orders for hash combination
+            combined_hash1 = sha256_hash(current_hash + sibling_hash)
+            combined_hash2 = sha256_hash(sibling_hash + current_hash)
+
+            print(f"[DEBUG] Step {i}: combined_hash1={combined_hash1}")
+            print(f"[DEBUG] Step {i}: combined_hash2={combined_hash2}")
+
+            # The parent should match one of the combinations
+            if combined_hash1 != parent_hash and combined_hash2 != parent_hash:
+                print(f"[DEBUG] Hash combination failed at step {i}")
+                check_flag = False
+                break
+            else:
+                print(f"[DEBUG] Hash combination succeeded at step {i}")
+                current_hash = parent_hash
+
+        # Final verification: current_hash should match the root
+        if current_hash != self.mt_prf_list[-1]:
+            print(f"[DEBUG] Final verification failed: current_hash={current_hash}, root={self.mt_prf_list[-1]}")
+            check_flag = False
+
+        print(f"[DEBUG] Final verification result: {check_flag}")
         return check_flag
 
     def to_dict(self) -> dict:

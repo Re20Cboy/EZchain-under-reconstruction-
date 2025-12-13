@@ -113,6 +113,8 @@ class GenesisBlockCreator:
         Raises:
             ValueError: If no accounts provided or invalid parameters
         """
+        logger.info("🌟 ===== 开始创建创世块 ===== 🌟")
+
         if not accounts:
             raise ValueError("At least one account must be provided for genesis block")
 
@@ -123,25 +125,35 @@ class GenesisBlockCreator:
 
         miner_address = custom_miner or GENESIS_MINER
 
-        logger.info(f"Creating genesis block for {len(accounts)} accounts")
-        logger.info(f"Sender: {sender_address}, Miner: {miner_address}")
+        logger.info(f"为 {len(accounts)} 个账户创建创世块")
+        logger.info(f"发送者: {sender_address}, 矿工: {miner_address}")
+        logger.info(f"账户列表: {[acc.address for acc in accounts]}")
 
         # Step 1: Create genesis transactions for all accounts
+        logger.info("\n=== 步骤1: 为所有账户创建创世交易 ===")
         genesis_multi_txns = self._create_genesis_transactions(accounts, sender_address)
+        logger.info(f"创建了 {len(genesis_multi_txns)} 个MultiTransactions对象")
 
         # Step 2: Create SubmitTxInfo for each MultiTransactions
+        logger.info("\n=== 步骤2: 为每个MultiTransactions创建SubmitTxInfo ===")
         genesis_submit_tx_infos = []
-        for multi_txn in genesis_multi_txns:
+        for i, multi_txn in enumerate(genesis_multi_txns):
             submit_tx_info = SubmitTxInfo(multi_txn, private_key_pem, public_key_pem)
             genesis_submit_tx_infos.append(submit_tx_info)
+            logger.info(f"  SubmitTxInfo #{i+1} 已创建，哈希: {submit_tx_info.multi_transactions_hash}")
 
         # Step 3: Build Merkle tree from all SubmitTxInfo (instead of MultiTransactions)
+        logger.info("\n=== 步骤3: 从所有SubmitTxInfo构建默克尔树 ===")
         merkle_tree, merkle_proofs = self._build_genesis_merkle_tree_from_submit_tx_infos(genesis_submit_tx_infos)
 
         # Step 4: Create genesis block
+        logger.info("\n=== 步骤4: 创建创世块 ===")
+        merkle_root = merkle_tree.get_root_hash()
+        logger.info(f"🌳 创世块默克尔树根: {merkle_root}")
+
         genesis_block = Block(
             index=GENESIS_BLOCK_INDEX,
-            m_tree_root=merkle_tree.get_root_hash(),
+            m_tree_root=merkle_root,
             miner=miner_address,
             pre_hash="0",  # Genesis block has no previous hash
             nonce=0,  # No mining needed for genesis
@@ -149,11 +161,20 @@ class GenesisBlockCreator:
         )
 
         # Step 5: Add transaction submitter addresses to bloom filter
+        logger.info("\n=== 步骤5: 添加提交者地址到布隆过滤器 ===")
         for submit_tx_info in genesis_submit_tx_infos:
             genesis_block.add_item_to_bloom(submit_tx_info.submitter_address)
+            logger.info(f"  已添加提交者地址到布隆过滤器: {submit_tx_info.submitter_address}")
 
-        logger.info(f"Genesis block created with {len(genesis_submit_tx_infos)} SubmitTxInfo transactions")
-        logger.info(f"Merkle root: {genesis_block.m_tree_root}")
+        logger.info("\n🎉 ===== 创世块创建完成 ===== 🎉")
+        logger.info(f"  - 创世块索引: {genesis_block.index}")
+        logger.info(f"  - 矿工地址: {genesis_block.miner}")
+        logger.info(f"  - 前一个区块哈希: {genesis_block.pre_hash}")
+        logger.info(f"  - 随机数 (nonce): {genesis_block.nonce}")
+        logger.info(f"  - 时间戳: {genesis_block.time}")
+        logger.info(f"  - 默克尔树根 (Merkle Root): {genesis_block.m_tree_root}")
+        logger.info(f"  - 包含 SubmitTxInfo 数量: {len(genesis_submit_tx_infos)}")
+        logger.info(f"  - 布隆过滤器大小: {len(genesis_block.bloom) if genesis_block.bloom else 'N/A'}")
 
         # Store genesis_submit_tx_infos for use in create_genesis_vpb_for_account
         self._genesis_submit_tx_infos = genesis_submit_tx_infos
@@ -181,43 +202,23 @@ class GenesisBlockCreator:
             raise ValueError(f"MultiTransactions not found in merkle tree: {multi_txn.digest}")
 
         # Generate proper merkle proof using the tree structure
-        try:
-            # Get the proof path from leaf to root using the existing prf_list
-            # Check that prf_list exists and is not None, and leaf_index is valid
-            if (hasattr(merkle_tree, 'prf_list') and
-                merkle_tree.prf_list is not None and
-                leaf_index is not None and
-                leaf_index < len(merkle_tree.prf_list)):
-                proof_path = merkle_tree.prf_list[leaf_index]
-                # Ensure proof_path is not None or empty
-                if proof_path is None or len(proof_path) == 0:
-                    # Fallback to simple proof
-                    proof_path = [multi_txn.digest, merkle_tree.get_root_hash()]
+        # Since we fixed the MerkleTree construction, we should always have valid prf_list
+        if (hasattr(merkle_tree, 'prf_list') and
+            merkle_tree.prf_list is not None and
+            leaf_index is not None and
+            leaf_index < len(merkle_tree.prf_list)):
+            proof_path = merkle_tree.prf_list[leaf_index]
+            if proof_path and len(proof_path) > 0:
+                # Create MerkleTreeProof with the proper path from the tree
+                merkle_proof = MerkleTreeProof(proof_path)
+                logger.debug(f"Created merkle proof for {multi_txn.digest} with {len(proof_path)} elements")
+                return merkle_proof
             else:
-                # Fallback: create simple proof with transaction digest and root hash
-                proof_path = [multi_txn.digest, merkle_tree.get_root_hash()]
+                logger.error(f"Empty proof path generated for leaf index {leaf_index}")
 
-            # Create MerkleTreeProof with the proper path
-            merkle_proof = MerkleTreeProof(proof_path)
-
-            # Verify the proof is valid if possible
-            if hasattr(merkle_proof, 'check_prf'):
-                try:
-                    if not merkle_proof.check_prf(multi_txn.digest, merkle_tree.get_root_hash()):
-                        logger.warning(f"Generated proof verification failed for {multi_txn.digest}")
-                        # Fallback to simple proof
-                        merkle_proof = MerkleTreeProof([multi_txn.digest, merkle_tree.get_root_hash()])
-                except Exception as verify_error:
-                    # Verification failed, use fallback
-                    logger.debug(f"Proof verification failed: {verify_error}")
-                    merkle_proof = MerkleTreeProof([multi_txn.digest, merkle_tree.get_root_hash()])
-
-            return merkle_proof
-
-        except Exception as e:
-            logger.error(f"Error creating merkle proof for {multi_txn.digest}: {e}")
-            # Fallback to simple proof
-            return MerkleTreeProof([multi_txn.digest, merkle_tree.get_root_hash()])
+        # If we get here, something went wrong with the merkle tree construction
+        logger.error(f"Failed to generate merkle proof: prf_list unavailable or invalid for leaf index {leaf_index}")
+        raise ValueError(f"Failed to generate valid merkle proof for MultiTransactions {multi_txn.digest}")
 
     def create_merkle_proof_for_submit_tx_info(self,
                                                submit_tx_info: SubmitTxInfo,
@@ -240,43 +241,23 @@ class GenesisBlockCreator:
             raise ValueError(f"SubmitTxInfo not found in merkle tree: {submit_tx_info.multi_transactions_hash}")
 
         # Generate proper merkle proof using the tree structure
-        try:
-            # Get the proof path from leaf to root using the existing prf_list
-            # Check that prf_list exists and is not None, and leaf_index is valid
-            if (hasattr(merkle_tree, 'prf_list') and
-                merkle_tree.prf_list is not None and
-                leaf_index is not None and
-                leaf_index < len(merkle_tree.prf_list)):
-                proof_path = merkle_tree.prf_list[leaf_index]
-                # Ensure proof_path is not None or empty
-                if proof_path is None or len(proof_path) == 0:
-                    # Fallback to simple proof
-                    proof_path = [submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()]
+        # Since we fixed the MerkleTree construction, we should always have valid prf_list
+        if (hasattr(merkle_tree, 'prf_list') and
+            merkle_tree.prf_list is not None and
+            leaf_index is not None and
+            leaf_index < len(merkle_tree.prf_list)):
+            proof_path = merkle_tree.prf_list[leaf_index]
+            if proof_path and len(proof_path) > 0:
+                # Create MerkleTreeProof with the proper path from the tree
+                merkle_proof = MerkleTreeProof(proof_path)
+                logger.debug(f"Created merkle proof for {submit_tx_info.multi_transactions_hash} with {len(proof_path)} elements")
+                return merkle_proof
             else:
-                # Fallback: create simple proof with SubmitTxInfo hash and root hash
-                proof_path = [submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()]
+                logger.error(f"Empty proof path generated for leaf index {leaf_index}")
 
-            # Create MerkleTreeProof with the proper path
-            merkle_proof = MerkleTreeProof(proof_path)
-
-            # Verify the proof is valid if possible
-            if hasattr(merkle_proof, 'check_prf'):
-                try:
-                    if not merkle_proof.check_prf(submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()):
-                        logger.warning(f"Generated proof verification failed for {submit_tx_info.multi_transactions_hash}")
-                        # Fallback to simple proof
-                        merkle_proof = MerkleTreeProof([submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()])
-                except Exception as verify_error:
-                    # Verification failed, use fallback
-                    logger.debug(f"Proof verification failed: {verify_error}")
-                    merkle_proof = MerkleTreeProof([submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()])
-
-            return merkle_proof
-
-        except Exception as e:
-            logger.error(f"Error creating merkle proof for {submit_tx_info.multi_transactions_hash}: {e}")
-            # Fallback to simple proof
-            return MerkleTreeProof([submit_tx_info.multi_transactions_hash, merkle_tree.get_root_hash()])
+        # If we get here, something went wrong with the merkle tree construction
+        logger.error(f"Failed to generate merkle proof: prf_list unavailable or invalid for leaf index {leaf_index}")
+        raise ValueError(f"Failed to generate valid merkle proof for SubmitTxInfo {submit_tx_info.multi_transactions_hash}")
 
     def create_block_index(self, recipient_address: str) -> BlockIndexList:
         """
@@ -368,6 +349,143 @@ class GenesisBlockCreator:
                 continue
 
         return genesis_multi_txns
+
+    def _create_unified_genesis_transactions(self, accounts: List["Account"], sender_address: str) -> MultiTransactions:
+        """
+        Create ONE unified MultiTransactions for all genesis transactions
+
+        This method creates a single MultiTransactions containing all the
+        individual value distribution transactions for all accounts, since
+        all transactions have the same sender (genesis account).
+
+        Args:
+            accounts: List of Account objects to receive initial values
+            sender_address: Address of the genesis account (sender)
+
+        Returns:
+            MultiTransactions: Single unified genesis MultiTransactions containing all accounts' transactions
+        """
+        try:
+            # Generate genesis key pair for signing
+            genesis_private_key, genesis_public_key = secure_signature_handler.signer.generate_key_pair()
+
+            # Create all individual transactions for all accounts
+            all_transactions = []
+            current_value_index = 0x1000  # Starting value index for genesis block
+
+            logger.info(f"Creating unified genesis transactions for {len(accounts)} accounts")
+
+            for account in accounts:
+                # Create individual transactions for each denomination value for this account
+                for value_amount, count in self.denomination_config:
+                    for _ in range(count):
+                        # Calculate unique index for this value
+                        begin_index = f"0x{current_value_index:04x}"
+
+                        # Create a Value object for this denomination
+                        from EZ_VPB.values.Value import Value, ValueState
+                        genesis_value = Value(
+                            beginIndex=begin_index,
+                            valueNum=value_amount,
+                            state=ValueState.UNSPENT
+                        )
+
+                        # Create a single transaction for this value
+                        time_str = self.genesis_timestamp if isinstance(self.genesis_timestamp, str) else self.genesis_timestamp.isoformat()
+                        transaction = Transaction(
+                            sender=sender_address,
+                            recipient=account.address,
+                            nonce=len(all_transactions),  # Use transaction count as nonce
+                            signature=None,  # Will be signed below
+                            value=[genesis_value],
+                            time=time_str
+                        )
+
+                        # Sign the transaction using genesis private key
+                        transaction.sig_txn(genesis_private_key)
+
+                        all_transactions.append(transaction)
+                        current_value_index += value_amount
+
+            if not all_transactions:
+                logger.error("No transactions created for unified genesis block")
+                raise ValueError("No transactions created for unified genesis block")
+
+            # Create ONE unified MultiTransactions object containing ALL genesis transactions
+            unified_multi_txn = MultiTransactions(
+                sender=sender_address,
+                multi_txns=all_transactions
+            )
+
+            # Sign the unified multi-transaction
+            unified_multi_txn.sig_acc_txn(genesis_private_key)
+
+            logger.info(f"Created unified genesis MultiTransactions with {len(all_transactions)} total transactions for {len(accounts)} accounts")
+            return unified_multi_txn
+
+        except Exception as e:
+            logger.error(f"Error creating unified genesis transactions: {e}")
+            raise
+
+    def _build_genesis_merkle_tree_from_single_submit_tx_info(self, submit_tx_info: SubmitTxInfo) -> MerkleTree:
+        """
+        Build a merkle tree from a single SubmitTxInfo (special case for genesis block)
+
+        For genesis block with single SubmitTxInfo, the merkle tree is just the hash itself
+        to maintain compatibility with the merkle proof system.
+
+        Args:
+            submit_tx_info: Single SubmitTxInfo for genesis block
+
+        Returns:
+            MerkleTree: Merkle tree with single node (the SubmitTxInfo hash)
+        """
+        try:
+            from EZ_Units.MerkleTree import MerkleTree
+
+            logger.info("="*50)
+            logger.info("开始构建单节点创世默克尔树")
+
+            # Get the hash of the single SubmitTxInfo
+            submit_tx_hash = submit_tx_info.multi_transactions_hash
+
+            logger.info(f"  - SubmitTxInfo哈希: {submit_tx_hash}")
+            logger.info(f"  - submitter_address: {submit_tx_info.submitter_address}")
+
+            # 记录multi_transactions_hash的详细信息
+            multi_transactions_hash = submit_tx_info.multi_transactions_hash
+            logger.info(f"  - multi_transactions_hash: {multi_transactions_hash}")
+
+            # 注意：SubmitTxInfo只包含哈希，不包含完整的multi_transactions对象
+            # 所以无法获取详细的总价值和接收账户信息
+
+            # Create a merkle tree with just this single hash as both leaf and root
+            logger.info("构建单节点MerkleTree...")
+            merkle_tree = MerkleTree([submit_tx_hash])
+
+            logger.info("="*50)
+            logger.info("单节点MerkleTree构建完成!")
+            logger.info(f"  - 默克尔树包含 1 个叶子节点")
+            logger.info(f"  - 默克尔树根 (Merkle Root): {merkle_tree.get_root_hash()}")
+
+            # 记录叶子节点信息
+            if hasattr(merkle_tree, 'leaves') and merkle_tree.leaves:
+                logger.info(f"  - 叶子节点内容: {merkle_tree.leaves[0] if hasattr(merkle_tree.leaves[0], 'content') or hasattr(merkle_tree.leaves[0], 'value') else str(merkle_tree.leaves[0])}")
+
+            # 记录prf_list信息（如果存在）
+            if hasattr(merkle_tree, 'prf_list') and merkle_tree.prf_list:
+                logger.info(f"  - 证明路径列表 (prf_list): {len(merkle_tree.prf_list)} 个条目")
+                if merkle_tree.prf_list[0]:
+                    logger.info(f"    [0] 证明路径: {merkle_tree.prf_list[0]}")
+            else:
+                logger.warning("  - 证明路径列表 (prf_list) 为空或不存在")
+            logger.info("="*50)
+
+            return merkle_tree
+
+        except Exception as e:
+            logger.error(f"Error creating single-node genesis merkle tree: {e}")
+            raise
 
     def _create_account_genesis_transaction(self,
                                            account: "Account",
@@ -489,8 +607,8 @@ class GenesisBlockCreator:
             # Create a merkle tree with a single placeholder digest
             txn_digests = ["genesis_empty_placeholder"]
 
-        # Build merkle tree (is_genesis_block=True for special handling)
-        merkle_tree = MerkleTree(txn_digests, is_genesis_block=True)
+        # Build merkle tree
+        merkle_tree = MerkleTree(txn_digests)
 
         logger.info(f"Built genesis merkle tree with {len(txn_digests)} transactions")
         logger.info(f"Merkle root: {merkle_tree.get_root_hash()}")
@@ -502,26 +620,67 @@ class GenesisBlockCreator:
         """
         Build Merkle tree from genesis SubmitTxInfo transactions
 
+
         Args:
             genesis_submit_tx_infos: List of genesis SubmitTxInfo objects
 
         Returns:
             Tuple[MerkleTree, Dict]: Merkle tree and proof mapping
         """
+        logger.info("="*50)
+        logger.info("开始构建创世块的默克尔树")
+        logger.info(f"总共收到 {len(genesis_submit_tx_infos)} 个SubmitTxInfo对象")
+
         # Create list of SubmitTxInfo hashes for merkle tree
-        submit_tx_hashes = [submit_tx_info.multi_transactions_hash for submit_tx_info in genesis_submit_tx_infos]
+        submit_tx_hashes = []
+
+        # 详细记录每个SubmitTxInfo的信息
+        for i, submit_tx_info in enumerate(genesis_submit_tx_infos):
+            submit_tx_hash = submit_tx_info.multi_transactions_hash
+            submit_tx_hashes.append(submit_tx_hash)
+
+            logger.info(f"  SubmitTxInfo #{i+1}:")
+            logger.info(f"    - submit_tx_hash: {submit_tx_hash}")
+            logger.info(f"    - submitter_address: {submit_tx_info.submitter_address}")
+            logger.info(f"    - multi_transactions_hash: {submit_tx_info.multi_transactions_hash}")
+
+            # 注意：SubmitTxInfo只包含哈希，无法直接获取multi_transactions的详细信息
+
+        logger.info("-"*30)
+        logger.info(f"所有submit_tx_hash汇总:")
+        for i, hash_val in enumerate(submit_tx_hashes):
+            logger.info(f"  [{i}] {hash_val}")
+        logger.info("-"*30)
 
         # Handle empty transaction list case
         if not submit_tx_hashes:
-            logger.warning("No genesis SubmitTxInfo created, using empty merkle tree")
+            logger.warning("没有创世SubmitTxInfo被创建，使用空的默克尔树")
             # Create a merkle tree with a single placeholder digest
             submit_tx_hashes = ["genesis_empty_placeholder"]
+            logger.warning(f"使用占位符: {submit_tx_hashes[0]}")
 
-        # Build merkle tree (is_genesis_block=True for special handling)
-        merkle_tree = MerkleTree(submit_tx_hashes, is_genesis_block=True)
+        # Build merkle tree
+        logger.info("开始构建MerkleTree对象...")
+        merkle_tree = MerkleTree(submit_tx_hashes)
 
-        logger.info(f"Built genesis merkle tree with {len(submit_tx_hashes)} SubmitTxInfo")
-        logger.info(f"Merkle root: {merkle_tree.get_root_hash()}")
+        logger.info("="*50)
+        logger.info("MerkleTree构建完成!")
+        logger.info(f"  - 默克尔树包含 {len(submit_tx_hashes)} 个叶子节点")
+        logger.info(f"  - 默克尔树根 (Merkle Root): {merkle_tree.get_root_hash()}")
+
+        # 如果有prf_list，记录其信息
+        if hasattr(merkle_tree, 'prf_list') and merkle_tree.prf_list:
+            logger.info(f"  - 证明路径列表 (prf_list) 包含 {len(merkle_tree.prf_list)} 个条目")
+            for i, proof_path in enumerate(merkle_tree.prf_list):
+                if proof_path:
+                    logger.info(f"    [{i}] 证明路径长度: {len(proof_path)}")
+                else:
+                    logger.info(f"    [{i}] 证明路径: 空")
+        else:
+            logger.warning("  - 证明路径列表 (prf_list) 为空或不存在")
+
+        logger.info(f"  - 叶子节点数量: {len(merkle_tree.leaves) if hasattr(merkle_tree, 'leaves') else 'N/A'}")
+        logger.info("="*50)
 
         return merkle_tree, {}
 
@@ -622,67 +781,77 @@ def create_genesis_block(accounts: List["Account"],
 
     Returns:
         Tuple[Block, List[SubmitTxInfo], List[MultiTransactions], MerkleTree]:
-        The created genesis block, SubmitTxInfo list, MultiTransactions list, and MerkleTree
+        The created genesis block, single SubmitTxInfo list, single MultiTransactions list, and MerkleTree
     """
+    logger.info("🚀 使用便捷函数创建创世块 🚀")
+
     creator = GenesisBlockCreator(denomination_config)
 
-    # First create genesis multi-transactions
+    # Create ONE unified MultiTransactions for all genesis transactions
     from EZ_GENESIS.genesis_account import get_genesis_manager
     genesis_manager = get_genesis_manager()
-    genesis_multi_txns = creator._create_genesis_transactions(
-        accounts=accounts,
-        sender_address=genesis_manager.get_genesis_address()
-    )
+    logger.info(f"为 {len(accounts)} 个账户创建统一的MultiTransactions")
+
+    unified_genesis_multi_txn = creator._create_unified_genesis_transactions(accounts, genesis_manager.get_genesis_address())
+    logger.info(f"统一MultiTransactions包含 {len(unified_genesis_multi_txn.multi_txns)} 个交易")
 
     # Generate genesis key pair for signing
     genesis_private_key_pem, genesis_public_key_pem = secure_signature_handler.signer.generate_key_pair()
 
-    # Create SubmitTxInfo from each MultiTransactions
-    genesis_submit_tx_infos = []
-    for multi_txn in genesis_multi_txns:
-        submit_tx_info = SubmitTxInfo(multi_txn, genesis_private_key_pem, genesis_public_key_pem)
-        genesis_submit_tx_infos.append(submit_tx_info)
+    # Create ONE SubmitTxInfo for the unified MultiTransactions
+    genesis_submit_tx_info = SubmitTxInfo(unified_genesis_multi_txn, genesis_private_key_pem, genesis_public_key_pem)
+    genesis_submit_tx_infos = [genesis_submit_tx_info]  # Single element list
 
-    # Build Merkle tree from SubmitTxInfo hashes (this is the correct approach)
-    merkle_tree, _ = creator._build_genesis_merkle_tree_from_submit_tx_infos(genesis_submit_tx_infos)
+    logger.info(f"统一的SubmitTxInfo哈希: {genesis_submit_tx_info.multi_transactions_hash}")
+
+    # Build Merkle tree from single SubmitTxInfo (special case for genesis)
+    merkle_tree = creator._build_genesis_merkle_tree_from_single_submit_tx_info(genesis_submit_tx_info)
 
     # Create genesis block
     miner_address = custom_miner or GENESIS_MINER
+    merkle_root = merkle_tree.get_root_hash()
+
+    logger.info(f"\n🌟 便捷函数创建创世块总结:")
+    logger.info(f"  - 账户数量: {len(accounts)}")
+    logger.info(f"  - 总交易数: {len(unified_genesis_multi_txn.multi_txns)}")
+    logger.info(f"  - SubmitTxInfo 数量: 1 (统一)")
+    logger.info(f"  - 矿工地址: {miner_address}")
+    logger.info(f"  - 最终默克尔树根: {merkle_root}")
+
     genesis_block = Block(
         index=GENESIS_BLOCK_INDEX,
-        m_tree_root=merkle_tree.get_root_hash(),
+        m_tree_root=merkle_root,
         miner=miner_address,
         pre_hash="0",  # Genesis block has no previous hash
         nonce=0,  # No mining needed for genesis
         time=creator.genesis_timestamp
     )
 
-    # Add transaction submitter addresses to bloom filter
-    for submit_tx_info in genesis_submit_tx_infos:
-        genesis_block.add_item_to_bloom(submit_tx_info.submitter_address)
+    # Add transaction submitter address to bloom filter (only one - genesis sender)
+    genesis_block.add_item_to_bloom(genesis_submit_tx_info.submitter_address)
 
-    logger.info(f"Genesis block created with {len(genesis_submit_tx_infos)} SubmitTxInfo transactions")
-    logger.info(f"Merkle root: {genesis_block.m_tree_root}")
+    logger.info(f"\n✅ 便捷函数创世块创建完成! 默克尔树根: {genesis_block.m_tree_root}")
 
-    return genesis_block, genesis_submit_tx_infos, genesis_multi_txns, merkle_tree
+    # Return single MultiTransactions in list for compatibility
+    return genesis_block, genesis_submit_tx_infos, [unified_genesis_multi_txn], merkle_tree
 
 
 def create_genesis_vpb_for_account(account_addr: str,
                                  genesis_block: Block,
-                                 genesis_submit_tx_info: SubmitTxInfo,
-                                 genesis_multi_txn: MultiTransactions,
+                                 unified_genesis_submit_tx_info: SubmitTxInfo,
+                                 unified_genesis_multi_txn: MultiTransactions,
                                  merkle_tree: MerkleTree,
                                  denomination_config: Optional[List[Tuple[int, int]]] = None) -> Tuple[List["Value"], List["ProofUnit"], BlockIndexList]:
     """
-    Create complete VPB data for a single account from genesis block using SubmitTxInfo and MultiTransactions
+    Create complete VPB data for a single account from genesis block using unified SubmitTxInfo and MultiTransactions
     Genesis miner creates VPB data for account initialization, compatible with VPBManager.initialize_from_genesis method
 
     Args:
         account_addr: Account address string
         genesis_block: Genesis block containing the transaction
-        genesis_submit_tx_info: SubmitTxInfo for the account (for merkle proof)
-        genesis_multi_txn: MultiTransactions for the account (for transaction data)
-        merkle_tree: Merkle tree of genesis SubmitTxInfo transactions
+        unified_genesis_submit_tx_info: Unified SubmitTxInfo for ALL genesis transactions (for merkle proof)
+        unified_genesis_multi_txn: Unified MultiTransactions containing ALL accounts' transactions
+        merkle_tree: Merkle tree of the single genesis SubmitTxInfo
         denomination_config: List of (amount, count) tuples for value distribution
 
     Returns:
@@ -698,9 +867,9 @@ def create_genesis_vpb_for_account(account_addr: str,
     """
     creator = GenesisBlockCreator(denomination_config)
 
-    # Create Merkle proof for the account's SubmitTxInfo (not MultiTransactions)
+    # Create Merkle proof for the unified SubmitTxInfo (single genesis transaction)
     # This ensures consistency with normal VPB updates that use SubmitTxInfo hashes as merkle tree leaves
-    merkle_proof = creator.create_merkle_proof_for_submit_tx_info(genesis_submit_tx_info, merkle_tree)
+    merkle_proof = creator.create_merkle_proof_for_submit_tx_info(unified_genesis_submit_tx_info, merkle_tree)
 
     # Create block index for the account
     block_index = creator.create_block_index(account_addr)
@@ -709,42 +878,38 @@ def create_genesis_vpb_for_account(account_addr: str,
     genesis_values = []
     genesis_proof_units = []
 
-    if not genesis_multi_txn or not genesis_multi_txn.multi_txns:
+    if not unified_genesis_multi_txn or not unified_genesis_multi_txn.multi_txns:
         logger.error(f"No transactions found for account {account_addr}")
         return [], [], block_index
 
-    # Create Value and ProofUnit for each individual transaction
-    for txn in genesis_multi_txn.multi_txns:
+    # Create Value and ProofUnit for transactions that belong to this account
+    for txn in unified_genesis_multi_txn.multi_txns:
         try:
             # Extract Value information from transaction's value list
             if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
                 # Each transaction should contain one Value object for genesis
                 for txn_value in txn.value:
                     if isinstance(txn_value, Value):
-                        # Extract genesis value from transaction
-                        # Use the Value object directly from the transaction
-                        genesis_values.append(txn_value)
+                        # Only process transactions that belong to this account (as recipient)
+                        if hasattr(txn, 'recipient') and txn.recipient == account_addr:
+                            # Extract genesis value from transaction
+                            # Use the Value object directly from the transaction
+                            genesis_values.append(txn_value)
 
-                        # Create a single-transaction MultiTransactions for this value
-                        single_multi_txn = MultiTransactions(
-                            sender=genesis_multi_txn.sender,
-                            multi_txns=[txn]  # Only this specific transaction
-                        )
-                        # Set the timestamp and digest for the single transaction
-                        single_multi_txn.time = genesis_multi_txn.time
-                        single_multi_txn.set_digest()
+                            # Create ProofUnit for this value using the UNIFIED MultiTransactions and the SAME merkle proof
+                            # All genesis VPBs should reference the same unified MultiTransactions and SubmitTxInfo merkle proof
+                            proof_unit = ProofUnit(
+                                owner=account_addr,
+                                owner_multi_txns=unified_genesis_multi_txn,  # Use the unified MultiTransactions
+                                owner_mt_proof=merkle_proof  # Use the same merkle proof for all values
+                            )
+                            genesis_proof_units.append(proof_unit)
 
-                        # Create real ProofUnit for this specific value using the same merkle proof
-                        # This merkle proof is now based on SubmitTxInfo hash, consistent with normal VPB updates
-                        proof_unit = ProofUnit(
-                            owner=account_addr,
-                            owner_multi_txns=single_multi_txn,
-                            owner_mt_proof=merkle_proof
-                        )
-                        genesis_proof_units.append(proof_unit)
-
-                        # Detailed value creation logging - commented out to reduce verbosity
-                        # logger.info(f"Created Value {txn_value.begin_index}-{txn_value.end_index} (amount: {txn_value.value_num}) for account {account_addr}")
+                            # Detailed value creation logging - commented out to reduce verbosity
+                            # logger.info(f"Created Value {txn_value.begin_index}-{txn_value.end_index} (amount: {txn_value.value_num}) for account {account_addr}")
+                        else:
+                            # Skip transactions that don't belong to this account
+                            continue
                     else:
                         logger.warning(f"Transaction value is not a Value object: {type(txn_value)}")
             else:

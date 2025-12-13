@@ -112,7 +112,7 @@ class TestMerkleTree:
     def test_tree_genesis_block_initialization(self, merkle_tree_data):
         """Test genesis block tree initialization."""
         test_data, empty_data, single_data, odd_data = merkle_tree_data
-        tree = MerkleTree(single_data, is_genesis_block=True)
+        tree = MerkleTree(single_data)
 
         assert len(tree.leaves) == 1
         assert tree.root.value == tree.leaves[0].value

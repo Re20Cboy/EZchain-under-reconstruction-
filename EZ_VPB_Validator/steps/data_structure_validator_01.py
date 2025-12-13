@@ -305,6 +305,7 @@ class DataStructureValidator(ValidatorBase):
         proof_count = len(proof_units)
         block_count = len(block_index_list.index_lst)
 
+        
         if proof_count != block_count:
             return False, f"Proof count ({proof_count}) does not match block index count ({block_count})"
 

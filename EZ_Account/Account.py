@@ -81,7 +81,7 @@ class Account:
         self.submitted_transactions: Dict[str, Any] = {}
         self.submitted_tx_lock = threading.RLock()
 
-        print(f"Account {self.name} ({address}) initialized with VPBManager")
+        # 精简输出: print(f"Account {self.name} ({address}) initialized with VPBManager")
 
     # ========== VPB管理接口（通过VPBManager） ==========
 
@@ -244,7 +244,7 @@ class Account:
             if multi_transaction_result:
                 self._record_multi_transaction(multi_transaction_result, "batch_created", reference)
                 multi_txn_hash = multi_transaction_result["multi_transactions"].digest
-                print(f"批量交易创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
+                # 精简输出: print(f"批量交易创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
                 return multi_transaction_result
             else:
                 print("批量交易创建失败")
@@ -295,7 +295,7 @@ class Account:
             self._record_multi_transaction(multi_txn_result, "submit_info_created")
 
             multi_txn_hash = multi_transactions.digest
-            print(f"SubmitTxInfo创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
+            # 精简输出: print(f"SubmitTxInfo创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
             self.last_activity = datetime.now()
 
             return submit_tx_info
@@ -339,7 +339,7 @@ class Account:
 
                 self._add_to_submitted_queue(multi_tx_hash, multi_tx_data)
 
-                print(f"交易已成功提交至交易池并添加到本地队列: {multi_tx_hash[:16]}...")
+                # 精简输出: print(f"交易已成功提交至交易池并添加到本地队列: {multi_tx_hash[:16]}...")
                 self.last_activity = datetime.now()
                 return True
             else:
@@ -457,7 +457,7 @@ class Account:
         try:
             with self.submitted_tx_lock:
                 self.submitted_transactions[multi_tx_hash] = multi_tx_data
-                print(f"交易已添加到本地提交队列: {multi_tx_hash[:16]}...")
+                # 精简输出: print(f"交易已添加到本地提交队列: {multi_tx_hash[:16]}...")
         except Exception as e:
             print(f"添加交易到本地队列失败: {e}")
 

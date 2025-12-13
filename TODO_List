@@ -14,8 +14,8 @@ EZchain 项目中 test_blockchain_integration_with_real_account.py 测试的深�
 2. 根本原因分析
 通过详细的代码分析和添加调试日志，我发现了问题的根本原因： 数据结构层次不一致：
 生成层: MultiTransactions → SubmitTxInfo → Merkle tree (基于 SubmitTxInfo hash 构建)
-验证层: MultiTransactions digest → Expected Merkle proof leaf (digest's hash)
-不匹配: Merkle proof 实际包含的是 SubmitTxInfo hash's hash，而不是 MultiTransactions digest's hash
+验证层: MultiTransactions digest → Expected Merkle proof leaf (digests hash)
+不匹配: Merkle proof 实际包含的是 SubmitTxInfo hashs hash，而不是 MultiTransactions digests hash
 3. 具体技术细节
 创世块创建过程：
 在 EZ_GENESIS/genesis.py:509 中，Merkle树使用 SubmitTxInfo 的 hash 构建：

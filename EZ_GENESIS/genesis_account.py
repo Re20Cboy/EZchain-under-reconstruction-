@@ -95,7 +95,7 @@ class GenesisAccountManager:
             data = json.load(f)
 
         self.genesis_account = GenesisAccount.from_dict(data)
-        print(f"Loaded genesis account: {self.genesis_account.address}")
+        # 精简输出: print(f"Loaded genesis account: {self.genesis_account.address}")
 
     def _create_new_account(self):
         """创建新的创世账户"""

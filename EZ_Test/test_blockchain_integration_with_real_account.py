@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from EZ_Main_Chain.Blockchain import (
     Blockchain, ChainConfig, ConsensusStatus
 )
-from EZ_Main_Chain.Block import Block
+from EZ_Main_Chain.Block import Block  
 from EZ_Tx_Pool.TXPool import TxPool
 from EZ_Tx_Pool.PickTx import TransactionPicker, pick_transactions_from_pool_with_proofs
 from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
@@ -38,9 +38,23 @@ from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_acco
 from EZ_Miner.miner import Miner
 from EZ_VPB_Validator.vpb_validator import VPBValidator
 
-# Configure logging - disable most logging to reduce verbosity
-logging.basicConfig(level=logging.CRITICAL, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging - 启用日志输出以便观察创世块默克尔树形成过程
+import logging
+import sys
+
+# 配置日志级别为INFO，以便看到genesis.py中的详细日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
 logger = logging.getLogger(__name__)
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
@@ -111,7 +125,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         self.accounts = []
         account_names = ["alice", "bob", "charlie", "david"]
 
-        print("创建真实Account节点...")
+        print("📝 创建Account节点...")
 
         # 先创建所有Account节点
         for i, name in enumerate(account_names):
@@ -139,18 +153,18 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         # 使用项目的创世块模块初始化所有账户
         self.initialize_accounts_with_project_genesis()
 
-        print(f"成功创建并初始化 {len(self.accounts)} 个真实Account节点")
+        print(f"✅ 创建完成 {len(self.accounts)} 个Account节点")
 
     def initialize_accounts_with_project_genesis(self):
         """使用项目自带的EZ_GENESIS模块初始化所有账户"""
-        print("= 开始创世初始化...")
+        print("🌟 开始创世初始化...")
 
         # 创建创世块创建器，使用自定义的面额配置
         custom_denomination = [
             (1000, 1), (500, 1), (100, 5), (50, 5), (10, 5), (1, 5)
         ]
 
-        print(f"[CONFIG] 为 {len(self.accounts)} 个账户创建创世块，配置: 1000×1 + 500×1 + 100×5 + 50×5 + 10×5 + 1×5")
+        print(f"⚙️  为 {len(self.accounts)} 个账户创建创世块")
 
         # 创建创世块（现在返回一致的数据：区块、SubmitTxInfo、MultiTransactions、默克尔树）
         genesis_block, genesis_submit_tx_infos, genesis_multi_txns, merkle_tree = create_genesis_block(
@@ -159,34 +173,32 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             custom_miner="ezchain_test_genesis_miner"
         )
 
-        print(f"[SUCCESS] 创世块已创建 (#{genesis_block.index})")
-        print(f"[SUCCESS] 生成了 {len(genesis_submit_tx_infos)} 个SubmitTxInfo交易")
-        print(f"[SUCCESS] 创建了 {len(genesis_multi_txns)} 个MultiTransactions")
-        print(f"[SUCCESS] 创建了基于SubmitTxInfo的一致性默克尔树")
+        print(f"✅ 创世块已创建 (#{genesis_block.index})")
+        print(f"✅ 生成 {len(genesis_submit_tx_infos)} 个统一SubmitTxInfo，包含 {len(genesis_multi_txns[0].multi_txns)} 个交易")
 
         # 将创世块添加到区块链
         main_chain_updated = self.blockchain.add_block(genesis_block)
-        print(f"[{'SUCCESS' if main_chain_updated else 'WARNING'}] 创世块{'已' if main_chain_updated else '未'}添加到主链")
+        print(f"✅ 创世块{'已' if main_chain_updated else '未'}添加到主链")
+
+        # 获取统一的SubmitTxInfo和MultiTransactions
+        unified_submit_tx_info = genesis_submit_tx_infos[0]  # 只有1个
+        unified_multi_txn = genesis_multi_txns[0]  # 只有1个
+
+        if not unified_submit_tx_info:
+            raise RuntimeError("统一创世SubmitTxInfo无效")
+        if not unified_multi_txn or not unified_multi_txn.multi_txns:
+            raise RuntimeError("统一创世MultiTransactions无效")
 
         # 为每个账户初始化VPB
-        for i, account in enumerate(self.accounts):
-            print(f"为账户 {account.name} 创世初始化...")
+        for account in self.accounts:
+            print(f"⚡ 初始化 {account.name}...")
 
-            # 获取对应账户的SubmitTxInfo和MultiTransactions
-            account_submit_tx_info = genesis_submit_tx_infos[i]
-            account_multi_txn = genesis_multi_txns[i]
-
-            if not account_submit_tx_info:
-                raise RuntimeError(f"账户 {account.name} 的创世SubmitTxInfo无效")
-            if not account_multi_txn or not account_multi_txn.multi_txns:
-                raise RuntimeError(f"账户 {account.name} 的创世MultiTransactions无效")
-
-            # 使用修改后的创世VPB创建函数（基于SubmitTxInfo + MultiTransactions）
+            # 使用修改后的创世VPB创建函数（基于统一的SubmitTxInfo + MultiTransactions）
             genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
                 account_addr=account.address,
                 genesis_block=genesis_block,
-                genesis_submit_tx_info=account_submit_tx_info,  # 提供SubmitTxInfo用于默克尔证明
-                genesis_multi_txn=account_multi_txn,  # 提供MultiTransactions用于交易数据
+                unified_genesis_submit_tx_info=unified_submit_tx_info,  # 提供统一的SubmitTxInfo
+                unified_genesis_multi_txn=unified_multi_txn,  # 提供统一的MultiTransactions
                 merkle_tree=merkle_tree,
                 denomination_config=custom_denomination
             )
@@ -201,11 +213,67 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             if success:
                 total_value = sum(v.value_num for v in genesis_values)
                 available_balance = account.get_available_balance()
-                print(f"   [SUCCESS] 创世初始化成功: {len(genesis_values)}个Values, 总面额{total_value}, 可用{available_balance}")
+                print(f"   ✅ {len(genesis_values)}个Values, 总面额{total_value}, 可用{available_balance}")
             else:
                 raise RuntimeError(f"账户 {account.name} VPB初始化失败")
 
-        print(f"[COMPLETE] 所有账户创世初始化完成！")
+        # 添加VPB基础检测
+        self._perform_vpb_initialization_checks()
+
+        print(f"🎉 所有账户创世初始化完成！")
+
+    def _perform_vpb_initialization_checks(self):
+        """对初始化的VPB进行基础检测"""
+        print("\n🔍 VPB初始化检测...")
+
+        all_checks_passed = True
+        error_summary = []
+
+        for account in self.accounts:
+            account_errors = []
+
+            try:
+                # 获取账户的VPB数据
+                vpb_manager = account.vpb_manager
+                all_values = vpb_manager.get_all_values()
+
+                # 检测1: Values数量与余额一致性
+                account_balance = account.get_available_balance()
+                values_total = sum(value.value_num for value in all_values if value.is_unspent())
+
+                if account_balance != values_total:
+                    account_errors.append(f"余额不一致({account_balance}!={values_total})")
+
+                # 检测2: 每个Value都有对应的ProofUnit和BlockIndex
+                for value in all_values:
+                    proof_units = vpb_manager.get_proof_units_for_value(value)
+                    if not proof_units:
+                        account_errors.append(f"Value{value.begin_index}缺少ProofUnit")
+
+                    block_index = vpb_manager.get_block_index_for_value(value)
+                    if not block_index:
+                        account_errors.append(f"Value{value.begin_index}缺少BlockIndex")
+
+                # 汇总账户检测结果
+                if account_errors:
+                    print(f"   ❌ {account.name}: {', '.join(account_errors[:3])}")
+                    if len(account_errors) > 3:
+                        print(f"      ...还有{len(account_errors)-3}个错误")
+                    all_checks_passed = False
+                    error_summary.extend([f"{account.name}:{err}" for err in account_errors])
+                else:
+                    print(f"   ✅ {account.name}: 检测通过 ({len(all_values)}个Values)")
+
+            except Exception as e:
+                print(f"   💥 {account.name}: 检测异常 - {str(e)[:50]}")
+                all_checks_passed = False
+                error_summary.append(f"{account.name}:异常-{str(e)[:30]}")
+
+        # 精简的检测结果总结
+        if all_checks_passed:
+            print("🎉 VPB初始化检测全部通过")
+        else:
+            print(f"⚠️  VPB检测发现问题({len(error_summary)}个错误)，测试继续")
 
     def _create_eth_address(self, name: str) -> str:
         """创建有效的以太坊地址格式"""
@@ -357,16 +425,14 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print("="*60)
 
         # 步骤1：检查Account节点状态
-        print("\n📊 1. 检查账户初始状态...")
+        print("\n💳 检查账户初始状态...")
         total_balance = 0
         for account in self.accounts:
             account_info = account.get_account_info()
             total_balance += account_info['balances']['total']
-            print(f"   💳 {account.name}: 总余额={account_info['balances']['total']}, 可用={account_info['balances']['available']}")
+            print(f"   {account.name}: 余额{account_info['balances']['total']}, 可用{account_info['balances']['available']}")
             self.assertGreater(account_info['balances']['total'], 0,
                               f"Account {account.name} 应该有余额")
-
-        # print(f"   💰 所有账户总余额: {total_balance}")
 
         # 步骤2：创建真实交易请求
         print("\n📝 2. 创建交易请求...")

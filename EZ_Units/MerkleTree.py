@@ -24,12 +24,12 @@ class MerkleTreeNode:
 
 
 class MerkleTree:
-    def __init__(self, values, is_genesis_block=False, values_are_hashed=True):
+    def __init__(self, values, values_are_hashed=True):
         self.leaves = []
         self.prf_list = None
-        self.build_tree(values, is_genesis_block, values_are_hashed)
+        self.build_tree(values, values_are_hashed)
 
-    def build_tree(self, leaves, is_genesis_block, values_are_hashed=True):
+    def build_tree(self, leaves, values_are_hashed=True):
         if values_are_hashed:
             # Input values are already hashed, use them directly
             leaves = [MerkleTreeNode(None, None, e, e, leaf_index=index) for index, e in
@@ -46,9 +46,9 @@ class MerkleTree:
             self.root = None
             return
 
-        if is_genesis_block:
-            self.root = leaves[0]
-            return
+        # 修复：即使是创世块也要正常构建默克尔树，而不是简化处理
+        # 创世块的特殊性应该体现在数据内容上，而不是树结构上
+        # 创世块也需要完整的默克尔证明路径用于验证
 
         org_leaves_len = len(leaves)
         pop_leave_num = 0

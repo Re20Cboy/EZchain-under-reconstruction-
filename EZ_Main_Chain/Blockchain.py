@@ -291,16 +291,11 @@ class Blockchain:
     def _initialize_genesis_block(self, genesis_block: Optional[Block]) -> None:
         """Initialize the blockchain with a genesis block."""
         if genesis_block is None:
-            genesis_block = Block(
-                index=0,
-                m_tree_root=hashlib.sha256(b"genesis_merkle_root").hexdigest(),
-                miner="genesis_miner",
-                pre_hash="0" * 64,  # 64 zeros for genesis
-                version="1.0"
-            )
-            self.logger.info("Created default genesis block")
-        else:
-            self.logger.info(f"Using provided genesis block: {genesis_block.get_hash()[:8]}...")
+            # Don't auto-create genesis block - let the caller explicitly provide one
+            self.logger.info("No genesis block provided - blockchain initialized empty")
+            return
+
+        self.logger.info(f"Using provided genesis block: {genesis_block.get_hash()[:8]}...")
 
         # Validate genesis block
         if genesis_block.get_index() != 0:
@@ -323,16 +318,64 @@ class Blockchain:
 
         self.confirmed_blocks.add(genesis_block.get_hash())
 
+    def has_blocks(self) -> bool:
+        """Check if the blockchain has any blocks."""
+        return len(self.main_chain) > 0
+
+    def _add_first_genesis_block(self, genesis_block: Block) -> bool:
+        """
+        Add the first genesis block to an empty blockchain.
+
+        Args:
+            genesis_block: The genesis block to add
+
+        Returns:
+            True if successfully added
+        """
+        # Validate genesis block
+        if genesis_block.get_index() != 0:
+            raise ValueError("Genesis block must have index 0")
+
+        self.logger.info(f"Adding first genesis block: {genesis_block.get_hash()[:8]}...")
+
+        # Add to main chain
+        self.main_chain.append(genesis_block)
+
+        # Create fork node
+        genesis_node = ForkNode(genesis_block)
+        genesis_node.is_main_chain = True
+        genesis_node.consensus_status = ConsensusStatus.CONFIRMED
+
+        # Set as root and tip
+        self.fork_tree_root = genesis_node
+        self.main_chain_tip = genesis_node
+
+        # Update caches
+        self.hash_to_fork_node[genesis_block.get_hash()] = genesis_node
+        self.index_to_fork_node[0] = genesis_node
+
+        # Mark as confirmed
+        self.confirmed_blocks.add(genesis_block.get_hash())
+
+        self.logger.info("First genesis block added successfully")
+        return True
+
     def get_latest_block(self) -> Block:
         """Get the latest block in the main chain."""
+        if not self.has_blocks():
+            raise ValueError("Blockchain is empty - no blocks available")
         return self.main_chain[-1]
 
     def get_latest_block_hash(self) -> str:
         """Get the hash of the latest block in the main chain."""
+        if not self.has_blocks():
+            raise ValueError("Blockchain is empty - no block hash available")
         return self.get_latest_block().get_hash()
 
     def get_latest_block_index(self) -> int:
         """Get the index of the latest block in the main chain."""
+        if not self.has_blocks():
+            raise ValueError("Blockchain is empty - no block index available")
         return self.get_latest_block().get_index()
 
     def get_chain_length(self) -> int:
@@ -589,9 +632,15 @@ class Blockchain:
         Returns:
             True if the main chain was updated, False otherwise.
         """
-        # Handle genesis block (already handled in initialization)
+        # Handle genesis block - allow adding if blockchain is empty
         if block.get_index() == 0:
-            return True
+            if self.has_blocks():
+                # Genesis block already exists
+                self.logger.warning("Genesis block already exists, ignoring additional genesis block")
+                return True
+            else:
+                # First genesis block - add it to empty blockchain
+                return self._add_first_genesis_block(block)
 
         main_chain_updated = False
 

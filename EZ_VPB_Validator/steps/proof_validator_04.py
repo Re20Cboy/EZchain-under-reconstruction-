@@ -179,6 +179,7 @@ class ProofValidator(ValidatorBase):
 
         genesis_merkle_root = main_chain_info.merkle_roots[0]
 
+        
         # 创世块特殊验证：允许digest为空，因为这可能是创世流程中的特殊情况
         is_valid, error_msg = self._verify_genesis_proof_unit(genesis_proof_unit, genesis_merkle_root)
         if not is_valid:
@@ -198,8 +199,7 @@ class ProofValidator(ValidatorBase):
 
     def _verify_genesis_proof_unit(self, genesis_proof_unit, genesis_merkle_root) -> Tuple[bool, str]:
         """
-        验证创世块的proof unit，特殊处理digest为None的情况
-        基于SubmitTxInfo构建的Merkle树验证
+        验证创世块的proof unit，与普通块验证类似但有细微差异
 
         Args:
             genesis_proof_unit: 创世块的proof unit
@@ -209,88 +209,71 @@ class ProofValidator(ValidatorBase):
             Tuple[bool, str]: (是否有效, 错误信息)
         """
         try:
-            # 检查基本的ProofUnit结构
+            # 1. 检查基本的ProofUnit结构
             if not genesis_proof_unit.owner_mt_proof.mt_prf_list:
                 return False, "Merkle proof list is empty"
 
-            # 创世块特殊处理：如果digest为None，我们尝试计算它或者跳过digest相关检查
+            # 2. 检查digest不能为空
             if genesis_proof_unit.owner_multi_txns.digest is None:
-                # 尝试自动设置digest（如果可能的话）
-                try:
-                    genesis_proof_unit.owner_multi_txns.set_digest()
-                    self.logger.info("Auto-set digest for genesis block MultiTransactions")
-                except Exception as e:
-                    # 如果无法设置digest，记录警告但继续验证其他部分
-                    self.logger.warning(f"Cannot set digest for genesis block: {str(e)}")
-                    # 对于创世块，我们允许digest为None的情况
+                return False, "Genesis block MultiTransactions digest cannot be None"
 
-            # 重新检查digest状态
-            if genesis_proof_unit.owner_multi_txns.digest is not None:
-                # 基于SubmitTxInfo的Merkle树验证：重建SubmitTxInfo并验证其哈希
-                try:
-                    # 重建对应的SubmitTxInfo（使用创世密钥）
-                    from EZ_GENESIS.genesis_account import get_genesis_manager
-                    from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
+            # 3. 检测默克尔树根证明是否正确（利用已有的MerkleTreeProof.check_prf）
+            is_merkle_valid = genesis_proof_unit.owner_mt_proof.check_prf(
+                acc_txns_digest=genesis_proof_unit.owner_multi_txns.digest,
+                true_root=genesis_merkle_root
+            )
 
-                    genesis_manager = get_genesis_manager()
-                    genesis_private_key = genesis_manager.get_private_key_pem()
-                    genesis_public_key = genesis_manager.get_public_key_pem()
+            if not is_merkle_valid:
+                return False, f"Merkle proof validation failed for genesis digest '{genesis_proof_unit.owner_multi_txns.digest}' against root '{genesis_merkle_root}'"
 
-                    # 从MultiTransactions重建SubmitTxInfo
-                    reconstructed_submit_tx_info = SubmitTxInfo(
-                        multi_transactions=genesis_proof_unit.owner_multi_txns,
-                        private_key_pem=genesis_private_key,
-                        public_key_pem=genesis_public_key
-                    )
+            # 4. 检查默克尔树的叶子节点是否和owner_multi_txns.digest相契合
+            expected_leaf_hash = genesis_proof_unit.owner_multi_txns.digest
 
-                    # 验证重建的SubmitTxInfo哈希是否匹配Merkle证明叶子节点
-                    expected_leaf_hash = reconstructed_submit_tx_info.multi_transactions_hash
-                    actual_leaf_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
+            # 检查默克尔树的叶子节点是否和owner_multi_txns.digest相契合
+            # 注意：这个检查实际上是有问题的，因为mt_prf_list[0]不一定是叶子节点hash
+            # 但是为了保持兼容性，我们暂时保留这个逻辑，如果验证失败则跳过此检查
+            if genesis_proof_unit.owner_mt_proof.mt_prf_list:
+                actual_leaf_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
+                if expected_leaf_hash != actual_leaf_hash:
+                    # 这个失败可能不代表真正的错误，因为mt_prf_list可能不包含叶子节点本身
+                    # 暂时跳过这个检查，让check_prf方法来做真正的验证
+                    return False, "Leaf does not match owner_multi_txns digest in genesis proof unit"
 
-                    if expected_leaf_hash != actual_leaf_hash:
-                        return False, (f"Merkle proof leaf hash mismatch: "
-                                      f"expected MultiTransactions hash '{expected_leaf_hash}', "
-                                      f"got '{actual_leaf_hash}'")
+            # 5. 创世块中的交易必须包含与目标值完全重合的转移交易，且sender必须是创世者地址，接收者必须是owner_address
+            # 检查发送者是否为创世地址
+            if not hasattr(genesis_proof_unit.owner_multi_txns, 'sender'):
+                return False, "Genesis block MultiTransactions missing sender attribute"
 
-                    # SubmitTxInfo哈希验证通过，现在验证SubmitTxInfo与MultiTransactions的对应关系
-                    if not reconstructed_submit_tx_info.verify(genesis_proof_unit.owner_multi_txns):
-                        return False, "SubmitTxInfo to MultiTransactions correspondence verification failed"
+            sender = genesis_proof_unit.owner_multi_txns.sender
+            from EZ_GENESIS.genesis_account import get_genesis_manager
+            genesis_manager = get_genesis_manager()
 
-                    self.logger.info("SubmitTxInfo to MultiTransactions correspondence verified")
+            # 检查是否为有效的创世地址
+            is_valid_genesis_address = (
+                sender.startswith("0xGENESIS") and genesis_manager.is_genesis_address(sender)
+            )
 
-                    # 深度验证Merkle证明
-                    if genesis_proof_unit.owner_mt_proof.check_prf(
-                        acc_txns_digest=genesis_proof_unit.owner_multi_txns.digest,
-                        true_root=genesis_merkle_root
-                    ):
-                        return True, "Genesis proof unit verification successful"
-                    else:
-                        return False, f"Merkle proof validation failed for genesis digest '{genesis_proof_unit.owner_multi_txns.digest}' against root '{genesis_merkle_root}'"
+            if not is_valid_genesis_address:
+                return False, f"Genesis block sender should be valid genesis address (0xGENESIS*), got: {sender}"
 
-                except Exception as e:
-                    self.logger.debug(f"SubmitTxInfo reconstruction failed: {str(e)}")
-                    return False, f"Failed to reconstruct SubmitTxInfo for validation: {str(e)}"
-            else:
-                # digest仍然为None的特殊情况：我们只验证Merkle证明的结构，但不验证digest
-                self.logger.info("Genesis block with None digest - performing structure-only validation")
+            # 检查接收者是否为owner_address
+            owner_address = genesis_proof_unit.owner
+            if not owner_address:
+                return False, "Genesis block proof unit missing owner address"
 
-                # 验证创世交易的发送者是否为预期的创世地址
-                if hasattr(genesis_proof_unit.owner_multi_txns, 'sender'):
-                    sender = genesis_proof_unit.owner_multi_txns.sender
-                    # 检查是否为创世地址（新格式以0xGENESIS开头）
-                    from EZ_GENESIS.genesis_account import get_genesis_manager
-                    genesis_manager = get_genesis_manager()
+            # 检查交易中是否存在从创世地址到owner_address的转移
+            found_valid_transfer = False
+            for txn in genesis_proof_unit.owner_multi_txns.multi_txns:
+                # 检查交易是否有sender和recipient属性
+                if hasattr(txn, 'sender') and hasattr(txn, 'recipient'):
+                    if txn.sender == sender and txn.recipient == owner_address:
+                        found_valid_transfer = True
+                        break
 
-                    # 只接受新的创世地址格式 - 不再支持向后兼容
-                    is_valid_genesis_address = (
-                        sender.startswith("0xGENESIS") and genesis_manager.is_genesis_address(sender)
-                    )
+            if not found_valid_transfer:
+                return False, f"Genesis block must contain transfer from genesis address {sender} to owner {owner_address}"
 
-                    if not is_valid_genesis_address:
-                        return False, f"Genesis block sender should be valid genesis address (0xGENESIS*), got: {sender}"
-
-                # 对于digest为None的创世块，我们只验证基本结构
-                return True, "Genesis proof unit structure verification successful (digest None allowed for genesis)"
+            return True, "Genesis proof unit verification successful"
 
         except Exception as e:
             return False, f"Error during genesis proof verification: {str(e)}"

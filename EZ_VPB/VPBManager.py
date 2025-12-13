@@ -41,7 +41,7 @@ class VPBManager:
         # 维护node_id到value_id的映射关系
         self._node_id_to_value_id: Dict[str, str] = {}
 
-        print(f"VPBManager initialized for account: {account_address}")
+        # 精简输出: print(f"VPBManager initialized for account: {account_address}")
 
     # ==================== 操作1：从创世块初始化 ====================
 
@@ -61,7 +61,7 @@ class VPBManager:
             bool: 批量初始化是否成功
         """
         try:
-            print(f"Initializing VPB for {self.account_address} from genesis block with {len(genesis_values)} values...")
+            # 精简输出: print(f"Initializing VPB for {self.account_address} from genesis block with {len(genesis_values)} values...")
 
             if not genesis_values:
                 print("Error: No genesis values provided for batch initialization")
@@ -72,7 +72,7 @@ class VPBManager:
             # 在VPBManager内部直接获取添加后的node_id映射，避免重复查询
             batch_node_ids = self.value_collection.batch_add_values(genesis_values)
 
-            print(f"Batch add values returned {len(batch_node_ids)} node_ids for {len(genesis_values)} values")
+            # 精简输出: print(f"Batch add values returned {len(batch_node_ids)} node_ids for {len(genesis_values)} values")
 
             for i, genesis_value in enumerate(genesis_values):
                 node_id = batch_node_ids[i] if i < len(batch_node_ids) else None
@@ -84,7 +84,7 @@ class VPBManager:
                 self._node_id_to_value_id[node_id] = genesis_value.begin_index
                 added_nodes.append((genesis_value, node_id))
 
-            print(f"Successfully added {len(added_nodes)} genesis values to ValueCollection")
+            # 精简输出: print(f"Successfully added {len(added_nodes)} genesis values to ValueCollection")
 
             # 2. 批量将Value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
             # ProofManager现在只管理Value-Proof映射，Value数据由ValueCollection统一管理
@@ -92,7 +92,7 @@ class VPBManager:
                 print("Error: Failed to batch add value mappings to proof manager")
                 return False
 
-            print(f"Successfully added value mappings to ProofManager for {len(genesis_values)} values")
+            # 精简输出: print(f"Successfully added value mappings to ProofManager for {len(genesis_values)} values")
 
             # 3. 优化ProofUnits添加 - 使用批量操作避免不必要的嵌套循环
             # 构建value_proof_pairs列表用于批量添加
@@ -123,10 +123,10 @@ class VPBManager:
                 # 因为所有Values都在同一个创世块中创建，共享相同的BlockIndex信息
                 self._block_indices[node_id] = genesis_block_index
 
-            print(f"Genesis batch initialization completed successfully for {self.account_address}")
-            print(f"  - Added {len(added_nodes)} values")
-            print(f"  - Added {len(genesis_proof_units)} proof units")
-            print(f"  - Created block indices for all values")
+            # 精简输出: print(f"Genesis batch initialization completed successfully for {self.account_address}")
+            # print(f"  - Added {len(added_nodes)} values")
+            # print(f"  - Added {len(genesis_proof_units)} proof units")
+            # print(f"  - Created block indices for all values")
             return True
 
         except Exception as e:
@@ -200,7 +200,7 @@ class VPBManager:
             else:
                 self._block_indices[node_id] = genesis_block_index
 
-            print(f"Genesis initialization completed successfully for {self.account_address}")
+            # 精简输出: print(f"Genesis initialization completed successfully for {self.account_address}")
             return True
 
         except Exception as e:
@@ -227,7 +227,7 @@ class VPBManager:
             bool: 更新是否成功
         """
         try:
-            print(f"Updating VPB for {self.account_address} after sending transaction...")
+            # 精简输出: print(f"Updating VPB for {self.account_address} after sending transaction...")
 
             # 1. 获取目标Value的node_id（通过AccountValueCollection）
             target_node_id = self._get_node_id_for_value(target_value)
@@ -279,7 +279,7 @@ class VPBManager:
             if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
                 print(f"Warning: Could not update target value state to CONFIRMED")
 
-            print(f"VPB update after transaction sent completed successfully")
+            # 精简输出: print(f"VPB update after transaction sent completed successfully")
             return True
 
         except Exception as e:

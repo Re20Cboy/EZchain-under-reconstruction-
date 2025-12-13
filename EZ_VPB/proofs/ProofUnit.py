@@ -84,6 +84,7 @@ class ProofUnit:  # value proof within a block
                     acc_txns_digest=self.owner_multi_txns.digest,
                     true_root=merkle_root
                 )
+
                 if not is_proof_valid:
                     return False, f"Merkle proof validation failed for digest '{self.owner_multi_txns.digest}' against root '{merkle_root}'"
             else:

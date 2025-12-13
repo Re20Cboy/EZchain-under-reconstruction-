@@ -415,11 +415,11 @@ def pick_transactions_from_pool(tx_pool: TxPool,
     )
 
     # Print statistics
-    print(f"Successfully picked {len(package_data.selected_submit_tx_infos)} SubmitTxInfos "
-          f"and removed {removed_count} transactions from pool")
-    print(f"Merkle root: {package_data.merkle_root}")
-    print(f"Submitters added to bloom filter: {package_data.submitter_addresses}")
-    print(f"MultiTransactions hashes: {picker.get_multi_transactions_hashes(package_data)}")
+    # 精简输出: print(f"Successfully picked {len(package_data.selected_submit_tx_infos)} SubmitTxInfos "
+          # f"and removed {removed_count} transactions from pool")
+    # 精简输出: print(f"Merkle root: {package_data.merkle_root}")
+    # print(f"Submitters added to bloom filter: {package_data.submitter_addresses}")
+    # print(f"MultiTransactions hashes: {picker.get_multi_transactions_hashes(package_data)}")
 
     return package_data, block
 
@@ -479,12 +479,12 @@ def pick_transactions_from_pool_with_proofs(tx_pool: TxPool,
     )
 
     # Print statistics
-    print(f"Successfully picked {len(package_data.selected_submit_tx_infos)} SubmitTxInfos "
-          f"and removed {removed_count} transactions from pool")
-    print(f"Merkle root: {package_data.merkle_root}")
-    print(f"Submitters added to bloom filter: {package_data.submitter_addresses}")
-    print(f"MultiTransactions hashes: {picker.get_multi_transactions_hashes(package_data)}")
-    print(f"Generated {len(picked_txs_mt_proofs)} Merkle proofs for transactions")
-    print(f"Sender addresses for VPB distribution: {sender_addrs}")
+    # 精简输出: print(f"Successfully picked {len(package_data.selected_submit_tx_infos)} SubmitTxInfos "
+          # f"and removed {removed_count} transactions from pool")
+    # 精简输出: print(f"Merkle root: {package_data.merkle_root}")
+    # print(f"Submitters added to bloom filter: {package_data.submitter_addresses}")
+    # print(f"MultiTransactions hashes: {picker.get_multi_transactions_hashes(package_data)}")
+    # 精简输出: print(f"Generated {len(picked_txs_mt_proofs)} Merkle proofs for transactions")
+    # print(f"Sender addresses for VPB distribution: {sender_addrs}")
 
     return package_data, block, picked_txs_mt_proofs, block_index, sender_addrs

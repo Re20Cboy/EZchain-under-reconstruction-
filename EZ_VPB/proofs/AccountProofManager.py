@@ -377,7 +377,7 @@ class AccountProofManager:
             if value_id not in self._value_proof_mapping:
                 self._value_proof_mapping[value_id] = set()
 
-            print(f"[AccountProofManager] Added value mapping for {value_id} (value data stored in ValueCollection)")
+            # 精简输出: print(f"[AccountProofManager] Added value mapping for {value_id} (value data stored in ValueCollection)")
             return True
         except Exception as e:
             print(f"Error adding value: {e}")
@@ -539,7 +539,7 @@ class AccountProofManager:
                 self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
                 self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
 
-                print(f"[AccountProofManager] Optimized add proof unit: {operation} - {unit_id}")
+                # 精简输出: print(f"[AccountProofManager] Optimized add proof unit: {operation} - {unit_id}")
                 return True
 
             return False
@@ -660,7 +660,7 @@ class AccountProofManager:
             all_mappings = self.storage.get_all_proof_units_for_account(self.account_address)
             for value_id, proof_unit in all_mappings:
                 self._proof_unit_bloom_filter.add(proof_unit.unit_id)
-            print(f"[AccountProofManager] Bloom filter reset and reloaded with {len(all_mappings)} proof units")
+            # 精简输出: print(f"[AccountProofManager] Bloom filter reset and reloaded with {len(all_mappings)} proof units")
         except Exception as e:
             print(f"Error reloading bloom filter after reset: {e}")
 
@@ -684,7 +684,7 @@ class AccountProofManager:
                 if value_id not in self._value_proof_mapping:
                     self._value_proof_mapping[value_id] = set()
 
-            print(f"[AccountProofManager] Batch added value mappings for {len(values)} values (data stored in ValueCollection)")
+            # 精简输出: print(f"[AccountProofManager] Batch added value mappings for {len(values)} values (data stored in ValueCollection)")
             return True
         except Exception as e:
             print(f"Error during batch add values: {e}")

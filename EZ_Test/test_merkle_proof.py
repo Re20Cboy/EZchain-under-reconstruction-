@@ -60,7 +60,7 @@ class TestMerkleTreeProof:
     def test_proof_single_item_validation(self):
         """Test proof validation with single item."""
         single_data = ["single_item"]
-        single_tree = MerkleTree(single_data, is_genesis_block=True)
+        single_tree = MerkleTree(single_data)
         single_root = single_tree.get_root_hash()
         
         # Create proof for single item
