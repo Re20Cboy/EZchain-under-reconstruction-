@@ -261,3 +261,31 @@ tmp/
 
 # Consolidated temporary test data folder
 temp_test_data/
+
+# Sensitive information and private keys
+genesis_account.json
+*private_key*
+*private_key_pem*
+*public_key_pem*
+*_account.json
+account_config.json
+
+# Temporary files and databases found in project
+temp_test_ordering.db
+temp_sequence_test.db
+debug_pool.db
+ez_account_proof_storage.db
+EZ_Tool_Box/temp_signature.py
+
+# Additional test databases and temporary files
+**/ez_vpb_storage.db
+**/test_vpb_storage.db
+**/debug_*.db
+**/temp_*.db
+**/simulation_*.db
+
+# All database files in test directories
+EZ_Test/**/*.db
+EZ_VPB_Updater/**/*.db
+EZ_VPB/**/*.db
+EZ_Account/**/*.db
