@@ -221,8 +221,8 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._block_indices[other_node_id] = self.data_generator.create_test_block_index([0])
 
         # 添加到ProofManager
-        self.vpb_manager.proof_manager.add_value(target_value)
-        self.vpb_manager.proof_manager.add_value(other_value)
+        self.vpb_manager.proof_manager.add_value(target_node_id)
+        self.vpb_manager.proof_manager.add_value(other_node_id)
 
         # 创建交易相关数据
         confirmed_txns = self.data_generator.create_test_multi_transactions(self.test_account)
@@ -276,7 +276,7 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager.value_collection.add_value(target_value)
         target_node_id = self.vpb_manager._get_node_id_for_value(target_value)
         self.vpb_manager._node_id_to_value_id[target_node_id] = target_value.begin_index
-        self.vpb_manager.proof_manager.add_value(target_value)
+        self.vpb_manager.proof_manager.add_value(target_node_id)
 
         confirmed_txns = self.data_generator.create_test_multi_transactions(self.test_account)
         mt_proof = self.data_generator.create_test_merkle_proof()
@@ -340,7 +340,7 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._block_indices[existing_node_id] = self.data_generator.create_test_block_index([0])
 
         # 添加到ProofManager
-        self.vpb_manager.proof_manager.add_value(existing_value)
+        self.vpb_manager.proof_manager.add_value(existing_node_id)
 
         result = self.vpb_manager.receive_vpb_from_others(
             received_value=received_value,
@@ -421,9 +421,9 @@ class TestVPBManager(unittest.TestCase):
         node_id = self.vpb_manager._get_node_id_for_value(value)
         self.vpb_manager._node_id_to_value_id[node_id] = value.begin_index
 
-        self.vpb_manager.proof_manager.add_value(value)
-        self.vpb_manager.proof_manager.add_proof_unit(value.begin_index, proof1)
-        self.vpb_manager.proof_manager.add_proof_unit(value.begin_index, proof2)
+        self.vpb_manager.proof_manager.add_value(node_id)
+        self.vpb_manager.proof_manager.add_proof_unit_optimized(node_id, proof1)
+        self.vpb_manager.proof_manager.add_proof_unit_optimized(node_id, proof2)
 
         proof_units = self.vpb_manager.get_proof_units_for_value(value)
         self.assertEqual(len(proof_units), 2)
@@ -582,7 +582,7 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._block_indices[transfer_node_id] = BlockIndexList([0], self.test_account)
 
         # 添加到ProofManager
-        self.vpb_manager.proof_manager.add_value(transfer_value)
+        self.vpb_manager.proof_manager.add_value(transfer_node_id)
 
         # 3. 发送交易
         confirmed_txns = self.data_generator.create_test_multi_transactions(self.test_account)
@@ -648,7 +648,7 @@ class TestVPBManager(unittest.TestCase):
                 node_id = self.vpb_manager._get_node_id_for_value(value)
                 self.vpb_manager._node_id_to_value_id[node_id] = value.begin_index
                 self.vpb_manager._block_indices[node_id] = block_index
-                self.vpb_manager.proof_manager.add_value(value)
+                self.vpb_manager.proof_manager.add_value(node_id)
 
         # 验证所有Values都已添加
         all_values = self.vpb_manager.get_all_values()

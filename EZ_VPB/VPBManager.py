@@ -88,29 +88,34 @@ class VPBManager:
 
             # 2. 批量将Value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
             # ProofManager现在只管理Value-Proof映射，Value数据由ValueCollection统一管理
-            if not self.proof_manager.batch_add_values(genesis_values):
+            # 构建values_and_node_ids列表用于批量添加
+            values_and_node_ids = []
+            for genesis_value, node_id in added_nodes:
+                values_and_node_ids.append((genesis_value, node_id))
+
+            if not self.proof_manager.batch_add_values(values_and_node_ids):
                 print("Error: Failed to batch add value mappings to proof manager")
                 return False
 
             # 精简输出: print(f"Successfully added value mappings to ProofManager for {len(genesis_values)} values")
 
             # 3. 优化ProofUnits添加 - 使用批量操作避免不必要的嵌套循环
-            # 构建value_proof_pairs列表用于批量添加
+            # 构建value_proof_pairs列表用于批量添加，使用node_id作为value_id
             value_proof_pairs = []
             if len(genesis_proof_units) == len(added_nodes):
                 # 一对一映射的情况（最常见）
                 for (genesis_value, node_id), proof_unit in zip(added_nodes, genesis_proof_units):
-                    value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+                    value_proof_pairs.append((node_id, proof_unit))
             elif len(genesis_proof_units) == 1:
                 # 单个ProofUnit对应所有Values的情况
                 proof_unit = genesis_proof_units[0]
-                for genesis_value, _ in added_nodes:
-                    value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+                for _, node_id in added_nodes:
+                    value_proof_pairs.append((node_id, proof_unit))
             else:
                 # 其他情况 - 构建所有组合但使用批量添加
                 for proof_unit in genesis_proof_units:
-                    for genesis_value, _ in added_nodes:
-                        value_proof_pairs.append((genesis_value.begin_index, proof_unit))
+                    for _, node_id in added_nodes:
+                        value_proof_pairs.append((node_id, proof_unit))
 
             # 使用批量添加方法提升性能
             if not self.proof_manager.batch_add_proof_units(value_proof_pairs):
@@ -170,20 +175,19 @@ class VPBManager:
 
                 print(f"Added genesis value with node_id: {node_id}")
 
-            value_id = genesis_value.begin_index
-            self._node_id_to_value_id[node_id] = value_id
+            self._node_id_to_value_id[node_id] = genesis_value.begin_index
 
             # 3. 添加Value映射到ProofManager中（仅建立映射关系，不重复存储Value）
-            if not self.proof_manager.add_value(genesis_value):
+            if not self.proof_manager.add_value(node_id):
                 print("Error: Failed to add genesis value mapping to proof manager")
                 return False
 
-            print(f"Added genesis value mapping to ProofManager for {value_id}")
+            print(f"Added genesis value mapping to ProofManager for node_id: {node_id}")
 
-            # 为每个ProofUnit建立映射（使用优化的添加方法）
+            # 为每个ProofUnit建立映射（使用优化的添加方法，使用node_id作为value_id）
             for proof_unit in genesis_proof_units:
-                if not self.proof_manager.add_proof_unit_optimized(value_id, proof_unit):
-                    print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis value {value_id}")
+                if not self.proof_manager.add_proof_unit_optimized(node_id, proof_unit):
+                    print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis node {node_id}")
 
             # 4. 添加BlockIndex到本地数据库（使用node_id作为key）
             if node_id in self._block_indices:
@@ -235,7 +239,8 @@ class VPBManager:
                 print(f"Error: Target value not found in collection")
                 return False
 
-            target_value_id = target_value.begin_index
+            # 使用target_node_id作为value_id，而不是begin_index
+            target_value_id = target_node_id
 
             # 2. 获取目标Value对应的BlockIndex
             target_block_index = self._block_indices.get(target_node_id)
@@ -246,7 +251,7 @@ class VPBManager:
             # 3. 在目标BlockIndex中对index_lst添加高度h，对owner添加(h, recipient_address)
             if block_height not in target_block_index.index_lst:
                 target_block_index.index_lst.append(block_height)
-            target_block_index.add_ownership_change(block_height, recipient_address)
+                target_block_index.add_ownership_change(block_height, recipient_address)
 
             # 4. 向本地数据库中直接新增proof unit（基于提交的MultiTransactions+默克尔树证明生成）
             new_proof_unit = ProofUnit(
@@ -256,7 +261,7 @@ class VPBManager:
             )
 
             if not self.proof_manager.add_proof_unit_optimized(target_value_id, new_proof_unit):
-                print(f"Error: Failed to add new proof unit for target value with begin_index={target_value_id}")
+                print(f"Error: Failed to add new proof unit for target value with node_id={target_value_id}")
                 return False
 
             # 5. 对于本地所有非目标且状态为"未花销"的value，仅在BlockIndex中添加高度h
@@ -269,11 +274,12 @@ class VPBManager:
                         value_block_index.index_lst.append(block_height)
 
             # 6. 对于本地所有状态为"未花销"的value（包括目标和非目标），
-            # 对其proof映射新增一个对前述proof unit的映射（使用优化的添加方法）
+            # 对其proof映射新增一个对前述proof unit的映射（使用优化的添加方法，使用node_id作为value_id）
             all_unspent_values = self.value_collection.find_by_state(ValueState.UNSPENT)
             for value in all_unspent_values:
-                value_id = value.begin_index
-                self.proof_manager.add_proof_unit_optimized(value_id, new_proof_unit)
+                value_node_id = self._get_node_id_for_value(value)
+                if value_node_id:  # 确保找到了对应的node_id
+                    self.proof_manager.add_proof_unit_optimized(value_node_id, new_proof_unit)
 
             # 7. 对目标Value进行标记为"已花销"状态更新（通过AccountValueCollection）
             if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
@@ -305,15 +311,15 @@ class VPBManager:
             print(f"Receiving VPB for {self.account_address} from other account...")
 
             received_node_id = self._get_node_id_for_value(received_value)
-            received_value_id = received_value.begin_index
 
             if received_node_id:
-                print(f"Value {received_value_id} already exists, merging with existing data...")
+                print(f"Value {received_value.begin_index} already exists with node_id: {received_node_id}, merging with existing data...")
 
                 # 1. 对proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
+                # 使用node_id作为value_id
                 for proof_unit in received_proof_units:
-                    if not self.proof_manager.add_proof_unit_optimized(received_value_id, proof_unit):
-                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing value {received_value_id}")
+                    if not self.proof_manager.add_proof_unit_optimized(received_node_id, proof_unit):
+                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing node {received_node_id}")
 
                 # 2. 对blockIndex进行添加操作
                 existing_block_index = self._block_indices.get(received_node_id)
@@ -335,7 +341,7 @@ class VPBManager:
                     print(f"Warning: Could not update existing value state to UNSPENT")
 
             else:
-                print(f"Value {received_value_id} does not exist, adding new value...")
+                print(f"Value {received_value.begin_index} does not exist, adding new value...")
 
                 # 1. 直接添加value到本地数据库中（通过AccountValueCollection）
                 if not self.value_collection.add_value(received_value):
@@ -347,18 +353,19 @@ class VPBManager:
                     print("Error: Failed to get node_id for new received value")
                     return False
 
-                self._node_id_to_value_id[new_node_id] = received_value_id
+                self._node_id_to_value_id[new_node_id] = received_value.begin_index
 
                 # 2. 将value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
-                if not self.proof_manager.add_value(received_value):
+                if not self.proof_manager.add_value(new_node_id):
                     return False
 
-                print(f"Added received value mapping to ProofManager for {received_value_id}")
+                print(f"Added received value mapping to ProofManager for node_id: {new_node_id}")
 
                 # 3. 将proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
+                # 使用node_id作为value_id
                 for proof_unit in received_proof_units:
-                    if not self.proof_manager.add_proof_unit_optimized(received_value_id, proof_unit):
-                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new value {received_value_id}")
+                    if not self.proof_manager.add_proof_unit_optimized(new_node_id, proof_unit):
+                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new node {new_node_id}")
 
                 # 4. 对blockIndex进行添加操作
                 self._block_indices[new_node_id] = received_block_index
@@ -367,7 +374,7 @@ class VPBManager:
                 if not self.value_collection.update_value_state(new_node_id, ValueState.UNSPENT):
                     print(f"Warning: Could not update new value state to UNSPENT")
 
-            print(f"VPB reception completed successfully for value {received_value_id}")
+            print(f"VPB reception completed successfully for value {received_value.begin_index}")
             return True
 
         except Exception as e:
@@ -418,8 +425,10 @@ class VPBManager:
 
     def get_proof_units_for_value(self, value: Value) -> List[ProofUnit]:
         """获取指定Value的所有ProofUnits"""
-        value_id = value.begin_index
-        return self.proof_manager.get_proof_units_for_value(value_id)
+        node_id = self._get_node_id_for_value(value)
+        if not node_id:
+            return []
+        return self.proof_manager.get_proof_units_for_value(node_id)
 
     def get_block_index_for_value(self, value: Value) -> Optional[BlockIndexList]:
         """获取指定Value的BlockIndex"""
@@ -456,6 +465,101 @@ class VPBManager:
         except Exception as e:
             print(f"Error getting VPB summary: {e}")
             return {}
+
+    def visualize_vpb_mapping(self, title: str = "VPB Mapping Visualization") -> None:
+        """
+        可视化当前账户的Value-Proofs-BlockIndex映射关系
+
+        Args:
+            title: 可视化图表的标题
+        """
+        try:
+            print(f"\n📊 {title}")
+            print(f"Account: {self.account_address}")
+            print("=" * 60)
+
+            all_values = self.get_all_values()
+
+            if not all_values:
+                print("   📝 No values found in this account")
+                print("=" * 60)
+                return
+
+            # 按状态分组Values
+            unspent_values = [v for v in all_values if v.state == ValueState.UNSPENT]
+            spent_values = [v for v in all_values if v.state == ValueState.CONFIRMED]
+
+            print(f"💰 Total Values: {len(all_values)} (Unspent: {len(unspent_values)}, Spent: {len(spent_values)})")
+            print(f"💎 Total Balance: {self.get_total_balance()} (Available: {self.get_unspent_balance()})")
+            print()
+
+            # 显示前N个值的详细信息，避免输出过多
+            max_display = min(10, len(all_values))  # 最多显示10个值
+            displayed_values = all_values[:max_display]
+
+            for i, value in enumerate(displayed_values):
+                # 获取状态图标
+                status_icon = "🟢" if value.state == ValueState.UNSPENT else "🔴"
+                status_text = "UNSPENT" if value.state == ValueState.UNSPENT else "CONFIRMED"
+
+                print(f"{status_icon} Value[{i+1:2d}]: {value.begin_index} | Amount: {value.value_num:3d} | Status: {status_text}")
+
+                # 获取关联的ProofUnits
+                proof_units = self.get_proof_units_for_value(value)
+                if proof_units:
+                    # 只显示前4个ProofUnit的信息，避免输出过多
+                    for j, proof_unit in enumerate(proof_units[:4]):
+                        digest_short = (proof_unit.owner_multi_txns.digest or "None")[:16] + "..."
+                        proof_length = len(proof_unit.owner_mt_proof.mt_prf_list) if proof_unit.owner_mt_proof else 0
+                        print(f"    📜 Proof[{j+1}]: digest={digest_short}, proof_size={proof_length}")
+
+                    if len(proof_units) > 4:
+                        print(f"    ... and {len(proof_units)-4} more proof(s)")
+                else:
+                    print(f"    📜 No proofs found")
+
+                # 获取关联的BlockIndex
+                block_index = self.get_block_index_for_value(value)
+                if block_index and block_index.index_lst:
+                    # 显示区块高度和所有者信息
+                    heights = sorted(list(set(block_index.index_lst)))  # 去重并排序
+                    heights_str = ", ".join(f"h{h}" for h in heights[:5])  # 最多显示5个高度
+                    if len(heights) > 5:
+                        heights_str += f" ... +{len(heights)-5}"
+
+                    # 显示所有者信息
+                    if hasattr(block_index, 'owner') and block_index.owner:
+                        if isinstance(block_index.owner, list):
+                            owners_info = []
+                            for height, owner in block_index.owner[:3]:  # 最多显示3个所有者
+                                owner_short = (owner or "Unknown")[:12] + "..."
+                                owners_info.append(f"h{height}:{owner_short}")
+                            if len(block_index.owner) > 3:
+                                owners_info.append("...")
+                            owners_str = ", ".join(owners_info)
+                        else:
+                            owners_str = str(block_index.owner)[:20] + "..."
+                    else:
+                        owners_str = "No owner info"
+
+                    print(f"    🏗️  BlockIndex: heights=[{heights_str}] | owners=[{owners_str}]")
+                else:
+                    print(f"    🏗️  BlockIndex: Not found")
+
+                print()  # 值与值之间的间隔
+
+            if len(all_values) > max_display:
+                print(f"   ... and {len(all_values) - max_display} more values (not displayed)")
+
+            # 显示统计信息
+            print(f"📈 Summary: {len(self._block_indices)} BlockIndex entries, "
+                  f"{sum(len(pu) for pu in [self.get_proof_units_for_value(v) for v in all_values])} total ProofUnits")
+            print("=" * 60)
+
+        except Exception as e:
+            print(f"❌ Error visualizing VPB mapping: {e}")
+            import traceback
+            traceback.print_exc()
 
     def validate_vpb_integrity(self) -> bool:
         """验证VPB数据的完整性"""
@@ -500,32 +604,38 @@ class VPBManager:
     def _validate_value_proof_mapping_consistency(self) -> bool:
         """验证Value-Proof映射关系的一致性"""
         try:
-            # 获取ValueCollection中的所有Value
-            collection_value_ids = set(value.begin_index for value in self.get_all_values())
+            # 获取ValueCollection中的所有node_id
+            collection_node_ids = set()
+            for value in self.get_all_values():
+                node_id = self._get_node_id_for_value(value)
+                if node_id:
+                    collection_node_ids.add(node_id)
 
-            # 获取ProofManager中的所有Value ID
-            proof_manager_value_ids = set(self.proof_manager.get_all_value_ids())
+            # 获取ProofManager中的所有Value ID (现在应该是node_id)
+            proof_manager_node_ids = set(self.proof_manager.get_all_value_ids())
 
             # 检查一致性
-            missing_in_proof_manager = collection_value_ids - proof_manager_value_ids
-            extra_in_proof_manager = proof_manager_value_ids - collection_value_ids
+            missing_in_proof_manager = collection_node_ids - proof_manager_node_ids
+            extra_in_proof_manager = proof_manager_node_ids - collection_node_ids
 
             if missing_in_proof_manager:
                 print(f"Warning: {len(missing_in_proof_manager)} values in ValueCollection but not in ProofManager")
                 # 自动修复：添加缺失的映射
-                for value_id in missing_in_proof_manager:
-                    value = self.value_collection.get_value_by_id(value_id)
-                    if value and not self.proof_manager.add_value(value):
-                        print(f"Error: Failed to add missing mapping for value {value_id}")
-                        return False
+                for node_id in missing_in_proof_manager:
+                    # 通过node_id找到对应的value
+                    if node_id in self.value_collection._index_map:
+                        value = self.value_collection._index_map[node_id].value
+                        if value and not self.proof_manager.add_value(node_id):
+                            print(f"Error: Failed to add missing mapping for node {node_id}")
+                            return False
                 print(f"Auto-repaired {len(missing_in_proof_manager)} missing value mappings")
 
             if extra_in_proof_manager:
                 print(f"Warning: {len(extra_in_proof_manager)} value mappings in ProofManager but not in ValueCollection")
                 # 这些可能是孤立的映射，可以清理
-                for value_id in extra_in_proof_manager:
-                    if not self.proof_manager.remove_value(value_id):
-                        print(f"Error: Failed to remove orphan mapping for value {value_id}")
+                for node_id in extra_in_proof_manager:
+                    if not self.proof_manager.remove_value(node_id):
+                        print(f"Error: Failed to remove orphan mapping for node {node_id}")
                         return False
                 print(f"Auto-cleaned {len(extra_in_proof_manager)} orphan value mappings")
 

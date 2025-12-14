@@ -265,7 +265,7 @@ def test_architecture_benefits():
         test_values = [Value(f"0x{i:04x}", i+1) for i in range(1000, 1010)]
 
         for value in test_values:
-            result = proof_manager.add_value(value)
+            result = proof_manager.add_value(value.begin_index)
             if not result:
                 print(f"[ERROR] 无法添加Value映射: {value.begin_index}")
                 return False
@@ -293,7 +293,7 @@ def test_architecture_benefits():
 
         # 将同一个ProofUnit映射到多个Value
         for value_id in value_ids[:5]:
-            result = proof_manager.add_proof_unit(value_id, proof_unit)
+            result = proof_manager.add_proof_unit_optimized(value_id, proof_unit)
             if not result:
                 print(f"[ERROR] 无法添加Proof映射到Value: {value_id}")
                 return False

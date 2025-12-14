@@ -116,7 +116,7 @@ class TestRefactoredVPBArchitecture(unittest.TestCase):
 
         # 添加Value映射（不存储Value数据）
         for value in self.genesis_values:
-            result = proof_manager.add_value(value)
+            result = proof_manager.add_value(value.begin_index)
             self.assertTrue(result, f"Failed to add value mapping for {value.begin_index}")
 
         # 验证映射存在

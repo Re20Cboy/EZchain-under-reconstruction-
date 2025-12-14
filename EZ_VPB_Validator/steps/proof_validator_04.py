@@ -226,18 +226,20 @@ class ProofValidator(ValidatorBase):
             if not is_merkle_valid:
                 return False, f"Merkle proof validation failed for genesis digest '{genesis_proof_unit.owner_multi_txns.digest}' against root '{genesis_merkle_root}'"
 
-            # 4. 检查默克尔树的叶子节点是否和owner_multi_txns.digest相契合
-            expected_leaf_hash = genesis_proof_unit.owner_multi_txns.digest
+            # 4. 验证统一创世架构的单叶子节点Merkle树
+            expected_digest = genesis_proof_unit.owner_multi_txns.digest
 
-            # 检查默克尔树的叶子节点是否和owner_multi_txns.digest相契合
-            # 注意：这个检查实际上是有问题的，因为mt_prf_list[0]不一定是叶子节点hash
-            # 但是为了保持兼容性，我们暂时保留这个逻辑，如果验证失败则跳过此检查
-            if genesis_proof_unit.owner_mt_proof.mt_prf_list:
-                actual_leaf_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
-                if expected_leaf_hash != actual_leaf_hash:
-                    # 这个失败可能不代表真正的错误，因为mt_prf_list可能不包含叶子节点本身
-                    # 暂时跳过这个检查，让check_prf方法来做真正的验证
-                    return False, "Leaf does not match owner_multi_txns digest in genesis proof unit"
+            # 统一创世架构：只支持单节点Merkle树
+            if not genesis_proof_unit.owner_mt_proof.mt_prf_list:
+                return False, "Genesis Merkle proof is empty"
+
+            if len(genesis_proof_unit.owner_mt_proof.mt_prf_list) != 1:
+                return False, f"Genesis Merkle proof must be single-node, got {len(genesis_proof_unit.owner_mt_proof.mt_prf_list)} elements"
+
+            # 对于统一创世架构：mt_prf_list = [root]，其中 root == leaf == digest
+            actual_root_hash = genesis_proof_unit.owner_mt_proof.mt_prf_list[0]
+            if expected_digest != actual_root_hash:
+                return False, f"Genesis Merkle proof validation failed: expected digest {expected_digest}, got root {actual_root_hash}"
 
             # 5. 创世块中的交易必须包含与目标值完全重合的转移交易，且sender必须是创世者地址，接收者必须是owner_address
             # 检查发送者是否为创世地址

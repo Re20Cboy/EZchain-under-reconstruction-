@@ -171,7 +171,7 @@ class IntegrationTest:
                         account.vpb_manager._block_indices[node_id] = block_index
 
                         # 添加到proof_manager
-                        if not account.vpb_manager.proof_manager.add_value(value):
+                        if not account.vpb_manager.proof_manager.add_value(node_id):
                             logger.warning(f"添加value到proof_manager失败，但继续执行")
 
                     total_balance += amount

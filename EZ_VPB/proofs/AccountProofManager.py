@@ -2,7 +2,7 @@ import sqlite3
 import json
 import os
 import hashlib
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 from bitarray import bitarray
 import math
@@ -11,7 +11,6 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
 from EZ_VPB.proofs.ProofUnit import ProofUnit
-from EZ_VPB.values.Value import Value
 
 class BloomFilter:
     """
@@ -124,12 +123,15 @@ class AccountProofStorage:
             """)
 
             # Account_Value_Proof映射表 - 存储账户、Value和ProofUnit的三方关系
+            # value_id 存储的是ValueNode的node_id，不是begin_index
+            # 添加sequence字段来维护proof unit的添加顺序
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS account_value_proofs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     account_address TEXT NOT NULL,
                     value_id TEXT NOT NULL,
                     unit_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (account_address) REFERENCES accounts (account_address),
                     FOREIGN KEY (unit_id) REFERENCES proof_units (unit_id),
@@ -137,8 +139,50 @@ class AccountProofStorage:
                 )
             """)
 
-  
+            # 检查是否需要添加sequence字段（数据库迁移）
+            self._check_and_migrate_sequence_column(conn)
+
             conn.commit()
+
+    def _check_and_migrate_sequence_column(self, conn):
+        """检查并迁移sequence字段"""
+        try:
+            cursor = conn.execute("PRAGMA table_info(account_value_proofs)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if 'sequence' not in columns:
+                print("[AccountProofStorage] Migrating database: adding sequence column...")
+                # 添加sequence字段
+                conn.execute("ALTER TABLE account_value_proofs ADD COLUMN sequence INTEGER")
+
+                # 为现有记录填充sequence值，按created_at排序
+                cursor = conn.execute("""
+                    SELECT account_address, value_id, unit_id, created_at
+                    FROM account_value_proofs
+                    ORDER BY account_address, value_id, created_at
+                """)
+
+                current_value = None
+                sequence = 0
+
+                for row in cursor.fetchall():
+                    account_address, value_id, unit_id, created_at = row
+
+                    # 如果切换到新的value，重置sequence
+                    if current_value != (account_address, value_id):
+                        current_value = (account_address, value_id)
+                        sequence = 0
+
+                    sequence += 1
+                    conn.execute("""
+                        UPDATE account_value_proofs
+                        SET sequence = ?
+                        WHERE account_address = ? AND value_id = ? AND unit_id = ?
+                    """, (sequence, account_address, value_id, unit_id))
+
+                print("[AccountProofStorage] Database migration completed successfully")
+        except Exception as e:
+            print(f"[AccountProofStorage] Error during database migration: {e}")
 
     def store_proof_unit(self, proof_unit: ProofUnit) -> bool:
         """存储或更新ProofUnit到数据库"""
@@ -215,23 +259,46 @@ class AccountProofStorage:
             print(f"Error ensuring account exists: {e}")
             return False
 
-    def add_value_proof_mapping(self, account_address: str, value_id: str, unit_id: str) -> bool:
-        """添加账户-Value-ProofUnit的映射关系"""
+    def add_value_proof_mapping(self, account_address: str, value_id: str, unit_id: str) -> Tuple[bool, bool]:
+        """添加账户-Value-ProofUnit的映射关系
+
+        Returns:
+            Tuple[bool, bool]: (操作是否成功, 映射是否是新增的)
+        """
         try:
             # 确保账户存在
             if not self.ensure_account_exists(account_address):
-                return False
+                return False, False
 
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT OR IGNORE INTO account_value_proofs (account_address, value_id, unit_id)
-                    VALUES (?, ?, ?)
+                # 先检查是否已存在相同的映射
+                cursor = conn.execute("""
+                    SELECT COUNT(*) FROM account_value_proofs
+                    WHERE account_address = ? AND value_id = ? AND unit_id = ?
                 """, (account_address, value_id, unit_id))
+                existing_count = cursor.fetchone()[0]
+
+                # 如果已存在，返回成功但不是新增
+                if existing_count > 0:
+                    return True, False
+
+                # 获取当前value的最大sequence值
+                cursor = conn.execute("""
+                    SELECT COALESCE(MAX(sequence), 0) FROM account_value_proofs
+                    WHERE account_address = ? AND value_id = ?
+                """, (account_address, value_id))
+                max_sequence = cursor.fetchone()[0]
+
+                # 插入新的映射关系，sequence为最大值+1
+                conn.execute("""
+                    INSERT INTO account_value_proofs (account_address, value_id, unit_id, sequence)
+                    VALUES (?, ?, ?, ?)
+                """, (account_address, value_id, unit_id, max_sequence + 1))
                 conn.commit()
-                return True
+                return True, True
         except Exception as e:
             print(f"Error adding value-proof mapping: {e}")
-            return False
+            return False, False
 
     def remove_value_proof_mapping(self, account_address: str, value_id: str, unit_id: str) -> bool:
         """移除账户-Value-ProofUnit的映射关系"""
@@ -263,12 +330,13 @@ class AccountProofStorage:
             return False
 
     def get_proof_units_for_account_value(self, account_address: str, value_id: str) -> List[ProofUnit]:
-        """获取指定账户和Value关联的所有ProofUnit"""
+        """获取指定账户和Value关联的所有ProofUnit（按添加顺序）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
                     SELECT unit_id FROM account_value_proofs
                     WHERE account_address = ? AND value_id = ?
+                    ORDER BY sequence ASC
                 """, (account_address, value_id))
 
                 proof_units = []
@@ -283,12 +351,13 @@ class AccountProofStorage:
             return []
 
     def get_all_proof_units_for_account(self, account_address: str) -> List[Tuple[str, ProofUnit]]:
-        """获取指定账户的所有Value-ProofUnit关系"""
+        """获取指定账户的所有Value-ProofUnit关系（按添加顺序）"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
                     SELECT value_id, unit_id FROM account_value_proofs
                     WHERE account_address = ?
+                    ORDER BY value_id, sequence ASC
                 """, (account_address,))
 
                 result = []
@@ -337,7 +406,7 @@ class AccountProofManager:
         self.storage = storage or AccountProofStorage()
 
         # 内存缓存
-        self._value_proof_mapping: Dict[str, Set[str]] = defaultdict(set)  # value_id -> set of unit_ids
+        self._value_proof_mapping: Dict[str, List[str]] = defaultdict(list)  # value_id -> list of unit_ids (保持顺序)
         self._proof_units_cache: Dict[str, ProofUnit] = {}  # unit_id -> ProofUnit
 
         # 布隆过滤器用于快速重复检测
@@ -350,32 +419,32 @@ class AccountProofManager:
         self._load_existing_mappings()
 
     def _load_existing_mappings(self):
-        """加载现有的映射关系到内存缓存"""
+        """加载现有的映射关系到内存缓存（保持顺序）"""
         try:
             all_mappings = self.storage.get_all_proof_units_for_account(self.account_address)
             for value_id, proof_unit in all_mappings:
-                self._value_proof_mapping[value_id].add(proof_unit.unit_id)
+                self._value_proof_mapping[value_id].append(proof_unit.unit_id)
                 self._proof_units_cache[proof_unit.unit_id] = proof_unit
                 # 将已存在的ProofUnit添加到布隆过滤器
                 self._proof_unit_bloom_filter.add(proof_unit.unit_id)
         except Exception as e:
             print(f"Error loading existing mappings: {e}")
 
-    def add_value(self, value: Value) -> bool:
+    def add_value(self, node_id: str) -> bool:
         """
         添加Value到管理器中（仅建立映射，不存储Value数据）
 
         Args:
-            value: 要添加的Value对象
+            node_id: ValueNode的node_id，唯一标识符
 
         Returns:
             bool: 添加是否成功
         """
         try:
-            # 初始化该Value的proof映射（空集合）
-            value_id = value.begin_index
+            # 初始化该Value的proof映射（空列表）
+            value_id = node_id
             if value_id not in self._value_proof_mapping:
-                self._value_proof_mapping[value_id] = set()
+                self._value_proof_mapping[value_id] = []
 
             # 精简输出: print(f"[AccountProofManager] Added value mapping for {value_id} (value data stored in ValueCollection)")
             return True
@@ -388,14 +457,14 @@ class AccountProofManager:
         从管理器中移除Value及其所有ProofUnit映射
 
         Args:
-            value_id: Value的标识符（begin_index）
+            value_id: Value的标识符（应该是ValueNode的node_id）
 
         Returns:
             bool: 移除是否成功
         """
         try:
             # 获取该Value关联的所有ProofUnit
-            unit_ids = list(self._value_proof_mapping.get(value_id, set()))
+            unit_ids = list(self._value_proof_mapping.get(value_id, []))
 
             # 移除所有映射关系
             for unit_id in unit_ids:
@@ -418,71 +487,7 @@ class AccountProofManager:
             print(f"Error removing value: {e}")
             return False
 
-    def add_proof_unit(self, value_id: str, proof_unit: ProofUnit) -> bool:
-        """
-        添加ProofUnit到指定Value
-
-        Args:
-            value_id: Value的标识符（begin_index）
-            proof_unit: 要添加的ProofUnit
-
-        Returns:
-            bool: 添加是否成功
-        """
-        try:
-            # 检查是否已经存在相同的ProofUnit
-            existing_unit = self.storage.load_proof_unit(proof_unit.unit_id)
-
-            if existing_unit:
-                # 使用现有的ProofUnit并增加引用计数
-                existing_unit.increment_reference()
-                if not self.storage.store_proof_unit(existing_unit):
-                    return False
-                unit_to_use = existing_unit
-            else:
-                # 存储新的ProofUnit
-                if not self.storage.store_proof_unit(proof_unit):
-                    return False
-                unit_to_use = proof_unit
-
-            # 添加映射关系
-            if self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id):
-                self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
-                self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
-                return True
-
-            return False
-        except Exception as e:
-            print(f"Error adding proof unit: {e}")
-            return False
-
-    def add_proof_unit_direct(self, value_id: str, proof_unit: ProofUnit) -> bool:
-        """
-        直接新增ProofUnit到指定Value，不进行重复检测（提高效率）
-
-        Args:
-            value_id: Value的标识符（begin_index）
-            proof_unit: 要直接新增的ProofUnit
-
-        Returns:
-            bool: 添加是否成功
-        """
-        try:
-            # 直接存储新的ProofUnit，不进行重复检测
-            if not self.storage.store_proof_unit(proof_unit):
-                return False
-
-            # 添加映射关系
-            if self.storage.add_value_proof_mapping(self.account_address, value_id, proof_unit.unit_id):
-                self._value_proof_mapping[value_id].add(proof_unit.unit_id)
-                self._proof_units_cache[proof_unit.unit_id] = proof_unit
-                return True
-
-            return False
-        except Exception as e:
-            print(f"Error adding proof unit directly: {e}")
-            return False
-
+  
     def add_proof_unit_optimized(self, value_id: str, proof_unit: ProofUnit) -> bool:
         """
         优化的ProofUnit添加方法，使用布隆过滤器进行高效重复检测
@@ -493,12 +498,11 @@ class AccountProofManager:
         3. 如果确认为新ProofUnit，则存储并添加到布隆过滤器
 
         Args:
-            value_id: Value的标识符（begin_index）
+            value_id: Value的标识符（应该是ValueNode的node_id）
             proof_unit: 要添加的ProofUnit
 
         Returns:
             bool: 添加是否成功
-            Tuple[bool, str]: (是否成功, 操作描述)
         """
         try:
             unit_id = proof_unit.unit_id
@@ -534,15 +538,25 @@ class AccountProofManager:
                 operation = "new_proof_unit_added"
 
             # 添加映射关系
-            if self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id):
-                # 更新内存缓存
-                self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
-                self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
+            success, mapping_is_new = self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id)
 
-                # 精简输出: print(f"[AccountProofManager] Optimized add proof unit: {operation} - {unit_id}")
-                return True
+            if not success:
+                return False
 
-            return False
+            # 只有当映射是真正新增的时候，才更新内存缓存
+            if mapping_is_new:
+                # 检查unit_id是否已经在内存缓存中，避免重复添加
+                if unit_to_use.unit_id not in self._value_proof_mapping[value_id]:
+                    self._value_proof_mapping[value_id].append(unit_to_use.unit_id)
+                    self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
+                    # 精简输出: print(f"[AccountProofManager] Optimized add proof unit: {operation} - {unit_id}")
+            else:
+                # 映射已存在，但需要更新reference_count（如果是existing_proof_unit_updated）
+                if operation == "existing_proof_unit_updated":
+                    self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
+                # 精简输出: print(f"[AccountProofManager] Optimized add proof unit: mapping already exists - {unit_id}")
+
+            return True
 
         except Exception as e:
             print(f"Error adding proof unit optimized: {e}")
@@ -553,7 +567,7 @@ class AccountProofManager:
         优化的ProofUnit添加方法（带统计信息），使用布隆过滤器进行高效重复检测
 
         Args:
-            value_id: Value的标识符（begin_index）
+            value_id: Value的标识符（应该是ValueNode的node_id）
             proof_unit: 要添加的ProofUnit
 
         Returns:
@@ -616,7 +630,7 @@ class AccountProofManager:
             # 添加映射关系
             if self.storage.add_value_proof_mapping(self.account_address, value_id, unit_to_use.unit_id):
                 # 更新内存缓存
-                self._value_proof_mapping[value_id].add(unit_to_use.unit_id)
+                self._value_proof_mapping[value_id].append(unit_to_use.unit_id)
                 self._proof_units_cache[unit_to_use.unit_id] = unit_to_use
 
                 # 更新统计信息
@@ -664,27 +678,27 @@ class AccountProofManager:
         except Exception as e:
             print(f"Error reloading bloom filter after reset: {e}")
 
-    def batch_add_values(self, values: List[Value]) -> bool:
+    def batch_add_values(self, node_ids: List[str]) -> bool:
         """
         批量添加Values到管理器中（仅建立映射，不存储Value数据）
 
         Args:
-            values: 要添加的Value列表
+            node_ids: 要添加的node_id列表
 
         Returns:
             bool: 批量添加是否成功
         """
-        if not values:
+        if not node_ids:
             return True
 
         try:
             # 批量初始化Value的proof映射
-            for value in values:
-                value_id = value.begin_index
+            for node_id in node_ids:
+                value_id = node_id
                 if value_id not in self._value_proof_mapping:
-                    self._value_proof_mapping[value_id] = set()
+                    self._value_proof_mapping[value_id] = []
 
-            # 精简输出: print(f"[AccountProofManager] Batch added value mappings for {len(values)} values (data stored in ValueCollection)")
+            # 精简输出: print(f"[AccountProofManager] Batch added value mappings for {len(node_ids)} values (data stored in ValueCollection)")
             return True
         except Exception as e:
             print(f"Error during batch add values: {e}")
@@ -719,7 +733,7 @@ class AccountProofManager:
                     return False
 
                 # 更新内存缓存
-                self._value_proof_mapping[value_id].add(proof_unit.unit_id)
+                self._value_proof_mapping[value_id].append(proof_unit.unit_id)
                 self._proof_units_cache[proof_unit.unit_id] = proof_unit
 
             return True
@@ -744,7 +758,8 @@ class AccountProofManager:
             if self.storage.remove_value_proof_mapping(self.account_address, value_id, unit_id):
                 # 更新内存缓存
                 if value_id in self._value_proof_mapping:
-                    self._value_proof_mapping[value_id].discard(unit_id)
+                    if unit_id in self._value_proof_mapping[value_id]:
+                        self._value_proof_mapping[value_id].remove(unit_id)
 
                 # 检查ProofUnit是否可以被删除
                 proof_unit = self.storage.load_proof_unit(unit_id)
@@ -778,7 +793,7 @@ class AccountProofManager:
         """
         try:
             proof_units = []
-            unit_ids = self._value_proof_mapping.get(value_id, set())
+            unit_ids = self._value_proof_mapping.get(value_id, [])
 
             for unit_id in unit_ids:
                 if unit_id in self._proof_units_cache:
@@ -813,15 +828,7 @@ class AccountProofManager:
             print(f"Error getting value for proof unit: {e}")
             return None
 
-    def get_all_values(self) -> List[str]:
-        """
-        获取账户的所有Value ID列表（别名方法，为了向后兼容）
-
-        Returns:
-            List[str]: Value ID列表
-        """
-        return self.get_all_value_ids()
-
+    
     def get_all_value_ids(self) -> List[str]:
         """
         获取账户的所有Value ID列表
@@ -960,6 +967,9 @@ class AccountProofManager:
 
 # 测试代码
 if __name__ == "__main__":
+    # 导入测试所需的Value类
+    from EZ_VPB.values.Value import Value
+
     print("Testing AccountProofManager...")
 
     try:
@@ -983,14 +993,15 @@ if __name__ == "__main__":
         print(f"[SUCCESS] Test Value created: begin={test_value.begin_index}, num={test_value.value_num}")
 
         # 添加Value到管理器
-        if manager.add_value(test_value):
+        test_node_id = "test_node_123"
+        if manager.add_value(test_node_id):
             print("[SUCCESS] Value added to manager")
         else:
             print("[ERROR] Failed to add value to manager")
 
         # 测试长度变化
         print(f"[SUCCESS] Manager length after adding value: {len(manager)}")
-        print(f"[SUCCESS] Contains test_value: {test_value.begin_index in manager}")
+        print(f"[SUCCESS] Contains test_node_id: {test_node_id in manager}")
 
         # 测试获取所有Values
         all_values = manager.get_all_values()
