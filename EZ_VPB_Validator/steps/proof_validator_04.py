@@ -352,26 +352,29 @@ class ProofValidator(ValidatorBase):
             # 检查是否有与目标value交集的交易
             value_intersect_transactions = self.value_detector.find_value_intersect_transactions(proof_unit, value)
 
-            # 创世块特殊处理：必须包含GOD->owner的派发交易
+            # 创世块特殊处理：必须包含从创世地址到owner的派发交易
             if block_height == 0:
-                # 创世块必须包含与目标value完全重合的交易（GOD->owner）
-                valid_spend_transactions = self.value_detector.find_valid_value_spend_transactions(
-                    proof_unit, value, "GOD", owner_address  # 创世交易是GOD->owner
-                )
+                # 获取实际的创世地址
+                from EZ_GENESIS.genesis_account import get_genesis_address
+                actual_genesis_address = get_genesis_address()
 
+                # 创世块必须包含与目标value完全重合的交易（创世地址->owner）
+                valid_spend_transactions = self.value_detector.find_valid_value_spend_transactions(
+                    proof_unit, value, actual_genesis_address, owner_address  # 创世交易是创世地址->owner
+                )
                 if not valid_spend_transactions:
                     errors.append(VerificationError(
                         "MISSING_GENESIS_VALUE_DISTRIBUTION",
-                        f"Genesis block must contain GOD->{owner_address} value distribution, but found no valid transactions",
+                        f"Genesis block must contain {actual_genesis_address}->{owner_address} value distribution, but found no valid transactions",
                         block_height=0
                     ))
 
-                # 检查是否有不合法的交集交易（非GOD->sender的value交集）
+                # 检查是否有不合法的交集交易（非创世地址->sender的value交集）
                 for tx in value_intersect_transactions:
                     if tx not in valid_spend_transactions:
                         errors.append(VerificationError(
                             "INVALID_GENESIS_VALUE_INTERSECTION",
-                            f"Invalid value intersection in genesis block {block_height}: {tx}. Only GOD->{owner_address} distribution allowed.",
+                            f"Invalid value intersection in genesis block {block_height}: {tx}. Only {actual_genesis_address}->{owner_address} distribution allowed.",
                             block_height=0
                         ))
                 continue
