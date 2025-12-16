@@ -494,7 +494,7 @@ class VPBManager:
             print()
 
             # 显示前N个值的详细信息，避免输出过多
-            max_display = min(10, len(all_values))  # 最多显示10个值
+            max_display = min(5, len(all_values))  # 最多显示5个值
             displayed_values = all_values[:max_display]
 
             for i, value in enumerate(displayed_values):

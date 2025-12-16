@@ -1,3 +1,64 @@
+12/16：
+test_blockchain_integration_with_real_account.py的日志输出显示：
+步骤6.3 接收者同步处理中，在验证VPB合法性环节，每个发送者account的第一个接收者都会验证VPB成功，但是此account的随后的接收者都会验证失败，例如（我运行一次的案例）：
+ 处理发送者 alice 的 4 个接收者...
+      🔍 验证VPB合法性: david 接收金额 100
+         ✅ VPB验证成功
+Receiving VPB for 0xc2f6704b77f4ee5e3e7e79630e81c1ffc71fd104 from other account...
+Value 0x1640 does not exist, adding new value...
+Added received value mapping to ProofManager for node_id: 579dbd2c-f818-40a1-8ff8-12d6b506da23
+VPB reception completed successfully for value 0x1640
+         ✅ VPB接收成功，david 本地数据已更新
+      🔍 验证VPB合法性: charlie 接收金额 10
+         ❌ VPB验证失败 (共2个错误):
+            1. NO_VALID_TARGET_VALUE_TRANSFER @区块1
+               Block 1 must contain valid target value transfer from 0x134599aeb1582bde22b7a...
+            2. INVALID_TARGET_VALUE_INTERSECTION @区块1
+               Invalid target value intersection found in block 1: <EZ_Transaction.SingleTra...
+      🔍 验证VPB合法性: bob 接收金额 10
+         ❌ VPB验证失败 (共2个错误):
+            1. NO_VALID_TARGET_VALUE_TRANSFER @区块1
+               Block 1 must contain valid target value transfer from 0x134599aeb1582bde22b7a...
+            2. INVALID_TARGET_VALUE_INTERSECTION @区块1
+               Invalid target value intersection found in block 1: <EZ_Transaction.SingleTra...
+      🔍 验证VPB合法性: bob 接收金额 1
+         ❌ VPB验证失败 (共2个错误):
+            1. NO_VALID_TARGET_VALUE_TRANSFER @区块1
+               Block 1 must contain valid target value transfer from 0x134599aeb1582bde22b7a...
+            2. INVALID_TARGET_VALUE_INTERSECTION @区块1
+               Invalid target value intersection found in block 1: <EZ_Transaction.SingleTra...
+...
+🔍 处理发送者 david 的 2 个接收者...
+      🔍 验证VPB合法性: charlie 接收金额 100
+         ✅ VPB验证成功
+Receiving VPB for 0xef5889f585fec4b496efc7df3fd1fbc182cef216 from other account...
+Value 0x320b does not exist, adding new value...
+Added received value mapping to ProofManager for node_id: b3fc3429-1e71-43bb-aff2-4293ad615a58
+VPB reception completed successfully for value 0x320b
+         ✅ VPB接收成功，charlie 本地数据已更新
+      🔍 验证VPB合法性: alice 接收金额 1
+         ❌ VPB验证失败 (共2个错误):
+            1. NO_VALID_TARGET_VALUE_TRANSFER @区块1
+               Block 1 must contain valid target value transfer from 0xc2f6704b77f4ee5e3e7e7...
+            2. INVALID_TARGET_VALUE_INTERSECTION @区块1
+               Invalid target value intersection found in block 1: <EZ_Transaction.SingleTra...
+
+总结
+通过添加调试日志并分析问题，我发现了VPB验证失败的根本原因：
+问题根源
+交易数据和VPB数据不匹配导致的验证失败 具体表现为：
+David创建交易时：将某个原本应该属于Alice的value（begin_index=0x33eb, end_index=0x33f4, value_num=10）错误地转给了Bob
+Alice验证VPB时：期望接收这个value，但实际交易中的接收者是Bob而不是Alice
+验证器检查时发现：
+发送者正确：David ✓
+Value匹配：正确 ✓
+接收者错误：期望是Alice，实际是Bob ❌
+问题出现在哪里
+这个问题的根源在于交易创建和VPB数据准备之间的不一致性：
+在交易打包阶段（create_transactions_from_accounts方法中），Account创建交易时可能存在Value选择或交易接收者设置的错误
+在VPB数据准备阶段（步骤6.3中），为接收者准备的VPB数据与实际交易内容不匹配
+
+
 12/12 目前proof_validator_04.py验证仍有问题，直接错误出现在：
 # 验证重建的SubmitTxInfo哈希是否匹配Merkle证明叶子节点
                     expected_leaf_hash = reconstructed_submit_tx_info.multi_transactions_hash

@@ -811,12 +811,46 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 else:
                                     print(f"         ❌ VPB接收失败，{recipient_account.name} 本地数据更新失败")
                             else:
-                                # 简化错误输出，只显示主要错误类型
-                                error_types = [error.error_type for error in verification_report.errors] if verification_report.errors else []
-                                error_summary = ", ".join(error_types[:2])  # 只显示前2个错误类型
-                                if len(error_types) > 2:
-                                    error_summary += f" ...+{len(error_types)-2}"
-                                print(f"         ❌ VPB验证失败 ({error_summary})")
+                                # 详细的VPB验证失败输出，包含具体错误信息
+                                if verification_report.errors:
+                                    print(f"         ❌ VPB验证失败 (共{len(verification_report.errors)}个错误):")
+
+                                    # 按重要性排序错误类型（关键错误优先）
+                                    error_priority = {
+                                        'MISSING_GENESIS_VALUE_DISTRIBUTION': 1,
+                                        'NO_VALID_TARGET_VALUE_TRANSFER': 2,
+                                        'DOUBLE_SPEND_DETECTED': 3,
+                                        'MERKLE_PROOF_VERIFICATION_FAILED': 4,
+                                        'BLOOM_FILTER_VALIDATION_FAILED': 5,
+                                        'DATA_STRUCTURE_VALIDATION_FAILED': 6,
+                                        'PROOF_UNIT_VALIDATION_FAILED': 7,
+                                        'VERIFICATION_EXCEPTION': 8
+                                    }
+
+                                    sorted_errors = sorted(verification_report.errors,
+                                                         key=lambda e: error_priority.get(e.error_type, 9))
+
+                                    # 显示前3个最重要的错误
+                                    for i, error in enumerate(sorted_errors[:3]):
+                                        block_info = f"@区块{error.block_height}" if error.block_height else ""
+                                        proof_info = f"[证明{error.proof_index}]" if error.proof_index is not None else ""
+
+                                        # 格式化错误消息，确保简洁但信息完整
+                                        error_msg = error.error_message
+                                        if len(error_msg) > 80:
+                                            error_msg = error_msg[:77] + "..."
+
+                                        print(f"            {i+1}. {error.error_type} {block_info}{proof_info}")
+                                        print(f"               {error_msg}")
+
+                                    if len(sorted_errors) > 3:
+                                        print(f"               ... 还有 {len(sorted_errors) - 3} 个其他错误")
+
+                                    # 显示验证时间信息（如果耗时较长）
+                                    if verification_report.verification_time_ms > 1000:
+                                        print(f"               ⏱️ 验证耗时: {verification_report.verification_time_ms:.1f}ms")
+                                else:
+                                    print(f"         ❌ VPB验证失败 (未知错误)")
 
                         except Exception as e:
                             print(f"         💥 处理 {recipient_account.name} VPB时异常: {e}")

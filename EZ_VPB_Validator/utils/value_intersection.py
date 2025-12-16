@@ -72,7 +72,7 @@ class ValueIntersectionDetector(ValidatorBase):
         严格验证：所有value对象必须是有效的Value类型，遇到任何无效数据都会抛出异常
 
         Args:
-            transaction: 交易对象
+            transaction: 交易对象（应符合项目的Transaction架构）
             value: 目标Value对象
 
         Returns:
@@ -85,51 +85,18 @@ class ValueIntersectionDetector(ValidatorBase):
         if not self.is_valid_value_object(value):
             raise ValueIntersectionError(f"Target value is not a valid Value object: {type(value)}")
 
-        # 检查输入value
-        if hasattr(transaction, 'input_values'):
-            if not isinstance(transaction.input_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.input_values must be a list or tuple, got {type(transaction.input_values)}")
+        # 根据项目的Transaction架构，Transaction只有一个value属性（List[Value]）
+        if hasattr(transaction, 'value'):
+            if not isinstance(transaction.value, (list, tuple)):
+                raise ValueIntersectionError(f"transaction.value must be a list or tuple, got {type(transaction.value)}")
 
-            for i, input_value in enumerate(transaction.input_values):
-                if not self.is_valid_value_object(input_value):
-                    raise ValueIntersectionError(f"Invalid input value at index {i}: {type(input_value)}")
-                if self.values_intersect(input_value, value):
+            for i, tx_value in enumerate(transaction.value):
+                if not self.is_valid_value_object(tx_value):
+                    raise ValueIntersectionError(f"Invalid value at index {i}: {type(tx_value)}")
+                if self.values_intersect(tx_value, value):
                     return True
 
-        # 检查输出value
-        if hasattr(transaction, 'output_values'):
-            if not isinstance(transaction.output_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.output_values must be a list or tuple, got {type(transaction.output_values)}")
-
-            for i, output_value in enumerate(transaction.output_values):
-                if not self.is_valid_value_object(output_value):
-                    raise ValueIntersectionError(f"Invalid output value at index {i}: {type(output_value)}")
-                if self.values_intersect(output_value, value):
-                    return True
-
-        # 检查花销value
-        if hasattr(transaction, 'spent_values'):
-            if not isinstance(transaction.spent_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.spent_values must be a list or tuple, got {type(transaction.spent_values)}")
-
-            for i, spent_value in enumerate(transaction.spent_values):
-                if not self.is_valid_value_object(spent_value):
-                    raise ValueIntersectionError(f"Invalid spent value at index {i}: {type(spent_value)}")
-                if self.values_intersect(spent_value, value):
-                    return True
-
-        # 检查接收value
-        if hasattr(transaction, 'received_values'):
-            if not isinstance(transaction.received_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.received_values must be a list or tuple, got {type(transaction.received_values)}")
-
-            for i, received_value in enumerate(transaction.received_values):
-                if not self.is_valid_value_object(received_value):
-                    raise ValueIntersectionError(f"Invalid received value at index {i}: {type(received_value)}")
-                if self.values_intersect(received_value, value):
-                    return True
-
-        # 如果所有检查都完成且没有发现交集，返回False（确实无交集）
+        # 如果没有value属性或没有发现交集，返回False（确实无交集）
         return False
 
     def is_valid_value_spend_transaction(self, transaction: Any, value, expected_sender: str, expected_receiver: str = None) -> bool:
@@ -137,7 +104,7 @@ class ValueIntersectionDetector(ValidatorBase):
         检查是否是有效的value花销交易
 
         Args:
-            transaction: 交易对象
+            transaction: 交易对象（应符合项目的Transaction架构）
             value: 目标Value对象
             expected_sender: 期望的发送者地址
             expected_receiver: 期望的接收者地址
@@ -145,44 +112,23 @@ class ValueIntersectionDetector(ValidatorBase):
         Returns:
             bool: 是否是有效的花销交易
         """
-        # 检查发送者
-        sender_valid = False
-        if hasattr(transaction, 'sender') and transaction.sender == expected_sender:
-            sender_valid = True
-        elif hasattr(transaction, 'payer') and transaction.payer == expected_sender:
-            sender_valid = True
-
-        if not sender_valid:
+        # 检查发送者（根据Transaction架构，使用sender属性）
+        if not hasattr(transaction, 'sender') or transaction.sender != expected_sender:
             return False
 
-        # 检查value完全匹配（输出）
-        if hasattr(transaction, 'output_values'):
-            for output_value in transaction.output_values:
-                if (hasattr(output_value, 'begin_index') and hasattr(output_value, 'end_index') and
-                    hasattr(output_value, 'value_num') and
-                    output_value.begin_index == value.begin_index and
-                    output_value.end_index == value.end_index and
-                    output_value.value_num == value.value_num):
-                    # 检查接收者
-                    if expected_receiver and hasattr(transaction, 'receiver'):
-                        if transaction.receiver == expected_receiver:
+        # 根据项目的Transaction架构，Transaction只有一个value属性（List[Value]）
+        if hasattr(transaction, 'value'):
+            for tx_value in transaction.value:
+                if (hasattr(tx_value, 'begin_index') and hasattr(tx_value, 'end_index') and
+                    hasattr(tx_value, 'value_num') and
+                    tx_value.begin_index == value.begin_index and
+                    tx_value.end_index == value.end_index and
+                    tx_value.value_num == value.value_num):
+                    # 检查接收者（根据Transaction架构，使用recipient属性）
+                    if expected_receiver:
+                        if hasattr(transaction, 'recipient') and transaction.recipient == expected_receiver:
                             return True
-                    elif expected_receiver is None:
-                        return True
-
-        # 检查value完全匹配（接收值）
-        if hasattr(transaction, 'received_values'):
-            for received_value in transaction.received_values:
-                if (hasattr(received_value, 'begin_index') and hasattr(received_value, 'end_index') and
-                    hasattr(received_value, 'value_num') and
-                    received_value.begin_index == value.begin_index and
-                    received_value.end_index == value.end_index and
-                    received_value.value_num == value.value_num):
-                    # 检查接收者
-                    if expected_receiver and hasattr(transaction, 'receiver'):
-                        if transaction.receiver == expected_receiver:
-                            return True
-                    elif expected_receiver is None:
+                    else:
                         return True
 
         return False
@@ -258,7 +204,7 @@ class ValueIntersectionDetector(ValidatorBase):
         严格验证：所有value对象必须是有效的Value类型，遇到任何无效数据都会抛出异常
 
         Args:
-            transaction: 交易对象
+            transaction: 交易对象（应符合项目的Transaction架构）
             value: Value对象
 
         Returns:
@@ -271,31 +217,20 @@ class ValueIntersectionDetector(ValidatorBase):
         if not self.is_valid_value_object(value):
             raise ValueIntersectionError(f"Target value is not a valid Value object: {type(value)}")
 
-        # 检查输入value
-        if hasattr(transaction, 'input_values'):
-            if not isinstance(transaction.input_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.input_values must be a list or tuple, got {type(transaction.input_values)}")
+        # 根据项目的Transaction架构，Transaction只有一个value属性（List[Value]）
+        # 在当前的Transaction模型中，所有的value都在transaction.value列表中
+        if hasattr(transaction, 'value'):
+            if not isinstance(transaction.value, (list, tuple)):
+                raise ValueIntersectionError(f"transaction.value must be a list or tuple, got {type(transaction.value)}")
 
-            for i, input_value in enumerate(transaction.input_values):
-                if not self.is_valid_value_object(input_value):
-                    raise ValueIntersectionError(f"Invalid input value at index {i}: {type(input_value)}")
+            for i, tx_value in enumerate(transaction.value):
+                if not self.is_valid_value_object(tx_value):
+                    raise ValueIntersectionError(f"Invalid value at index {i}: {type(tx_value)}")
                 # 严格检查value是否完全匹配
-                if (input_value.begin_index == value.begin_index and
-                    input_value.end_index == value.end_index):
+                if (tx_value.begin_index == value.begin_index and
+                    tx_value.end_index == value.end_index and
+                    tx_value.value_num == value.value_num):
                     return True
 
-        # 检查花销value
-        if hasattr(transaction, 'spent_values'):
-            if not isinstance(transaction.spent_values, (list, tuple)):
-                raise ValueIntersectionError(f"transaction.spent_values must be a list or tuple, got {type(transaction.spent_values)}")
-
-            for i, spent_value in enumerate(transaction.spent_values):
-                if not self.is_valid_value_object(spent_value):
-                    raise ValueIntersectionError(f"Invalid spent value at index {i}: {type(spent_value)}")
-                # 严格检查value是否完全匹配
-                if (spent_value.begin_index == value.begin_index and
-                    spent_value.end_index == value.end_index):
-                    return True
-
-        # 如果所有检查都完成且未找到匹配的value，返回False（确实未花销该value）
+        # 如果没有value属性或未找到匹配的value，返回False（确实未花销该value）
         return False
