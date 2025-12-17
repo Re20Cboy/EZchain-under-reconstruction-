@@ -57,7 +57,7 @@ class VPBValidator(ValidatorBase):
             proof_units: 对应的ProofUnit列表 (List[ProofUnit])
             block_index_list: 对应的BlockIndexList对象
             main_chain_info: 主链信息
-            account_address: 进行验证的账户地址
+            account_address: 进行验证的账户地址（value的接收方）
 
         Returns:
             VPBVerificationReport: 详细的验证报告

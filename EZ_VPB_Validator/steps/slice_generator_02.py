@@ -32,7 +32,7 @@ class VPBSliceGenerator(ValidatorBase):
             value: Value对象
             proof_units: ProofUnit列表
             block_index_list: BlockIndexList对象
-            account_address: 进行验证的账户地址
+            account_address: 进行验证的账户地址（value的接收方）
 
         Returns:
             Tuple[VPBSlice, Optional[CheckPointRecord]]: (VPB切片, 使用的检查点)

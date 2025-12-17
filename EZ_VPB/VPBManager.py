@@ -9,6 +9,7 @@ from EZ_VPB.values.Value import Value, ValueState
 from EZ_VPB.values.AccountValueCollection import AccountValueCollection
 from EZ_VPB.proofs.AccountProofManager import AccountProofManager
 from EZ_VPB.proofs.ProofUnit import ProofUnit
+from EZ_VPB.block_index.AccountBlockIndexManager import AccountBlockIndexManager
 from EZ_VPB.block_index.BlockIndexList import BlockIndexList
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Units.MerkleProof import MerkleTreeProof
@@ -34,9 +35,8 @@ class VPBManager:
         # 初始化三个核心组件
         self.value_collection = AccountValueCollection(account_address)
         self.proof_manager = AccountProofManager(account_address)
-
-        # BlockIndex管理器 - 使用字典存储node_id到BlockIndexList的映射
-        self._block_indices: Dict[str, BlockIndexList] = {}
+        # BlockIndex管理器 - 使用专门的AccountBlockIndexManager进行持久化管理
+        self.block_index_manager = AccountBlockIndexManager(account_address)
 
         # 维护node_id到value_id的映射关系
         self._node_id_to_value_id: Dict[str, str] = {}
@@ -122,11 +122,12 @@ class VPBManager:
                 print("Error: Failed to batch add proof units to proof manager")
                 return False
 
-            # 4. 优化BlockIndex处理 - 直接引用而不是深拷贝，因为创世块数据是只读的
+            # 4. 优化BlockIndex处理 - 使用AccountBlockIndexManager进行持久化管理
             for _, node_id in added_nodes:
-                # 对于创世块初始化，直接使用同一个BlockIndex对象引用
-                # 因为所有Values都在同一个创世块中创建，共享相同的BlockIndex信息
-                self._block_indices[node_id] = genesis_block_index
+                # 对于创世块初始化，为每个node_id添加相同的BlockIndex
+                if not self.block_index_manager.add_block_index(node_id, genesis_block_index):
+                    print(f"Error: Failed to add genesis block index for node {node_id}")
+                    return False
 
             # 精简输出: print(f"Genesis batch initialization completed successfully for {self.account_address}")
             # print(f"  - Added {len(added_nodes)} values")
@@ -189,20 +190,17 @@ class VPBManager:
                 if not self.proof_manager.add_proof_unit_optimized(node_id, proof_unit):
                     print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis node {node_id}")
 
-            # 4. 添加BlockIndex到本地数据库（使用node_id作为key）
-            if node_id in self._block_indices:
+            # 4. 添加BlockIndex到本地数据库（使用AccountBlockIndexManager）
+            if self.block_index_manager.has_block_index(node_id):
                 print(f"Merging BlockIndex for existing node_id: {node_id}")
-                existing_block_index = self._block_indices[node_id]
-                # 合并index_lst
-                for idx in genesis_block_index.index_lst:
-                    if idx not in existing_block_index.index_lst:
-                        existing_block_index.index_lst.append(idx)
-                # 合并owner信息
-                received_owner_history = genesis_block_index.get_ownership_history()
-                for block_idx, owner_addr in received_owner_history:
-                    existing_block_index.add_ownership_change(block_idx, owner_addr)
+                # 使用AccountBlockIndexManager的合并功能
+                if not self.block_index_manager.update_block_index_merge(node_id, genesis_block_index):
+                    print(f"Error: Failed to merge genesis block index for existing node {node_id}")
+                    return False
             else:
-                self._block_indices[node_id] = genesis_block_index
+                if not self.block_index_manager.add_block_index(node_id, genesis_block_index):
+                    print(f"Error: Failed to add genesis block index for new node {node_id}")
+                    return False
 
             # 精简输出: print(f"Genesis initialization completed successfully for {self.account_address}")
             return True
@@ -213,7 +211,142 @@ class VPBManager:
 
     # ==================== 操作2：作为sender发起交易后的修改 ====================
 
-    def update_after_transaction_sent(self, target_value: Value,
+    def update_after_transaction_sent(self,
+                                     confirmed_multi_txns: MultiTransactions,
+                                     mt_proof: MerkleTreeProof,
+                                     block_height: int, recipient_address: str) -> bool:
+        """
+        account作为sender发起多笔交易给recipient(s)后，对本地vpb进行批量更新操作
+
+        根据每笔交易中的values（每笔交易中转移的value列表），统一批量更新本地vpb
+        confirmed_multi_txns中有若干笔交易（txn1, txn2, ...），每笔交(如, txn1)中有若干目标值value被转移（v1, v2, ...）
+
+        Args:
+            confirmed_multi_txns: 已确认的多笔交易集合
+            mt_proof: 默克尔树证明
+            block_height: 区块高度
+            recipient_address: 主要接收者地址（单接收者场景）或默认接收者
+
+        Returns:
+            bool: 批量更新是否成功
+        """
+        try:
+            print(f"Updating VPB for {self.account_address} after sending {len(confirmed_multi_txns.multi_txns)} transactions...")
+
+            # 收集所有交易中的目标值
+            all_target_values = []
+            txn_recipients = []
+
+            for txn in confirmed_multi_txns.multi_txns:
+                all_target_values.extend(txn.value)
+                # 每笔交易可能有不同的recipient，记录下来
+                txn_recipients.append(txn.recipient)
+
+            if not all_target_values:
+                print("Warning: No target values found in transactions")
+                return True  # 没有目标值也算成功
+
+            print(f"Found {len(all_target_values)} target values across {len(confirmed_multi_txns.multi_txns)} transactions")
+
+            # 获取所有目标值的node_id
+            target_node_ids = []
+            for target_value in all_target_values:
+                target_node_id = self._get_node_id_for_value(target_value)
+                if target_node_id:
+                    target_node_ids.append(target_node_id)
+                else:
+                    print(f"Warning: Target value {target_value.begin_index} not found in local collection")
+
+            if not target_node_ids:
+                print("Error: No target values found in local collection")
+                return False
+
+            target_node_ids_set = set(target_node_ids)  # 使用集合提高查找效率
+
+            # 1. 将所有交易中的所有目标值标记为"已花销"状态
+            for target_node_id in target_node_ids:
+                if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
+                    print(f"Warning: Could not update target value state to CONFIRMED for node {target_node_id}")
+
+            print(f"Marked {len(target_node_ids)} target values as CONFIRMED (spent)")
+
+            # 2. 将本地VPB中的所有非目标且状态为"未花销"的值，仅在BlockIndex中添加区块高度h
+            all_unspent_values = self.value_collection.find_by_state(ValueState.UNSPENT)
+            non_target_count = 0
+
+            for value in all_unspent_values:
+                value_node_id = self._get_node_id_for_value(value)
+                if value_node_id and value_node_id not in target_node_ids_set:
+                    # 非目标未花销值，仅添加区块高度
+                    if not self.block_index_manager.add_block_height_to_index(value_node_id, block_height):
+                        print(f"Warning: Failed to add block height to non-target value {value_node_id}")
+                    else:
+                        non_target_count += 1
+
+            print(f"Added block height to {non_target_count} non-target unspent values")
+
+            # 3. 对本地所有状态为"已花销"的目标值，通过管理器对其BlockIndex添加高度h和所有权信息
+            target_updated_count = 0
+            for i, target_node_id in enumerate(target_node_ids):
+                # 获取对应交易的recipient（如果有多笔交易且不同recipient）
+                current_recipient = txn_recipients[i] if i < len(txn_recipients) else recipient_address
+
+                if not self.block_index_manager.add_block_height_to_index(target_node_id, block_height, current_recipient):
+                    print(f"Warning: Failed to add block height and ownership to target value {target_node_id}")
+                else:
+                    target_updated_count += 1
+
+            print(f"Updated block index for {target_updated_count} target values with ownership changes")
+
+            # 4. 向本地数据库中新增proof unit（基于提交的MultiTransactions+默克尔树证明生成）
+            new_proof_unit = ProofUnit(
+                owner=self.account_address,
+                owner_multi_txns=confirmed_multi_txns,
+                owner_mt_proof=mt_proof
+            )
+
+            # 为所有目标值添加新的proof unit
+            proof_added_count = 0
+            for target_node_id in target_node_ids:
+                if self.proof_manager.add_proof_unit_optimized(target_node_id, new_proof_unit):
+                    proof_added_count += 1
+                else:
+                    print(f"Warning: Failed to add new proof unit for target value node {target_node_id}")
+
+            if proof_added_count == 0:
+                print("Error: Failed to add proof unit to any target value")
+                return False
+
+            print(f"Added new proof unit to {proof_added_count} target values")
+
+            # 5. 对于本地所有的value，对其proof映射新增一个对上述proof unit的映射（使用优化的添加方法）
+            all_values = self.value_collection.get_all_values()
+            mapping_added_count = 0
+
+            for value in all_values:
+                value_node_id = self._get_node_id_for_value(value)
+                if value_node_id:  # 确保找到了对应的node_id
+                    if self.proof_manager.add_proof_unit_optimized(value_node_id, new_proof_unit):
+                        mapping_added_count += 1
+                    # 注意：这里不打印警告，因为有些值可能已经有这个proof unit，add_proof_unit_optimized会自动处理重复
+
+            print(f"Added proof unit mappings to {mapping_added_count} total values")
+
+            print(f"VPB batch update completed successfully for {self.account_address}")
+            print(f"  - Processed {len(confirmed_multi_txns.multi_txns)} transactions")
+            print(f"  - Updated {len(target_node_ids)} target values")
+            print(f"  - Updated {non_target_count} non-target unspent values")
+            print(f"  - Added proof mappings to {mapping_added_count} values")
+            return True
+
+        except Exception as e:
+            print(f"Error during VPB update after transaction sent: {e}")
+            import traceback
+            print(f"Detailed error: {traceback.format_exc()}")
+            return False
+        
+
+    def _old_update_after_transaction_sent(self, target_value: Value,
                                      confirmed_multi_txns: MultiTransactions,
                                      mt_proof: MerkleTreeProof,
                                      block_height: int, recipient_address: str) -> bool:
@@ -243,15 +376,16 @@ class VPBManager:
             target_value_id = target_node_id
 
             # 2. 获取目标Value对应的BlockIndex
-            target_block_index = self._block_indices.get(target_node_id)
+            target_block_index = self.block_index_manager.get_block_index(target_node_id)
             if not target_block_index:
                 print(f"Error: BlockIndex for target value node {target_node_id} not found")
                 return False
 
             # 3. 在目标BlockIndex中对index_lst添加高度h，对owner添加(h, recipient_address)
-            if block_height not in target_block_index.index_lst:
-                target_block_index.index_lst.append(block_height)
-                target_block_index.add_ownership_change(block_height, recipient_address)
+            # 使用AccountBlockIndexManager的专门方法添加区块高度和所有权变更
+            if not self.block_index_manager.add_block_height_to_index(target_node_id, block_height, recipient_address):
+                print(f"Error: Failed to add block height to target value's BlockIndex")
+                return False
 
             # 4. 向本地数据库中直接新增proof unit（基于提交的MultiTransactions+默克尔树证明生成）
             new_proof_unit = ProofUnit(
@@ -269,9 +403,9 @@ class VPBManager:
             for value in unspent_values:
                 value_node_id = self._get_node_id_for_value(value)
                 if value_node_id and value_node_id != target_node_id:  # 非目标value
-                    value_block_index = self._block_indices.get(value_node_id)
-                    if value_block_index and block_height not in value_block_index.index_lst:
-                        value_block_index.index_lst.append(block_height)
+                    # 使用AccountBlockIndexManager添加区块高度（不改变所有权）
+                    if not self.block_index_manager.add_block_height_to_index(value_node_id, block_height):
+                        print(f"Warning: Failed to add block height to non-target value {value_node_id}")
 
             # 6. 对于本地所有状态为"未花销"的value（包括目标和非目标），
             # 对其proof映射新增一个对前述proof unit的映射（使用优化的添加方法，使用node_id作为value_id）
@@ -322,19 +456,13 @@ class VPBManager:
                         print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing node {received_node_id}")
 
                 # 2. 对blockIndex进行添加操作
-                existing_block_index = self._block_indices.get(received_node_id)
-                if existing_block_index:
-                    # 合并index_lst
-                    for idx in received_block_index.index_lst:
-                        if idx not in existing_block_index.index_lst:
-                            existing_block_index.index_lst.append(idx)
-
-                    # 合并owner信息
-                    received_owner_history = received_block_index.get_ownership_history()
-                    for block_idx, owner_addr in received_owner_history:
-                        existing_block_index.add_ownership_change(block_idx, owner_addr)
+                if self.block_index_manager.has_block_index(received_node_id):
+                    # 使用AccountBlockIndexManager的合并功能
+                    if not self.block_index_manager.update_block_index_merge(received_node_id, received_block_index):
+                        print(f"Warning: Failed to merge received block index for existing node {received_node_id}")
                 else:
-                    self._block_indices[received_node_id] = received_block_index
+                    if not self.block_index_manager.add_block_index(received_node_id, received_block_index):
+                        print(f"Warning: Failed to add received block index for new node {received_node_id}")
 
                 # 3. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
                 if not self.value_collection.update_value_state(received_node_id, ValueState.UNSPENT):
@@ -368,7 +496,8 @@ class VPBManager:
                         print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new node {new_node_id}")
 
                 # 4. 对blockIndex进行添加操作
-                self._block_indices[new_node_id] = received_block_index
+                if not self.block_index_manager.add_block_index(new_node_id, received_block_index):
+                    print(f"Warning: Failed to add received block index for new node {new_node_id}")
 
                 # 5. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
                 if not self.value_collection.update_value_state(new_node_id, ValueState.UNSPENT):
@@ -434,7 +563,7 @@ class VPBManager:
         """获取指定Value的BlockIndex"""
         node_id = self._get_node_id_for_value(value)
         if node_id:
-            return self._block_indices.get(node_id)
+            return self.block_index_manager.get_block_index(node_id)
         return None
 
     def get_total_balance(self) -> int:
@@ -452,6 +581,7 @@ class VPBManager:
             unspent_values = self.get_unspent_values()
 
             proof_stats = self.proof_manager.get_statistics()
+            block_index_stats = self.block_index_manager.get_statistics()
 
             return {
                 'account_address': self.account_address,
@@ -460,11 +590,99 @@ class VPBManager:
                 'total_balance': self.get_total_balance(),
                 'unspent_balance': self.get_unspent_balance(),
                 'total_proof_units': proof_stats.get('total_proof_units', 0),
-                'block_indices_count': len(self._block_indices)
+                'block_indices_count': block_index_stats.get('total_indices', 0)
             }
         except Exception as e:
             print(f"Error getting VPB summary: {e}")
             return {}
+
+    def visualize_confirmed_values(self, title: str = "Confirmed Values Visualization") -> None:
+        """
+        可视化当前账户所有已确认（非未花销）状态的Value
+
+        Args:
+            title: 可视化图表的标题
+        """
+        try:
+            print(f"\n🔒 {title}")
+            print(f"Account: {self.account_address}")
+            print("=" * 60)
+
+            all_values = self.get_all_values()
+            confirmed_values = [v for v in all_values if v.state == ValueState.CONFIRMED]
+
+            if not confirmed_values:
+                print("   📝 No confirmed (spent) values found in this account")
+                print("=" * 60)
+                return
+
+            total_confirmed_balance = sum(v.value_num for v in confirmed_values)
+
+            print(f"🔒 Confirmed Values: {len(confirmed_values)} out of {len(all_values)} total values")
+            print(f"💰 Confirmed Balance: {total_confirmed_balance}")
+            print(f"📊 Percentage: {len(confirmed_values)/len(all_values)*100:.1f}% of values are confirmed")
+            print()
+
+            # 按金额排序显示
+            confirmed_values_sorted = sorted(confirmed_values, key=lambda v: v.value_num, reverse=True)
+
+            for i, value in enumerate(confirmed_values_sorted):
+                print(f"🔴 Confirmed Value[{i+1:2d}]: {value.begin_index}")
+                print(f"    💰 Amount: {value.value_num}")
+                print(f"    📅 Status: CONFIRMED (spent)")
+
+                # 获取关联的ProofUnits
+                proof_units = self.get_proof_units_for_value(value)
+                if proof_units:
+                    print(f"    📜 Proof Units: {len(proof_units)} total")
+                    # 显示前3个ProofUnit的信息
+                    for j, proof_unit in enumerate(proof_units[:3]):
+                        digest_short = (proof_unit.owner_multi_txns.digest or "None")[:12] + "..."
+                        print(f"       └─ Proof[{j+1}]: {digest_short}")
+                    if len(proof_units) > 3:
+                        print(f"       └─ ... and {len(proof_units)-3} more proof(s)")
+                else:
+                    print(f"    📜 Proof Units: None")
+
+                # 获取关联的BlockIndex
+                block_index = self.get_block_index_for_value(value)
+                if block_index and block_index.index_lst:
+                    # 显示区块高度信息
+                    heights = sorted(list(set(block_index.index_lst)))
+                    print(f"    🏗️  Block Heights: {len(heights)} entries")
+
+                    # 显示所有者历史信息
+                    if hasattr(block_index, 'owner') and block_index.owner:
+                        if isinstance(block_index.owner, list):
+                            # 显示最近的所有者变更
+                            recent_owners = block_index.owner[-3:] if len(block_index.owner) > 3 else block_index.owner
+                            print(f"    👤 Recent Owners:")
+                            for height, owner in recent_owners:
+                                owner_short = (owner or "Unknown")[:15] + "..."
+                                print(f"       └─ h{height}: {owner_short}")
+                        else:
+                            owner_short = str(block_index.owner)[:20] + "..."
+                            print(f"    👤 Owner: {owner_short}")
+                    else:
+                        print(f"    👤 Owner: No owner info")
+                else:
+                    print(f"    🏗️  BlockIndex: Not found")
+
+                print()  # 值与值之间的间隔
+
+            # 显示统计信息
+            avg_proof_units = sum(len(self.get_proof_units_for_value(v)) for v in confirmed_values) / len(confirmed_values)
+            print(f"📈 Summary Statistics:")
+            print(f"    └─ Total confirmed values: {len(confirmed_values)}")
+            print(f"    └─ Total confirmed balance: {total_confirmed_balance}")
+            print(f"    └─ Average proof units per confirmed value: {avg_proof_units:.1f}")
+            print(f"    └─ Values with BlockIndex: {sum(1 for v in confirmed_values if self.get_block_index_for_value(v))}")
+            print("=" * 60)
+
+        except Exception as e:
+            print(f"❌ Error visualizing confirmed values: {e}")
+            import traceback
+            traceback.print_exc()
 
     def visualize_vpb_mapping(self, title: str = "VPB Mapping Visualization") -> None:
         """
@@ -552,7 +770,8 @@ class VPBManager:
                 print(f"   ... and {len(all_values) - max_display} more values (not displayed)")
 
             # 显示统计信息
-            print(f"📈 Summary: {len(self._block_indices)} BlockIndex entries, "
+            block_index_stats = self.block_index_manager.get_statistics()
+            print(f"📈 Summary: {block_index_stats.get('total_indices', 0)} BlockIndex entries, "
                   f"{sum(len(pu) for pu in [self.get_proof_units_for_value(v) for v in all_values])} total ProofUnits")
             print("=" * 60)
 
@@ -572,7 +791,7 @@ class VPBManager:
             # 验证Value和BlockIndex的一致性
             for value in self.get_all_values():
                 node_id = self._get_node_id_for_value(value)
-                if node_id and node_id not in self._block_indices:
+                if node_id and not self.block_index_manager.has_block_index(node_id):
                     print(f"Warning: BlockIndex missing for value node {node_id}")
                     # 不强制失败，因为某些情况下可能没有BlockIndex
 
@@ -660,7 +879,12 @@ class VPBManager:
             self.proof_manager = AccountProofManager(self.account_address)
 
             # 清除BlockIndex数据
-            self._block_indices.clear()
+            if not self.block_index_manager.clear_all():
+                print("Warning: Failed to clear all block index data")
+                return False
+            self.block_index_manager = AccountBlockIndexManager(self.account_address)
+
+            # 清除node_id映射
             self._node_id_to_value_id.clear()
 
             print(f"All VPB data cleared for account {self.account_address}")

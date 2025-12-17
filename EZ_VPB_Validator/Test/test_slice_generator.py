@@ -163,7 +163,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -209,7 +209,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -262,7 +262,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
         # Generate slice - should raise ValueError
         try:
             self.slice_generator.generate_vpb_slice(
-                value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+                value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
             )
             self.fail("Expected ValueError for checkpoint at last block height")
         except ValueError as e:
@@ -309,7 +309,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
         # Generate slice - should raise ValueError
         try:
             self.slice_generator.generate_vpb_slice(
-                value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+                value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
             )
             self.fail("Expected ValueError for checkpoint beyond last block height")
         except ValueError as e:
@@ -350,7 +350,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -393,7 +393,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = generator_no_checkpoint.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -435,7 +435,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -480,7 +480,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -523,7 +523,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
         # Generate slice
         result_slice, used_checkpoint = generator_no_checkpoint.generate_vpb_slice(
-            value, proofs, block_index_list, "0x1234567890123456789012345678901234567890"
+            value, proofs.proof_units, block_index_list, "0x1234567890123456789012345678901234567890"
         )
 
         # 可视化结果
@@ -554,8 +554,12 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
     def create_mock_proofs(self, proof_count=5, start_height=1):
         """Create mock Proofs object with specified number of proof units"""
+        class MockProofsList(list):
+            def __len__(self):
+                return proof_count
+
         mock_proofs = Mock()
-        mock_proofs.proof_units = [Mock() for _ in range(proof_count)]
+        mock_proofs.proof_units = MockProofsList([Mock() for _ in range(proof_count)])
         return mock_proofs
 
     def create_mock_block_index_list(self, indices, owners=None):
@@ -597,7 +601,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
                 try:
                     result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-                        value, proofs, block_list, "0x1234567890123456789012345678901234567890"
+                        value, proofs.proof_units, block_list, "0x1234567890123456789012345678901234567890"
                     )
 
                     if height < 0:
@@ -625,7 +629,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
 
                 with self.assertRaises(ValueError) as cm:
                     result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-                        value, proofs, block_list, "0x1234567890123456789012345678901234567890"
+                        value, proofs.proof_units, block_list, "0x1234567890123456789012345678901234567890"
                     )
 
                 error_msg = str(cm.exception)
@@ -666,7 +670,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
                 self.mock_checkpoint.trigger_checkpoint_verification.return_value = None
 
                 result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-                    value, proofs, block_list, "0x1234567890123456789012345678901234567890"
+                    value, proofs.proof_units, block_list, "0x1234567890123456789012345678901234567890"
                 )
 
                 # 可视化结果
@@ -712,7 +716,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
                 self.mock_checkpoint.trigger_checkpoint_verification.return_value = None
 
                 result_slice, used_checkpoint = self.slice_generator.generate_vpb_slice(
-                    value, proofs, block_list, "0x1234567890123456789012345678901234567890"
+                    value, proofs.proof_units, block_list, "0x1234567890123456789012345678901234567890"
                 )
 
                 # 可视化结果
@@ -758,7 +762,7 @@ class TestVPBSliceGeneratorCore(unittest.TestCase):
         results = []
         for i in range(3):
             result_slice, used_checkpoint = generator.generate_vpb_slice(
-                value, proofs, block_list, "0x1234567890123456789012345678901234567890"
+                value, proofs.proof_units, block_list, "0x1234567890123456789012345678901234567890"
             )
             results.append((result_slice.start_block_height, used_checkpoint.block_height))
 

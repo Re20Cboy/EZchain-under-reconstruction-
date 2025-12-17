@@ -5,5 +5,6 @@ BlockIndex-related components for EZChain VPB system.
 """
 
 from .BlockIndexList import BlockIndexList
+from .AccountBlockIndexManager import AccountBlockIndexManager, AccountBlockIndexStorage
 
-__all__ = ['BlockIndexList']
+__all__ = ['BlockIndexList', 'AccountBlockIndexManager', 'AccountBlockIndexStorage']

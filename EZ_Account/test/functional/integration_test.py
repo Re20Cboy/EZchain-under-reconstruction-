@@ -168,7 +168,7 @@ class IntegrationTest:
                         account.vpb_manager._node_id_to_value_id[node_id] = value.begin_index
 
                         # 添加block_index映射
-                        account.vpb_manager._block_indices[node_id] = block_index
+                        account.vpb_manager.block_index_manager.add_block_index(node_id, block_index)
 
                         # 添加到proof_manager
                         if not account.vpb_manager.proof_manager.add_value(node_id):

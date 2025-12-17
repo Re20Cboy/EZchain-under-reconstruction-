@@ -1,3 +1,8 @@
+12/17：update_after_transaction_sent方法更新，将先前的方法作为旧方法弃用。
+新的update_after_transaction_sent还未测试，老方法的调用还未调整为新方法。
+
+verify_vpb_pair调用时，block_index_list就有错误了（应该是在695行代码时就出错了）。
+
 12/16：
 test_blockchain_integration_with_real_account.py的日志输出显示：
 步骤6.3 接收者同步处理中，在验证VPB合法性环节，每个发送者account的第一个接收者都会验证VPB成功，但是此account的随后的接收者都会验证失败，例如（我运行一次的案例）：

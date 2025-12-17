@@ -227,7 +227,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         # 可视化创世初始化后的VPB状态
         print(f"\n📊 [创世初始化后] VPB状态可视化:")
         for account in self.accounts:
-            account.vpb_manager.visualize_vpb_mapping(f"After Genesis Initialization - {account.name}")
+            account.vpb_manager.visualize_confirmed_values(f"After Genesis Initialization - {account.name}")
 
         print(f"🎉 所有账户创世初始化完成！")
 
@@ -560,7 +560,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         # 可视化发送者VPB更新后的状态
         print(f"\n📊 [6.1步骤后-发送者VPB更新] VPB状态可视化:")
         for account in self.accounts:
-            account.vpb_manager.visualize_vpb_mapping(f"After Senders Update - {account.name}")
+            account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
 
         # 步骤6.2：发送者本地化处理VPB（使用真实的默克尔证明数据）
         print("\n🔄 6.2 发送者本地化处理VPB...")
@@ -634,7 +634,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     # 只显示参与了交易的发送者
                     participated = any(submit_tx_info.submitter_address == account.address for submit_tx_info in package_data.selected_submit_tx_infos)
                     if participated:
-                        account.vpb_manager.visualize_vpb_mapping(f"After Senders Update - {account.name}")
+                        account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
             except Exception as e:
                 print(f"   ❌ 发送者VPB本地化处理异常: {e}")
                 import traceback
@@ -880,7 +880,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
                 for account in participant_accounts:
                     if account:
-                        account.vpb_manager.visualize_vpb_mapping(f"After Receivers Update - {account.name}")
+                        account.vpb_manager.visualize_confirmed_values(f"After Receivers Update - {account.name}")
 
             except Exception as e:
                 print(f"   ❌ 接收者处理异常: {e}")

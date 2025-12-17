@@ -132,7 +132,7 @@ class TestVPBManager(unittest.TestCase):
         self.assertEqual(manager.account_address, self.test_account)
         self.assertIsNotNone(manager.value_collection)
         self.assertIsNotNone(manager.proof_manager)
-        self.assertEqual(len(manager._block_indices), 0)
+        self.assertEqual(len(manager.block_index_manager), 0)
         self.assertEqual(len(manager._node_id_to_value_id), 0)
 
     def test_initialize_from_genesis_success(self):
@@ -217,8 +217,8 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._node_id_to_value_id[other_node_id] = other_value.begin_index
 
         # 添加BlockIndex
-        self.vpb_manager._block_indices[target_node_id] = self.data_generator.create_test_block_index([0, 1])
-        self.vpb_manager._block_indices[other_node_id] = self.data_generator.create_test_block_index([0])
+        self.vpb_manager.block_index_manager.add_block_index(target_node_id, self.data_generator.create_test_block_index([0, 1]))
+        self.vpb_manager.block_index_manager.add_block_index(other_node_id, self.data_generator.create_test_block_index([0]))
 
         # 添加到ProofManager
         self.vpb_manager.proof_manager.add_value(target_node_id)
@@ -337,7 +337,7 @@ class TestVPBManager(unittest.TestCase):
         received_block_index = self.data_generator.create_test_block_index([1, 5], "0xBob")
 
         # 添加现有的BlockIndex
-        self.vpb_manager._block_indices[existing_node_id] = self.data_generator.create_test_block_index([0])
+        self.vpb_manager.block_index_manager.add_block_index(existing_node_id, self.data_generator.create_test_block_index([0]))
 
         # 添加到ProofManager
         self.vpb_manager.proof_manager.add_value(existing_node_id)
@@ -436,7 +436,7 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager.value_collection.add_value(value)
         node_id = self.vpb_manager._get_node_id_for_value(value)
         self.vpb_manager._node_id_to_value_id[node_id] = value.begin_index
-        self.vpb_manager._block_indices[node_id] = block_index
+        self.vpb_manager.block_index_manager.add_block_index(node_id, block_index)
 
         retrieved_block_index = self.vpb_manager.get_block_index_for_value(value)
         self.assertIsNotNone(retrieved_block_index)
@@ -483,8 +483,8 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._node_id_to_value_id[node_id1] = value1.begin_index
         self.vpb_manager._node_id_to_value_id[node_id2] = value2.begin_index
 
-        self.vpb_manager._block_indices[node_id1] = self.data_generator.create_test_block_index([0])
-        self.vpb_manager._block_indices[node_id2] = self.data_generator.create_test_block_index([1])
+        self.vpb_manager.block_index_manager.add_block_index(node_id1, self.data_generator.create_test_block_index([0]))
+        self.vpb_manager.block_index_manager.add_block_index(node_id2, self.data_generator.create_test_block_index([1]))
 
         summary = self.vpb_manager.get_vpb_summary()
 
@@ -548,7 +548,7 @@ class TestVPBManager(unittest.TestCase):
 
         # 验证数据已清除
         self.assertEqual(len(self.vpb_manager.get_all_values()), 0)
-        self.assertEqual(len(self.vpb_manager._block_indices), 0)
+        self.assertEqual(len(self.vpb_manager.block_index_manager), 0)
         self.assertEqual(len(self.vpb_manager._node_id_to_value_id), 0)
 
     # ==================== 复杂场景测试 ====================
@@ -579,7 +579,7 @@ class TestVPBManager(unittest.TestCase):
         self.vpb_manager._node_id_to_value_id[transfer_node_id] = transfer_value.begin_index
 
         # 添加BlockIndex
-        self.vpb_manager._block_indices[transfer_node_id] = BlockIndexList([0], self.test_account)
+        self.vpb_manager.block_index_manager.add_block_index(transfer_node_id, BlockIndexList([0], self.test_account))
 
         # 添加到ProofManager
         self.vpb_manager.proof_manager.add_value(transfer_node_id)
@@ -647,7 +647,7 @@ class TestVPBManager(unittest.TestCase):
                 self.vpb_manager.value_collection.add_value(value)
                 node_id = self.vpb_manager._get_node_id_for_value(value)
                 self.vpb_manager._node_id_to_value_id[node_id] = value.begin_index
-                self.vpb_manager._block_indices[node_id] = block_index
+                self.vpb_manager.block_index_manager.add_block_index(node_id, block_index)
                 self.vpb_manager.proof_manager.add_value(node_id)
 
         # 验证所有Values都已添加
@@ -764,14 +764,14 @@ class TestVPBManager(unittest.TestCase):
             node_id = self.vpb_manager._get_node_id_for_value(value)
             self.assertIn(node_id, self.vpb_manager._node_id_to_value_id)
             self.assertEqual(self.vpb_manager._node_id_to_value_id[node_id], value.begin_index)
-            self.assertIn(node_id, self.vpb_manager._block_indices)
+            self.assertIn(node_id, self.vpb_manager.block_index_manager)
             proof_units = self.vpb_manager.get_proof_units_for_value(value)
             self.assertEqual(len(proof_units), 1)
 
         # 第二轮：添加多个新的Values并模拟接收
         new_values = []
         new_proofs = []
-        new_block_indices = []
+        new_block_indices_objects = []
 
         for i in range(3):
             value = self.data_generator.create_test_value(f"0x{1000 + i * 100:x}", 1000 + i * 100)
@@ -780,7 +780,7 @@ class TestVPBManager(unittest.TestCase):
 
             new_values.append(value)
             new_proofs.append(proof)
-            new_block_indices.append(block_index)
+            new_block_indices_objects.append(block_index)
 
             # 模拟接收VPB
             result = self.vpb_manager.receive_vpb_from_others(value, [proof], block_index)
@@ -802,8 +802,8 @@ class TestVPBManager(unittest.TestCase):
             self.assertEqual(self.vpb_manager._node_id_to_value_id[node_id], value.begin_index)
 
             # 验证BlockIndex映射
-            self.assertIn(node_id, self.vpb_manager._block_indices)
-            block_index = self.vpb_manager._block_indices[node_id]
+            self.assertIn(node_id, self.vpb_manager.block_index_manager)
+            block_index = self.vpb_manager.block_index_manager.get_block_index(node_id)
             self.assertIsNotNone(block_index)
 
             # 验证ProofUnit映射
@@ -862,12 +862,12 @@ class TestVPBManager(unittest.TestCase):
 
         print(f"最终统计: {final_stats}")
         print(f"实际Values数量: {len(all_values_final)}")
-        print(f"实际BlockIndices数量: {len(self.vpb_manager._block_indices)}")
+        print(f"实际BlockIndices数量: {len(self.vpb_manager.block_index_manager)}")
         print(f"实际node_id映射数量: {len(self.vpb_manager._node_id_to_value_id)}")
 
         # 验证数量一致性
         self.assertEqual(final_stats['total_values'], len(all_values_final))
-        self.assertEqual(len(self.vpb_manager._block_indices), len(all_values_final))
+        self.assertEqual(len(self.vpb_manager.block_index_manager), len(all_values_final))
         self.assertEqual(len(self.vpb_manager._node_id_to_value_id), len(all_values_final))
 
         # 2. 映射关系完整性检查
@@ -882,7 +882,7 @@ class TestVPBManager(unittest.TestCase):
                 mapping_errors.append(f"Incorrect node_id mapping for value {value.begin_index}")
 
             # 检查BlockIndex映射
-            if node_id not in self.vpb_manager._block_indices:
+            if not self.vpb_manager.block_index_manager.has_block_index(node_id):
                 mapping_errors.append(f"Missing BlockIndex for value {value.begin_index}")
 
             # 检查ProofUnits
