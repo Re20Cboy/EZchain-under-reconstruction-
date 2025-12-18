@@ -88,12 +88,12 @@ class VPBManager:
 
             # 2. 批量将Value映射添加到ProofManager中（仅建立映射关系，不重复存储Value）
             # ProofManager现在只管理Value-Proof映射，Value数据由ValueCollection统一管理
-            # 构建values_and_node_ids列表用于批量添加
-            values_and_node_ids = []
+            # 构建node_ids列表用于批量添加（ProofManager只需要node_id，不需要Value对象）
+            node_ids = []
             for genesis_value, node_id in added_nodes:
-                values_and_node_ids.append((genesis_value, node_id))
+                node_ids.append(node_id)
 
-            if not self.proof_manager.batch_add_values(values_and_node_ids):
+            if not self.proof_manager.batch_add_values(node_ids):
                 print("Error: Failed to batch add value mappings to proof manager")
                 return False
 

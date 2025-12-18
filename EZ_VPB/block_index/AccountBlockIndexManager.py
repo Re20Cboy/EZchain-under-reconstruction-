@@ -58,7 +58,7 @@ class AccountBlockIndexStorage:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error ensuring account exists: {e}")
+            # print(f"Error ensuring account exists: {e}")
             return False
 
     def store_block_index(self, account_address: str, node_id: str, block_index: BlockIndexList) -> bool:
@@ -82,7 +82,7 @@ class AccountBlockIndexStorage:
                 conn.commit()
                 return True
         except Exception as e:
-            print(f"Error storing BlockIndex: {e}")
+            # print(f"Error storing BlockIndex: {e}")
             return False
 
     def load_block_index(self, account_address: str, node_id: str) -> Optional[BlockIndexList]:
@@ -102,7 +102,8 @@ class AccountBlockIndexStorage:
 
                     return BlockIndexList(index_lst=index_list, owner=owner)
         except Exception as e:
-            print(f"Error loading BlockIndex: {e}")
+            # print(f"Error loading BlockIndex: {e}")
+            pass
         return None
 
     def delete_block_index(self, account_address: str, node_id: str) -> bool:
@@ -116,7 +117,7 @@ class AccountBlockIndexStorage:
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
-            print(f"Error deleting BlockIndex: {e}")
+            # print(f"Error deleting BlockIndex: {e}")
             return False
 
     def get_all_block_indices(self, account_address: str) -> List[Tuple[str, BlockIndexList]]:
@@ -138,11 +139,11 @@ class AccountBlockIndexStorage:
                         block_index = BlockIndexList(index_lst=index_list, owner=owner)
                         result.append((node_id, block_index))
                     except Exception as parse_error:
-                        print(f"Warning: Failed to parse BlockIndex for node {node_id}: {parse_error}")
+                        # print(f"Warning: Failed to parse BlockIndex for node {node_id}: {parse_error}")
                         continue
                 return result
         except Exception as e:
-            print(f"Error getting all block indices: {e}")
+            # print(f"Error getting all block indices: {e}")
             return []
 
     def remove_account_indices(self, account_address: str) -> bool:
@@ -156,7 +157,7 @@ class AccountBlockIndexStorage:
                 conn.commit()
                 return cursor.rowcount >= 0  # 允许删除0条记录
         except Exception as e:
-            print(f"Error removing account indices: {e}")
+            # print(f"Error removing account indices: {e}")
             return False
 
     def get_statistics(self, account_address: str) -> Dict[str, int]:
@@ -178,7 +179,8 @@ class AccountBlockIndexStorage:
                         'unique_nodes': unique_nodes
                     }
         except Exception as e:
-            print(f"Error getting statistics: {e}")
+            # print(f"Error getting statistics: {e}")
+            pass
         return {'total_indices': 0, 'unique_nodes': 0}
 
 
@@ -188,12 +190,23 @@ class AccountBlockIndexManager:
     负责管理该Account下的所有node_id与BlockIndexList的映射关系及存储
     """
 
-    def __init__(self, account_address: str, storage: Optional[AccountBlockIndexStorage] = None):
+    def __init__(self, account_address: str, storage: Optional[AccountBlockIndexStorage] = None, db_path: Optional[str] = None):
         self.account_address = account_address
-        self.storage = storage or AccountBlockIndexStorage()
 
-        # 内存缓存：node_id -> BlockIndexList
-        self._block_index_cache: Dict[str, BlockIndexList] = {}
+        # 为每个AccountBlockIndexManager创建独立的存储实例，避免对象共享
+        if storage is not None:
+            self.storage = storage
+        else:
+            # 使用唯一的数据库路径或创建新的存储实例
+            if db_path:
+                self.storage = AccountBlockIndexStorage(db_path)
+            else:
+                # 为每个账户创建独立的存储实例，使用账户名作为数据库名称的一部分
+                unique_db_path = f"ez_account_block_index_{account_address}.db"
+                self.storage = AccountBlockIndexStorage(unique_db_path)
+
+        # 内存缓存：node_id -> 序列化的BlockIndexList数据 (不可变)
+        self._block_index_cache: Dict[str, dict] = {}
 
         # 加载现有的BlockIndex数据
         self._load_existing_indices()
@@ -203,9 +216,12 @@ class AccountBlockIndexManager:
         try:
             all_indices = self.storage.get_all_block_indices(self.account_address)
             for node_id, block_index in all_indices:
-                self._block_index_cache[node_id] = block_index
+                # 缓存不可变的序列化数据而不是对象实例
+                self._block_index_cache[node_id] = block_index.to_dict()
+                # print(f"[DEBUG] 加载对象 {node_id} 到缓存: 原对象地址={id(block_index)}, 缓存数据类型={type(self._block_index_cache[node_id])}")
         except Exception as e:
-            print(f"Error loading existing block indices: {e}")
+            # print(f"Error loading existing block indices: {e}")
+            pass
 
     def add_block_index(self, node_id: str, block_index: BlockIndexList) -> bool:
         """
@@ -223,12 +239,12 @@ class AccountBlockIndexManager:
             if not self.storage.store_block_index(self.account_address, node_id, block_index):
                 return False
 
-            # 更新内存缓存
-            self._block_index_cache[node_id] = block_index
+            # 更新内存缓存：存储不可变的序列化数据
+            self._block_index_cache[node_id] = block_index.to_dict()
 
             return True
         except Exception as e:
-            print(f"Error adding block index: {e}")
+            # print(f"Error adding block index: {e}")
             return False
 
     def get_block_index(self, node_id: str) -> Optional[BlockIndexList]:
@@ -242,18 +258,25 @@ class AccountBlockIndexManager:
             BlockIndexList对象，如果不存在则返回None
         """
         try:
-            # 首先检查内存缓存
+            # 首先检查内存缓存（缓存存储的是不可变的序列化数据）
             if node_id in self._block_index_cache:
-                return self._block_index_cache[node_id]
+                cached_data = self._block_index_cache[node_id]
+                # 从缓存的数据创建新的BlockIndexList实例，避免对象共享
+                result_block_index = BlockIndexList.from_dict(cached_data)
+                # print(f"[DEBUG] 从缓存创建对象 {node_id}: 缓存数据类型={type(cached_data)}, 新对象内存地址={id(result_block_index)}")
+                return result_block_index
 
             # 如果缓存中没有，从数据库加载
             block_index = self.storage.load_block_index(self.account_address, node_id)
             if block_index:
-                self._block_index_cache[node_id] = block_index
-
-            return block_index
+                # 将加载的数据也缓存到内存中（存储为序列化数据）
+                self._block_index_cache[node_id] = block_index.to_dict()
+                # print(f"[DEBUG] 从数据库加载并缓存对象 {node_id}: 对象内存地址={id(block_index)}")
+                return block_index
+            
+            return None
         except Exception as e:
-            print(f"Error getting block index: {e}")
+            # print(f"Error getting block index: {e}")
             return None
 
     def remove_block_index(self, node_id: str) -> bool:
@@ -277,7 +300,7 @@ class AccountBlockIndexManager:
 
             return True
         except Exception as e:
-            print(f"Error removing block index: {e}")
+            # print(f"Error removing block index: {e}")
             return False
 
     def update_block_index_merge(self, node_id: str, new_block_index: BlockIndexList) -> bool:
@@ -321,7 +344,7 @@ class AccountBlockIndexManager:
                 return self.add_block_index(node_id, new_block_index)
 
         except Exception as e:
-            print(f"Error updating block index merge: {e}")
+            # print(f"Error updating block index merge: {e}")
             return False
 
     def add_block_height_to_index(self, node_id: str, block_height: int, owner_address: str = None) -> bool:
@@ -345,7 +368,7 @@ class AccountBlockIndexManager:
                 if block_height not in existing_block_index.index_lst:
                     # 添加新的区块高度
                     existing_block_index.index_lst.append(block_height)
-                    existing_block_index.index_lst.sort()  # 保持有序
+                    # existing_block_index.index_lst.sort()  # 保持有序
 
                     # 如果提供了owner_address，添加所有权变更
                     if owner_address:
@@ -367,7 +390,7 @@ class AccountBlockIndexManager:
                 return self.add_block_index(node_id, new_block_index)
 
         except Exception as e:
-            print(f"Error adding block height to index: {e}")
+            # print(f"Error adding block height to index: {e}")
             return False
 
     def get_all_node_ids(self) -> List[str]:
@@ -380,7 +403,7 @@ class AccountBlockIndexManager:
         try:
             return list(self._block_index_cache.keys())
         except Exception as e:
-            print(f"Error getting all node IDs: {e}")
+            # print(f"Error getting all node IDs: {e}")
             return []
 
     def get_all_block_indices(self) -> List[Tuple[str, BlockIndexList]]:
@@ -393,12 +416,12 @@ class AccountBlockIndexManager:
         try:
             result = []
             for node_id in self._block_index_cache.keys():
-                block_index = self.get_block_index(node_id)
+                block_index = self.get_block_index(node_id)  # get_block_index已经返回深拷贝
                 if block_index:
                     result.append((node_id, block_index))
             return result
         except Exception as e:
-            print(f"Error getting all block indices: {e}")
+            # print(f"Error getting all block indices: {e}")
             return []
 
     def has_block_index(self, node_id: str) -> bool:
@@ -430,7 +453,7 @@ class AccountBlockIndexManager:
 
             return True
         except Exception as e:
-            print(f"Error clearing all block indices: {e}")
+            # print(f"Error clearing all block indices: {e}")
             return False
 
     def get_statistics(self) -> Dict[str, int]:
@@ -452,7 +475,7 @@ class AccountBlockIndexManager:
 
             return result
         except Exception as e:
-            print(f"Error getting statistics: {e}")
+            # print(f"Error getting statistics: {e}")
             return {}
 
     def validate_integrity(self) -> bool:
@@ -473,7 +496,7 @@ class AccountBlockIndexManager:
             missing_in_db = cache_node_ids - db_node_ids
 
             if missing_in_cache:
-                print(f"Warning: {len(missing_in_cache)} block indices in DB but not in cache")
+                # print(f"Warning: {len(missing_in_cache)} block indices in DB but not in cache")
                 # 尝试重新加载缺失的数据
                 for node_id in missing_in_cache:
                     block_index = self.storage.load_block_index(self.account_address, node_id)
@@ -481,7 +504,7 @@ class AccountBlockIndexManager:
                         self._block_index_cache[node_id] = block_index
 
             if missing_in_db:
-                print(f"Warning: {len(missing_in_db)} block indices in cache but not in DB")
+                # print(f"Warning: {len(missing_in_db)} block indices in cache but not in DB")
                 # 从缓存中移除数据库中不存在的数据
                 for node_id in missing_in_db:
                     if node_id in self._block_index_cache:
@@ -492,11 +515,11 @@ class AccountBlockIndexManager:
                 try:
                     # 验证index_lst是否为有效的整数列表
                     if not isinstance(block_index.index_lst, list):
-                        print(f"Invalid index_lst type for node {node_id}")
+                        # print(f"Invalid index_lst type for node {node_id}")
                         return False
 
                     if not all(isinstance(idx, int) for idx in block_index.index_lst):
-                        print(f"Non-integer value in index_lst for node {node_id}")
+                        # print(f"Non-integer value in index_lst for node {node_id}")
                         return False
 
                     # 验证owner数据的合理性
@@ -504,23 +527,23 @@ class AccountBlockIndexManager:
                         if isinstance(block_index.owner, list):
                             for item in block_index.owner:
                                 if not isinstance(item, tuple) or len(item) != 2:
-                                    print(f"Invalid owner history format for node {node_id}")
+                                    # print(f"Invalid owner history format for node {node_id}")
                                     return False
                                 if not isinstance(item[0], int) or not isinstance(item[1], str):
-                                    print(f"Invalid owner history item type for node {node_id}")
+                                    # print(f"Invalid owner history item type for node {node_id}")
                                     return False
                         elif not isinstance(block_index.owner, str):
-                            print(f"Invalid owner type for node {node_id}")
+                            # print(f"Invalid owner type for node {node_id}")
                             return False
 
                 except Exception as validation_error:
-                    print(f"Validation error for node {node_id}: {validation_error}")
+                    # print(f"Validation error for node {node_id}: {validation_error}")
                     return False
 
             return True
 
         except Exception as e:
-            print(f"Error during integrity validation: {e}")
+            # print(f"Error during integrity validation: {e}")
             return False
 
     def __len__(self) -> int:
@@ -539,108 +562,122 @@ class AccountBlockIndexManager:
 
 # 测试代码
 if __name__ == "__main__":
-    print("Testing AccountBlockIndexManager...")
+    # print("Testing AccountBlockIndexManager...")
 
     try:
         # 创建测试管理器
         manager = AccountBlockIndexManager("test_account_0x456")
-        print("[SUCCESS] AccountBlockIndexManager created successfully")
+        # print("[SUCCESS] AccountBlockIndexManager created successfully")
 
         # 测试统计信息
         stats = manager.get_statistics()
-        print(f"[SUCCESS] Statistics retrieved: {stats}")
+        # print(f"[SUCCESS] Statistics retrieved: {stats}")
 
         # 测试基本操作
-        print(f"[SUCCESS] Manager length: {len(manager)}")
-        print(f"[SUCCESS] Contains test_node: {'test_node' in manager}")
+        # print(f"[SUCCESS] Manager length: {len(manager)}")
+        # print(f"[SUCCESS] Contains test_node: {'test_node' in manager}")
 
         # 测试BlockIndex相关功能
-        print("\n--- Testing BlockIndex operations ---")
+        # print("\n--- Testing BlockIndex operations ---")
 
         # 创建测试BlockIndexList
         test_block_index = BlockIndexList(index_lst=[0, 1, 2], owner="0x123abc")
-        print(f"[SUCCESS] Test BlockIndexList created: {test_block_index}")
+        # print(f"[SUCCESS] Test BlockIndexList created: {test_block_index}")
 
         # 添加BlockIndex到管理器
         test_node_id = "test_node_456"
         if manager.add_block_index(test_node_id, test_block_index):
-            print("[SUCCESS] BlockIndex added to manager")
+            # print("[SUCCESS] BlockIndex added to manager")
+            pass
         else:
-            print("[ERROR] Failed to add BlockIndex to manager")
+            # print("[ERROR] Failed to add BlockIndex to manager")
+            pass
 
         # 测试长度变化
-        print(f"[SUCCESS] Manager length after adding: {len(manager)}")
-        print(f"[SUCCESS] Contains test_node_id: {test_node_id in manager}")
+        # print(f"[SUCCESS] Manager length after adding: {len(manager)}")
+        # print(f"[SUCCESS] Contains test_node_id: {test_node_id in manager}")
 
         # 测试获取BlockIndex
         retrieved_block_index = manager.get_block_index(test_node_id)
         if retrieved_block_index:
-            print(f"[SUCCESS] Retrieved BlockIndex: {retrieved_block_index}")
+            # print(f"[SUCCESS] Retrieved BlockIndex: {retrieved_block_index}")
+            pass
         else:
-            print("[ERROR] Failed to retrieve BlockIndex")
+            # print("[ERROR] Failed to retrieve BlockIndex")
+            pass
 
         # 测试添加区块高度
         if manager.add_block_height_to_index(test_node_id, 3, "0x789def"):
-            print("[SUCCESS] Block height added to index")
+            # print("[SUCCESS] Block height added to index")
+            pass
         else:
-            print("[ERROR] Failed to add block height")
+            # print("[ERROR] Failed to add block height")
+            pass
 
         # 验证更新后的BlockIndex
         updated_block_index = manager.get_block_index(test_node_id)
         if updated_block_index and 3 in updated_block_index.index_lst:
-            print("[SUCCESS] Block height update verified")
+            # print("[SUCCESS] Block height update verified")
+            pass
         else:
-            print("[ERROR] Block height update failed")
+            # print("[ERROR] Block height update failed")
+            pass
 
         # 测试获取所有BlockIndex
         all_indices = manager.get_all_block_indices()
-        print(f"[SUCCESS] Retrieved {len(all_indices)} block indices from manager")
+        # print(f"[SUCCESS] Retrieved {len(all_indices)} block indices from manager")
 
         # 更新统计信息
         updated_stats = manager.get_statistics()
-        print(f"[SUCCESS] Updated statistics: {updated_stats}")
+        # print(f"[SUCCESS] Updated statistics: {updated_stats}")
 
         # 测试完整性验证
         if manager.validate_integrity():
-            print("[SUCCESS] Integrity validation passed")
+            # print("[SUCCESS] Integrity validation passed")
+            pass
         else:
-            print("[ERROR] Integrity validation failed")
+            # print("[ERROR] Integrity validation failed")
+            pass
 
         # 测试持久化功能
-        print("\n--- Testing persistence operations ---")
+        # print("\n--- Testing persistence operations ---")
 
         # 创建新的管理器实例来测试数据加载
         new_manager = AccountBlockIndexManager("test_account_0x456")
-        print("[SUCCESS] Created new manager instance")
+        # print("[SUCCESS] Created new manager instance")
 
         # 检查是否成功加载了之前的数据
         loaded_length = len(new_manager)
-        print(f"[SUCCESS] Loaded {loaded_length} block indices from storage")
+        # print(f"[SUCCESS] Loaded {loaded_length} block indices from storage")
 
         # 比较统计信息
         loaded_stats = new_manager.get_statistics()
-        print(f"[SUCCESS] Loaded statistics: {loaded_stats}")
+        # print(f"[SUCCESS] Loaded statistics: {loaded_stats}")
 
         # 验证加载的数据
         loaded_block_index = new_manager.get_block_index(test_node_id)
         if loaded_block_index and loaded_block_index.index_lst == [0, 1, 2, 3]:
-            print("[SUCCESS] Data persistence verified")
+            # print("[SUCCESS] Data persistence verified")
+            pass
         else:
-            print("[ERROR] Data persistence failed")
+            # print("[ERROR] Data persistence failed")
+            pass
 
         # 测试清除功能
         if new_manager.clear_all():
-            print("[SUCCESS] Cleared all data from manager")
+            # print("[SUCCESS] Cleared all data from manager")
+            pass
         else:
-            print("[ERROR] Failed to clear data")
+            # print("[ERROR] Failed to clear data")
+            pass
 
         # 验证清除后的状态
         cleared_length = len(new_manager)
-        print(f"[SUCCESS] Manager length after clearing: {cleared_length}")
+        # print(f"[SUCCESS] Manager length after clearing: {cleared_length}")
 
-        print("\n=== All tests passed! ===")
+        # print("\n=== All tests passed! ===")
 
     except Exception as e:
-        print(f"[ERROR] Error during testing: {e}")
+        # print(f"[ERROR] Error during testing: {e}")
         import traceback
         traceback.print_exc()

@@ -317,6 +317,11 @@ class AccountProofStorage:
     def remove_value_info(self, account_address: str, value_id: str) -> bool:
         """移除Value相关的所有映射关系"""
         try:
+            # 检查参数类型
+            if isinstance(value_id, tuple):
+                print(f"Error: value_id is a tuple instead of string: {value_id}")
+                return False
+
             with sqlite3.connect(self.db_path) as conn:
                 # 删除相关的proof映射
                 cursor = conn.execute("""
@@ -940,6 +945,10 @@ class AccountProofManager:
         try:
             # 清除所有映射关系
             for value_id in list(self._value_proof_mapping.keys()):
+                # 检查value_id类型，如果是tuple则跳过
+                if isinstance(value_id, tuple):
+                    print(f"Warning: Skipping tuple value_id in clear_all: {value_id}")
+                    continue
                 self.remove_value(value_id)
 
             # 清空内存缓存

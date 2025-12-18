@@ -110,10 +110,37 @@ class Account:
                 print(f"创世初始化失败: {e}")
                 return False
 
-    def update_vpb_after_transaction_sent(self, target_value: Value, confirmed_multi_txns,
+    def update_vpb_after_transaction_sent(self, confirmed_multi_txns,
                                      mt_proof, block_height: int, recipient_address: str) -> bool:
         """
-        作为sender发送交易后更新VPB
+        作为sender发送交易后更新VPB（使用新的批量处理接口）
+
+        Args:
+            confirmed_multi_txns: 已确认的多笔交易
+            mt_proof: 默克尔树证明
+            block_height: 区块高度
+            recipient_address: 主要接收方地址（单接收者场景）或默认接收者
+
+        Returns:
+            更新成功返回True
+        """
+        with self._lock:
+            try:
+                success = self.vpb_manager.update_after_transaction_sent(
+                    confirmed_multi_txns, mt_proof,
+                    block_height, recipient_address
+                )
+                if success:
+                    self.last_activity = datetime.now()
+                return success
+            except Exception as e:
+                print(f"发送交易后更新VPB失败: {e}")
+                return False
+
+    def update_vpb_after_transaction_sent_legacy(self, target_value: Value, confirmed_multi_txns,
+                                     mt_proof, block_height: int, recipient_address: str) -> bool:
+        """
+        作为sender发送交易后更新VPB（旧接口，已弃用）
 
         Args:
             target_value: 被转移的Value
@@ -127,7 +154,7 @@ class Account:
         """
         with self._lock:
             try:
-                success = self.vpb_manager.update_after_transaction_sent(
+                success = self.vpb_manager._old_update_after_transaction_sent(
                     target_value, confirmed_multi_txns, mt_proof,
                     block_height, recipient_address
                 )

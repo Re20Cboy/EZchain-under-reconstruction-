@@ -161,7 +161,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         # 使用项目的创世块模块初始化所有账户
         self.initialize_accounts_with_project_genesis()
 
-        print(f"✅ 创建完成 {len(self.accounts)} 个Account节点")
+        print(f"[OK] 创建完成 {len(self.accounts)} 个Account节点")
 
     def initialize_accounts_with_project_genesis(self):
         """使用项目自带的EZ_GENESIS模块初始化所有账户"""
@@ -172,7 +172,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             (1000, 1), (500, 1), (100, 5), (50, 5), (10, 5), (1, 5)
         ]
 
-        print(f"⚙️  为 {len(self.accounts)} 个账户创建创世块")
+        print(f"为 {len(self.accounts)} 个账户创建创世块")
 
         # 创建创世块（使用新的统一API：返回区块、单个SubmitTxInfo、单个MultiTransactions、默克尔树）
         genesis_block, unified_submit_tx_info, unified_multi_txn, merkle_tree = create_genesis_block(
@@ -589,38 +589,46 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                         print(f"      - 从account本地获取multi_txns成功，包含 {len(multi_txns.multi_txns)} 个交易")
                         print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
 
+                        # 检查交易中的Value数据
+                        total_values = 0
                         for i, txn in enumerate(multi_txns.multi_txns):
-                            print(f"      - 交易{i+1}: value={hasattr(txn, 'value')}, value长度={len(txn.value) if hasattr(txn, 'value') and txn.value else 0}")
-                            # 从交易中提取实际的Value数据
                             if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
-                                # 使用交易中实际的第一个Value作为target_value
-                                target_value = txn.value[0]
-                                recipient_address = getattr(txn, 'recipient', 'unknown')
+                                total_values += len(txn.value)
 
-                                # 调用发送者的VPB本地更新方法，使用真实的默克尔证明
-                                print(f"   🔍 准备调用VPB更新，参数检查:")
-                                print(f"      - target_value: {target_value.value_num if target_value else 'None'}")
-                                print(f"      - block_height: {block.index}")
-                                print(f"      - recipient_address: {recipient_address}")
-                                proof_length = len(sender_merkle_proof.mt_prf_list) if sender_merkle_proof and hasattr(sender_merkle_proof, 'mt_prf_list') else 0
-                                print(f"      - mt_proof length: {proof_length}")
-                                print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
+                        print(f"      - 总计 {total_values} 个Value数据待处理")
 
-                                success = sender_account.update_vpb_after_transaction_sent(
-                                    target_value=target_value,
-                                    confirmed_multi_txns=multi_txns,
-                                    mt_proof=sender_merkle_proof,  # 使用真实的默克尔证明数据
-                                    block_height=block.index,
-                                    recipient_address=recipient_address
-                                )
+                        if total_values > 0:
+                            # 获取主要接收者地址（使用第一个交易的接收者作为默认接收者）
+                            primary_recipient = None
+                            for txn in multi_txns.multi_txns:
+                                if hasattr(txn, 'recipient') and txn.recipient:
+                                    primary_recipient = txn.recipient
+                                    break
 
-                                if success:
-                                    vpb_update_count += 1
-                                    print(f"   ✅ {sender_account.name} VPB本地更新成功 (金额: {target_value.value_num}, 证明数据长度: {proof_length})")
-                                else:
-                                    print(f"   ❌ {sender_account.name} VPB本地更新失败")
+                            # 调用发送者的VPB本地更新方法，使用新的批量处理接口
+                            print(f"   🔍 准备调用VPB批量更新，参数检查:")
+                            print(f"      - multi_txns: {len(multi_txns.multi_txns)} 个交易")
+                            print(f"      - total values: {total_values} 个")
+                            print(f"      - block_height: {block.index}")
+                            print(f"      - primary_recipient: {primary_recipient or 'unknown'}")
+                            proof_length = len(sender_merkle_proof.mt_prf_list) if sender_merkle_proof and hasattr(sender_merkle_proof, 'mt_prf_list') else 0
+                            print(f"      - mt_proof length: {proof_length}")
+                            print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
+
+                            success = sender_account.update_vpb_after_transaction_sent(
+                                confirmed_multi_txns=multi_txns,
+                                mt_proof=sender_merkle_proof,  # 使用真实的默克尔证明数据
+                                block_height=block.index,
+                                recipient_address=primary_recipient or "unknown"
+                            )
+
+                            if success:
+                                vpb_update_count += 1
+                                print(f"   ✅ {sender_account.name} VPB批量更新成功 (交易数: {len(multi_txns.multi_txns)}, Value数: {total_values}, 证明数据长度: {proof_length})")
                             else:
-                                print(f"   ⚠️ {sender_account.name} 交易中没有Value数据")
+                                print(f"   ❌ {sender_account.name} VPB批量更新失败")
+                        else:
+                            print(f"   ⚠️ {sender_account.name} 交易中没有Value数据")
                     else:
                         print(f"   ❌ 无法从account本地获取multi_txns数据，hash: {multi_txns_hash[:16]}...")
                         print(f"   ⚠️ 检查account的submitted_transactions队列中是否包含该交易")
