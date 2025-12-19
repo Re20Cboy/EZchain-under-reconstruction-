@@ -23,20 +23,27 @@ class VPBManager:
     VPB在逻辑上是一一对应的：一个Value对应一组Proofs和一个BlockIndex。
     """
 
-    def __init__(self, account_address: str):
+    def __init__(self, account_address: str, data_directory: str = None):
         """
         初始化VPB管理器
 
         Args:
             account_address: 账户地址
+            data_directory: 可选的自定义数据目录路径
         """
         self.account_address = account_address
+        self.data_directory = data_directory
+
+        # 为各个组件准备自定义数据库路径
+        value_db_path = f"{data_directory}/ez_account_value_collection_{account_address}.db" if data_directory else None
+        proof_db_path = f"{data_directory}/ez_account_proof_{account_address}.db" if data_directory else None
+        block_index_db_path = f"{data_directory}/ez_account_block_index_{account_address}.db" if data_directory else None
 
         # 初始化三个核心组件
-        self.value_collection = AccountValueCollection(account_address)
-        self.proof_manager = AccountProofManager(account_address)
+        self.value_collection = AccountValueCollection(account_address, db_path=value_db_path)
+        self.proof_manager = AccountProofManager(account_address, db_path=proof_db_path)
         # BlockIndex管理器 - 使用专门的AccountBlockIndexManager进行持久化管理
-        self.block_index_manager = AccountBlockIndexManager(account_address)
+        self.block_index_manager = AccountBlockIndexManager(account_address, db_path=block_index_db_path)
 
         # 维护node_id到value_id的映射关系
         self._node_id_to_value_id: Dict[str, str] = {}
@@ -596,9 +603,67 @@ class VPBManager:
             print(f"Error getting VPB summary: {e}")
             return {}
 
+    def print_all_values_summary(self, title: str = "Values Summary") -> None:
+        """
+        简洁美观地打印所有Value信息摘要
+
+        Args:
+            title: 打印标题
+        """
+        try:
+            print(f"\n💎 {title}")
+            print(f"Account: {self.account_address[:12]}...{self.account_address[-6:]}")
+            print("=" * 50)
+
+            all_values = self.get_all_values()
+            if not all_values:
+                print("   📝 No values found in this account")
+                print("=" * 50)
+                return
+
+            # 按状态分组统计
+            state_counts = {}
+            state_amounts = {}
+            value_details = []
+
+            for value in all_values:
+                state_name = value.state.name if hasattr(value.state, 'name') else str(value.state)
+                state_counts[state_name] = state_counts.get(state_name, 0) + 1
+                state_amounts[state_name] = state_amounts.get(state_name, 0) + value.value_num
+
+                # 收集前5个和后5个Value的详细信息
+                if len(value_details) < 5 or len(value_details) >= len(all_values) - 5:
+                    value_details.append((state_name[0], value.value_num))
+
+            # 打印状态统计
+            print("📊 Status Distribution:")
+            for state_name in sorted(state_counts.keys()):
+                count = state_counts[state_name]
+                amount = state_amounts[state_name]
+                icon = {"UNSPENT": "🟢", "CONFIRMED": "🔴", "SPENT": "⚫"}.get(state_name, "🔵")
+                print(f"   {icon} {state_name}: {count:2d} values, Amount: {amount:6d}")
+
+            # 打印余额信息
+            total_balance = self.get_total_balance()
+            unspent_balance = self.get_unspent_balance()
+            print(f"\n💰 Balance: Total={total_balance}, Available={unspent_balance}")
+
+            # 打印Value样本（前3个+后3个，或全部如果少于6个）
+            print(f"\n🔍 Value Samples (showing {len(value_details)} of {len(all_values)}):")
+            for i, (state_char, amount) in enumerate(value_details):
+                if i < 3 or i >= len(value_details) - 3:
+                    print(f"   [{state_char}] {amount:4d}")
+                elif i == 3:
+                    print(f"   ... ({len(all_values) - len(value_details)} more) ...")
+
+            print("=" * 50)
+
+        except Exception as e:
+            print(f"Error printing values summary: {e}")
+
     def visualize_confirmed_values(self, title: str = "Confirmed Values Visualization") -> None:
         """
-        可视化当前账户所有已确认（非未花销）状态的Value
+        可视化当前账户所有已确认状态的Value
 
         Args:
             title: 可视化图表的标题

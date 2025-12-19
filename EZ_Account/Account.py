@@ -40,7 +40,7 @@ class Account:
     """
 
     def __init__(self, address: str, private_key_pem: bytes, public_key_pem: bytes,
-                 name: Optional[str] = None):
+                 name: Optional[str] = None, data_directory: Optional[str] = None):
         """
         Initialize an EZChain account with VPBManager.
 
@@ -49,14 +49,15 @@ class Account:
             private_key_pem: PEM encoded private key for signing
             public_key_pem: PEM encoded public key for verification
             name: Optional human-readable name for the account
+            data_directory: Optional custom data directory for storing account data
         """
         self.address = address
         self.name = name or f"Account_{address[:8]}"
         self.private_key_pem = private_key_pem
         self.public_key_pem = public_key_pem
 
-        # VPB管理 - VPBManager是唯一的VPB操作接口
-        self.vpb_manager = VPBManager(address)
+        # VPB管理 - VPBManager是唯一的VPB操作接口，支持自定义数据目录
+        self.vpb_manager = VPBManager(address, data_directory=data_directory)
         self._lock = threading.RLock()
 
         # CreateMultiTransactions for transaction creation
@@ -211,6 +212,17 @@ class Account:
     def get_total_balance(self) -> int:
         """获取总余额"""
         return self.vpb_manager.get_total_balance()
+
+    def print_values_summary(self, title: Optional[str] = None) -> None:
+        """
+        简洁美观地打印所有Value信息摘要
+
+        Args:
+            title: 可选的自定义标题，默认使用账户名称
+        """
+        if title is None:
+            title = f"{self.name} Values Summary"
+        self.vpb_manager.print_all_values_summary(title)
 
     def get_values(self, state: Optional[ValueState] = None) -> List[Value]:
         """

@@ -11,16 +11,21 @@ EZchain Blockchain Integration Tests with Real Account Nodes - Fixed Version
 import sys
 import os
 import unittest
-import tempfile
-import shutil
 import datetime
 import json
 import logging
 import random
+import copy
 from typing import List, Dict, Any, Tuple
 
-# Add the project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the project root and current directory to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, project_root)
+sys.path.insert(0, current_dir)
+
+# 导入临时数据管理器
+from temp_data_manager import TempDataManager, create_test_environment
 
 from EZ_Main_Chain.Blockchain import (
     Blockchain, ChainConfig, ConsensusStatus
@@ -70,23 +75,40 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
     def setUp(self):
         """测试前准备：创建真实的测试环境和Account节点"""
-        # 创建临时目录用于测试
-        self.temp_dir = tempfile.mkdtemp()
+        # 创建临时数据管理器，确保每次测试都有独立环境
+        self.temp_manager = create_test_environment(
+            test_name="blockchain_integration_with_real_account",
+            max_sessions=3
+        )
+        # 使用上下文管理器方式创建会话
+        self.temp_manager.cleanup_old_sessions()  # 先清理旧会话
+        self.temp_manager.create_session()
+
+        # 验证临时目录创建成功
+        session_dir = self.temp_manager.get_current_session_dir()
+        blockchain_dir = self.temp_manager.get_blockchain_data_dir()
+        pool_db_path = self.temp_manager.get_pool_db_path()
+        account_storage_dir = self.temp_manager.get_account_storage_dir()
+
+        print(f"[DEBUG] 临时会话目录: {session_dir}")
+        print(f"[DEBUG] 区块链数据目录: {blockchain_dir}")
+        print(f"[DEBUG] 交易池数据库路径: {pool_db_path}")
+        print(f"[DEBUG] 账户存储目录: {account_storage_dir}")
 
         # 配置区块链参数（快速确认用于测试）
         self.config = ChainConfig(
             confirmation_blocks=2,  # 2个区块确认
             max_fork_height=3,      # 3个区块后孤儿
             debug_mode=True,
-            data_directory=os.path.join(self.temp_dir, "test_blockchain_data"),  # 使用临时目录存储区块链数据
+            data_directory=self.temp_manager.get_blockchain_data_dir(),  # 使用管理的临时目录存储区块链数据
             auto_save=False  # 禁用自动保存，避免影响测试
         )
 
         # 创建区块链实例
         self.blockchain = Blockchain(config=self.config)
 
-        # 创建交易池（使用临时数据库）
-        self.pool_db_path = os.path.join(self.temp_dir, "test_pool.db")
+        # 创建交易池（使用管理的临时数据库）
+        self.pool_db_path = self.temp_manager.get_pool_db_path()
         self.transaction_pool = TxPool(db_path=self.pool_db_path)
 
         # 创建交易选择器
@@ -117,14 +139,20 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 except Exception as e:
                     logger.error(f"清理Account节点失败: {e}")
 
-            if os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir)
+            # 使用临时数据管理器清理当前会话
+            if hasattr(self, 'temp_manager') and self.temp_manager:
+                session_dir = self.temp_manager.get_current_session_dir()
+                print(f"[DEBUG] 清理临时会话目录: {session_dir}")
+                self.temp_manager.cleanup_current_session()
+                print(f"[DEBUG] 临时会话目录清理完成")
         except Exception as e:
             logger.error(f"清理临时文件失败: {e}")
-            # 尝试删除数据库文件
+            import traceback
+            traceback.print_exc()
+            # 尝试手动清理
             try:
-                if os.path.exists(self.pool_db_path):
-                    os.unlink(self.pool_db_path)
+                if hasattr(self, 'temp_manager') and self.temp_manager:
+                    self.temp_manager.cleanup_current_session()
             except:
                 pass
 
@@ -143,12 +171,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 # 生成符合以太坊格式的地址
                 address = self._create_eth_address(f"{name}_{i}")
 
-                # 创建真实的Account节点
+                # 创建真实的Account节点，使用临时目录存储数据
+                account_storage_dir = self.temp_manager.get_account_storage_dir()
+
                 account = Account(
                     address=address,
                     private_key_pem=private_key_pem,
                     public_key_pem=public_key_pem,
-                    name=name
+                    name=name,
+                    data_directory=account_storage_dir  # 指定账户数据存储目录
                 )
 
                 self.accounts.append(account)
@@ -228,6 +259,8 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print(f"\n📊 [创世初始化后] VPB状态可视化:")
         for account in self.accounts:
             account.vpb_manager.visualize_confirmed_values(f"After Genesis Initialization - {account.name}")
+            # 使用新的Value摘要打印方法
+            account.print_values_summary()
 
         print(f"🎉 所有账户创世初始化完成！")
 
@@ -558,7 +591,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print(f"   ✅ 收集到 {len(participant_addresses)} 个参与交易地址")
 
         # 可视化发送者VPB更新后的状态
-        print(f"\n📊 [6.1步骤后-发送者VPB更新] VPB状态可视化:")
+        print(f"\n📊 [6.1步骤后] VPB状态可视化:")
         for account in self.accounts:
             account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
 
@@ -694,14 +727,15 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
                         # 获取交易中转移的Value（第一个Value作为转移的Value）
                         if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
-                            transferred_value = txn.value[0]  # 转移的Value
+                            # 深拷贝Value对象，避免内存级别混乱
+                            transferred_value = copy.deepcopy(txn.value[0])  # 深拷贝转移的Value
 
-                            # 从发送者的VPB管理器获取对应的证明数据
-                            received_proof_units = sender_account.vpb_manager.get_proof_units_for_value(transferred_value)
-                            received_block_index = sender_account.vpb_manager.get_block_index_for_value(transferred_value)
+                            # 从发送者的VPB管理器获取对应的证明数据（深拷贝）
+                            received_proof_units = copy.deepcopy(sender_account.vpb_manager.get_proof_units_for_value(transferred_value))
+                            received_block_index = copy.deepcopy(sender_account.vpb_manager.get_block_index_for_value(transferred_value))
 
                             if received_proof_units and received_block_index:
-                                # 准备发送给接收者的数据
+                                # 准备发送给接收者的数据（所有重要参数都深拷贝）
                                 recipient_data = {
                                     'recipient_account': recipient_account,
                                     'recipient_address': recipient_address,
@@ -788,11 +822,11 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                     genesis_block_height=0
                                 )
 
-                                # 使用VPBValidator进行验证
+                                # 使用VPBValidator进行验证（传入深拷贝数据）
                                 verification_report = self.vpb_validator.verify_vpb_pair(
-                                    value=received_value,
-                                    proof_units=received_proof_units,
-                                    block_index_list=received_block_index,
+                                    value=copy.deepcopy(received_value),
+                                    proof_units=copy.deepcopy(received_proof_units),
+                                    block_index_list=copy.deepcopy(received_block_index),
                                     main_chain_info=main_chain_info,
                                     account_address=recipient_address
                                 )
@@ -807,10 +841,11 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 vpb_verification_success += 1
 
                                 # 步骤2: 若验证通过，调用receive_vpb_from_others更新本地VPB数据
+                                # 确保传入深拷贝的数据，避免分布式网络中的内存混乱
                                 receive_success = recipient_account.receive_vpb_from_others(
-                                    received_value=received_value,
-                                    received_proof_units=received_proof_units,
-                                    received_block_index=received_block_index
+                                    received_value=copy.deepcopy(received_value),
+                                    received_proof_units=copy.deepcopy(received_proof_units),
+                                    received_block_index=copy.deepcopy(received_block_index)
                                 )
 
                                 if receive_success:
@@ -901,6 +936,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         for account in self.accounts:
             account_info = account.get_account_info()
             final_total_balance += account_info['balances']['total']
+
+            # 打印Value摘要
+            account.print_values_summary()
 
             # 验证账户完整性
             integrity_valid = account.validate_integrity()

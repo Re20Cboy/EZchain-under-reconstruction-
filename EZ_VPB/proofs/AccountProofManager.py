@@ -406,9 +406,19 @@ class AccountProofManager:
     """
 
     def __init__(self, account_address: str, storage: Optional[AccountProofStorage] = None,
-                 bloom_filter_expected_items: int = 10000, bloom_filter_false_positive_rate: float = 0.01):
+                 bloom_filter_expected_items: int = 10000, bloom_filter_false_positive_rate: float = 0.01, db_path: str = None):
         self.account_address = account_address
-        self.storage = storage or AccountProofStorage()
+        # 如果提供了db_path，创建自定义存储；否则使用默认存储
+        if storage is not None:
+            self.storage = storage
+        else:
+            # 使用自定义数据库路径或默认路径
+            if db_path:
+                self.storage = AccountProofStorage(db_path)
+            else:
+                # 为每个账户创建独立的存储实例，使用账户名作为数据库名称的一部分
+                unique_db_path = f"ez_account_proof_{account_address}.db"
+                self.storage = AccountProofStorage(unique_db_path)
 
         # 内存缓存
         self._value_proof_mapping: Dict[str, List[str]] = defaultdict(list)  # value_id -> list of unit_ids (保持顺序)

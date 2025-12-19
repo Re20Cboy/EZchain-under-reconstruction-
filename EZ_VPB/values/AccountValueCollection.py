@@ -737,51 +737,90 @@ class AccountValueCollection:
             True if integrity is valid
         """
         try:
+            print(f"[DEBUG] Starting integrity validation for account {self.account_address}")
+            print(f"[DEBUG] Collection size: {self.size}, Head: {self.head.node_id if self.head else None}")
+
             # 检查链表结构完整性
             current = self.head
             index = 0
+            visited_nodes = set()
+
             while current:
                 index += 1
+                visited_nodes.add(current.node_id)
 
                 # 验证前驱指针
                 if current.prev is not None and current.prev.next != current:
+                    print(f"[ERROR] Prev pointer inconsistency at node {current.node_id} (index {index})")
+                    print(f"[ERROR] Current.prev.node_id: {current.prev.node_id if current.prev else None}")
+                    print(f"[ERROR] Current.prev.next.node_id: {current.prev.next.node_id if current.prev and current.prev.next else None}")
                     return False
 
                 # 验证后继指针
                 if current.next is not None and current.next.prev != current:
+                    print(f"[ERROR] Next pointer inconsistency at node {current.node_id} (index {index})")
+                    print(f"[ERROR] Current.next.node_id: {current.next.node_id if current.next else None}")
+                    print(f"[ERROR] Current.next.prev.node_id: {current.next.prev.node_id if current.next and current.next.prev else None}")
                     return False
 
                 # 验证索引映射
                 if current.node_id not in self._index_map:
+                    print(f"[ERROR] Node {current.node_id} not found in _index_map (index {index})")
+                    print(f"[ERROR] _index_map keys: {list(self._index_map.keys())}")
                     return False
 
                 # 验证状态索引
                 if current.node_id not in self._state_index[current.value.state]:
+                    print(f"[ERROR] Node {current.node_id} not found in state index for state {current.value.state} (index {index})")
+                    print(f"[ERROR] State index for {current.value.state}: {list(self._state_index[current.value.state])}")
                     return False
 
                 current = current.next
 
+            print(f"[DEBUG] Traversed {index} nodes, visited nodes: {len(visited_nodes)}")
+
             # 检查size是否正确
             if index != self.size:
+                print(f"[ERROR] Size mismatch: traversed {index} nodes vs size={self.size}")
                 return False
 
             # 检查索引映射数量
             if len(self._index_map) != self.size:
+                print(f"[ERROR] Index map size mismatch: {len(self._index_map)} vs size={self.size}")
                 return False
 
             # 检查状态索引总数
             total_state_count = sum(len(state_set) for state_set in self._state_index.values())
             if total_state_count != self.size:
+                print(f"[ERROR] State index count mismatch: total={total_state_count} vs size={self.size}")
+                for state, state_set in self._state_index.items():
+                    print(f"[DEBUG] State {state}: {len(state_set)} nodes")
+                return False
+
+            # 检查是否有重复访问的节点（循环检测）
+            if len(visited_nodes) != index:
+                print(f"[ERROR] Cycle detected: visited {len(visited_nodes)} unique nodes but traversed {index} nodes")
                 return False
 
             # 检查无重叠
+            print(f"[DEBUG] Checking for value overlaps...")
             if not self.validate_no_overlap():
+                print(f"[ERROR] Value overlap detected")
+                values = self.get_values_sorted_by_begin_index()
+                for i in range(len(values) - 1):
+                    if values[i].get_decimal_end_index() >= values[i + 1].get_decimal_begin_index():
+                        print(f"[ERROR] Overlap between values {i} and {i+1}:")
+                        print(f"[ERROR]   Value {i}: begin={values[i].begin_index}, end={values[i].get_decimal_end_index()}, state={values[i].state}")
+                        print(f"[ERROR]   Value {i+1}: begin={values[i+1].begin_index}, end={values[i+1].get_decimal_end_index()}, state={values[i+1].state}")
                 return False
 
+            print(f"[DEBUG] Integrity validation passed for account {self.account_address}")
             return True
 
         except Exception as e:
-            print(f"Error during integrity validation: {e}")
+            print(f"[ERROR] Exception during integrity validation: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def clear_all(self) -> bool:
