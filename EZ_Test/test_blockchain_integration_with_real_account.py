@@ -43,26 +43,47 @@ from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_acco
 from EZ_Miner.miner import Miner
 from EZ_VPB_Validator.vpb_validator import VPBValidator
 
-# Configure logging - 启用日志输出以便观察创世块默克尔树形成过程
+# Configure logging - 精简输出，只保留关键信息
 import logging
 import sys
 
-# 配置日志级别为ERROR，最大程度减少输出
+# 配置根logger为CRITICAL级别，最大程度减少输出
 logging.basicConfig(
-    level=logging.ERROR,  # 改为ERROR级别以最大程度减少输出
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.CRITICAL,  # 只显示严重错误
+    format='%(levelname)s: %(message)s',  # 简化格式
     handlers=[
         logging.StreamHandler(sys.stdout)
     ]
 )
 
-# 但是让genesis模块保持INFO级别输出
-genesis_logger = logging.getLogger('EZ_GENESIS')
-genesis_logger.setLevel(logging.INFO)
+# 只保留关键模块的INFO级别输出，其他全部设为ERROR或CRITICAL
+critical_loggers = [
+    'EZ_VPB_Validator', 'EZ_VPB_Validator.VPBSliceGenerator',
+    'EZ_VPB_Validator.DataStructureValidator', 'EZ_VPB_Validator.BloomFilterValidator',
+    'EZ_VPB_Validator.proof_validator', 'EpochExtractor', 'DataStructureValidator',
+    'VPBSliceGenerator', 'BloomFilterValidator', 'VPBValidator'
+]
 
-# 让account和区块链相关模块保持INFO级别
-for logger_name in ['__main__', 'Blockchain', 'Account']:
-    logging.getLogger(logger_name).setLevel(logging.INFO)
+# 关闭所有详细日志
+for logger_name in critical_loggers:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+
+# 只让genesis模块保持必要的INFO输出
+genesis_logger = logging.getLogger('EZ_GENESIS')
+genesis_logger.setLevel(logging.WARNING)  # 降低到WARNING级别
+
+# 当前测试模块保持INFO级别，但只输出关键信息
+current_logger = logging.getLogger(__name__)
+current_logger.setLevel(logging.WARNING)
+
+# 其他可能产生大量输出的模块也设为CRITICAL
+other_verbose_loggers = [
+    'EZ_Tool_Box', 'SecureSignature', 'MultiTransactions', 'SingleTransaction',
+    'TxPool', 'PickTx', 'AccountProofManager', 'AccountValueCollection'
+]
+
+for logger_name in other_verbose_loggers:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +94,18 @@ warnings.filterwarnings("ignore")
 class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
     """使用真实Account节点的区块链联调测试"""
 
+    def __init__(self, methodName='runTest'):
+        super().__init__(methodName)
+        # 添加日志详细度控制开关
+        self.verbose_logging = os.getenv('VERBOSE_TEST_LOGGING', 'false').lower() == 'true'
+        # 添加VPB可视化控制开关
+        self.show_vpb_visualization = os.getenv('SHOW_VPB_VISUALIZATION', 'false').lower() == 'true'
+
     def setUp(self):
         """测试前准备：创建真实的测试环境和Account节点"""
+        # 清理根目录下的旧测试文件
+        self._cleanup_legacy_test_files()
+
         # 创建临时数据管理器，确保每次测试都有独立环境
         self.temp_manager = create_test_environment(
             test_name="blockchain_integration_with_real_account",
@@ -90,10 +121,11 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         pool_db_path = self.temp_manager.get_pool_db_path()
         account_storage_dir = self.temp_manager.get_account_storage_dir()
 
-        print(f"[DEBUG] 临时会话目录: {session_dir}")
-        print(f"[DEBUG] 区块链数据目录: {blockchain_dir}")
-        print(f"[DEBUG] 交易池数据库路径: {pool_db_path}")
-        print(f"[DEBUG] 账户存储目录: {account_storage_dir}")
+        if self.verbose_logging:
+            print(f"[DEBUG] 临时会话目录: {session_dir}")
+            print(f"[DEBUG] 区块链数据目录: {blockchain_dir}")
+            print(f"[DEBUG] 交易池数据库路径: {pool_db_path}")
+            print(f"[DEBUG] 账户存储目录: {account_storage_dir}")
 
         # 配置区块链参数（快速确认用于测试）
         self.config = ChainConfig(
@@ -129,41 +161,141 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         # 创建VPB验证器
         self.vpb_validator = VPBValidator()
 
+    def _cleanup_legacy_test_files(self):
+        """清理旧的测试文件"""
+        import glob
+        import os
+
+        # 需要清理的特定文件（更精确，避免误删）
+        specific_files = [
+            "temp_sequence_test.db",
+            "temp_test_ordering.db",
+            "test_vpb_storage.db",
+            "ez_account_proof_storage.db",
+            "ez_vpb_storage.db"
+        ]
+
+        # 需要清理的文件模式（更安全的模式）
+        file_patterns = [
+            "temp_*.db",
+            "test_*.db",
+            "ez_account_proof_*.db",      # 匹配 ez_account_proof_0x....db
+            "ez_account_block_index_*.db", # 匹配 ez_account_block_index_0x....db
+            "ez_account_value_collection_*.db"  # 匹配 ez_account_value_collection_0x....db
+        ]
+
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ez_test_dir = os.path.join(project_root, "EZ_Test")
+
+        cleanup_dirs = [project_root, ez_test_dir]
+
+        try:
+            for directory in cleanup_dirs:
+                if not os.path.exists(directory):
+                    continue
+
+                # 清理特定文件
+                for file_name in specific_files:
+                    file_path = os.path.join(directory, file_name)
+                    if os.path.isfile(file_path):
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"清理特定测试文件: {file_path}")
+                        except Exception as e:
+                            logger.warning(f"清理文件失败 {file_path}: {e}")
+
+                # 清理模式匹配的文件
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(directory)
+                    for pattern in file_patterns:
+                        for file_path in glob.glob(pattern):
+                            try:
+                                # 额外安全检查
+                                if (os.path.isfile(file_path) and
+                                    not any(skip in file_path.lower() for skip in ['git', 'node_modules', '__pycache__', 'important'])):
+                                    os.remove(file_path)
+                                    logger.info(f"清理模式匹配文件: {os.path.join(directory, file_path)}")
+                            except Exception as e:
+                                logger.warning(f"清理文件失败 {file_path}: {e}")
+                finally:
+                    os.chdir(original_cwd)
+
+        except Exception as e:
+            logger.error(f"清理旧测试文件时出错: {e}")
+
     def tearDown(self):
         """测试后清理：删除临时文件"""
+        print("\n" + "="*60)
+        print("[TEARDOWN] 开始清理测试环境...")
+        print("="*60)
+
+        # 强制刷新输出
+        import sys
+        sys.stdout.flush()
+        sys.stderr.flush()
+
         try:
             # 清理Account节点
-            for account in self.accounts:
-                try:
-                    account.cleanup()
-                except Exception as e:
-                    logger.error(f"清理Account节点失败: {e}")
+            if hasattr(self, 'accounts'):
+                print(f"[TEARDOWN] 清理 {len(self.accounts)} 个Account节点...")
+                for i, account in enumerate(self.accounts):
+                    try:
+                        print(f"[TEARDOWN] 清理Account节点 {i+1}/{len(self.accounts)}: {account.name}")
+                        account.cleanup()
+                        print(f"[TEARDOWN] Account节点 {account.name} 清理完成")
+                    except Exception as e:
+                        print(f"[TEARDOWN] 清理Account节点 {account.name} 失败: {e}")
+                        logger.error(f"清理Account节点失败: {e}")
 
             # 使用临时数据管理器清理当前会话
             if hasattr(self, 'temp_manager') and self.temp_manager:
-                session_dir = self.temp_manager.get_current_session_dir()
-                print(f"[DEBUG] 清理临时会话目录: {session_dir}")
-                self.temp_manager.cleanup_current_session()
-                print(f"[DEBUG] 临时会话目录清理完成")
+                try:
+                    session_dir = self.temp_manager.get_current_session_dir()
+                    print(f"[TEARDOWN] 清理临时会话目录: {session_dir}")
+                    self.temp_manager.cleanup_current_session()
+                    print(f"[TEARDOWN] 临时会话目录清理完成")
+                except Exception as e:
+                    print(f"[TEARDOWN] 临时数据管理器清理失败: {e}")
+                    logger.error(f"临时数据管理器清理失败: {e}")
+
+            # 额外清理：确保根目录下的临时文件被删除
+            print("[TEARDOWN] 执行额外清理...")
+            self._cleanup_legacy_test_files()
+
+            print("[TEARDOWN] 所有清理工作完成")
+
         except Exception as e:
+            print(f"[TEARDOWN] 清理临时文件失败: {e}")
             logger.error(f"清理临时文件失败: {e}")
             import traceback
             traceback.print_exc()
             # 尝试手动清理
             try:
                 if hasattr(self, 'temp_manager') and self.temp_manager:
+                    print("[TEARDOWN] 尝试手动清理临时数据管理器...")
                     self.temp_manager.cleanup_current_session()
-            except:
-                pass
+                    print("[TEARDOWN] 手动清理完成")
+            except Exception as cleanup_error:
+                print(f"[TEARDOWN] 手动清理也失败了: {cleanup_error}")
+
+        finally:
+            print("[TEARDOWN] tearDown方法执行完毕")
+            # 强制刷新输出
+            sys.stdout.flush()
+            sys.stderr.flush()
+            print("="*60)
 
     def setup_real_accounts(self):
         """创建真实的Account节点并使用项目的创世块模块初始化"""
         self.accounts = []
         account_names = ["alice", "bob", "charlie", "david"]
 
-        print("[INFO] 创建Account节点...")
+        print("创建Account节点... | ", end="")
 
         # 先创建所有Account节点
+        created_accounts = []
         for i, name in enumerate(account_names):
             try:
                 # 生成真实的密钥对
@@ -179,15 +311,17 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     private_key_pem=private_key_pem,
                     public_key_pem=public_key_pem,
                     name=name,
-                    data_directory=account_storage_dir  # 指定账户数据存储目录
+                    data_directory=account_storage_dir
                 )
 
                 self.accounts.append(account)
-                logger.info(f"创建Account节点: {name} ({address})")
+                created_accounts.append(name)
 
             except Exception as e:
-                logger.error(f"创建Account节点失败 {name}: {e}")
+                print(f"失败: {name} - {str(e)[:20]}")
                 raise RuntimeError(f"Account节点创建失败 {name}: {e}")
+
+        print(f"{len(self.accounts)}个成功 | {', '.join(created_accounts)}")
 
         # 使用项目的创世块模块初始化所有账户
         self.initialize_accounts_with_project_genesis()
@@ -196,14 +330,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
     def initialize_accounts_with_project_genesis(self):
         """使用项目自带的EZ_GENESIS模块初始化所有账户"""
-        print("[INFO] 开始创世初始化...")
+        print("开始创世初始化... | ", end="")
 
         # 创建创世块创建器，使用自定义的面额配置
         custom_denomination = [
             (1000, 1), (500, 1), (100, 5), (50, 5), (10, 5), (1, 5)
         ]
-
-        print(f"为 {len(self.accounts)} 个账户创建创世块")
 
         # 创建创世块（使用新的统一API：返回区块、单个SubmitTxInfo、单个MultiTransactions、默克尔树）
         genesis_block, unified_submit_tx_info, unified_multi_txn, merkle_tree = create_genesis_block(
@@ -212,12 +344,10 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             custom_miner="ezchain_test_genesis_miner"
         )
 
-        print(f"✅ 创世块已创建 (#{genesis_block.index})")
-        print(f"✅ 生成统一SubmitTxInfo，包含 {len(unified_multi_txn.multi_txns)} 个交易")
-
         # 将创世块添加到区块链
         main_chain_updated = self.blockchain.add_block(genesis_block)
-        print(f"✅ 创世块{'已' if main_chain_updated else '未'}添加到主链")
+
+        print(f"区块#{genesis_block.index} | {len(unified_multi_txn.multi_txns)}交易 | {'主链' if main_chain_updated else '分支'}")
 
         if not unified_submit_tx_info:
             raise RuntimeError("统一创世SubmitTxInfo无效")
@@ -225,15 +355,14 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             raise RuntimeError("统一创世MultiTransactions无效")
 
         # 为每个账户初始化VPB
+        vpb_init_results = []
         for account in self.accounts:
-            print(f"⚡ 初始化 {account.name}...")
-
             # 使用重构后的创世VPB创建函数（基于统一的SubmitTxInfo + MultiTransactions）
             genesis_values, genesis_proof_units, block_index_result = create_genesis_vpb_for_account(
                 account_addr=account.address,
                 genesis_block=genesis_block,
-                unified_submit_tx_info=unified_submit_tx_info,  # 提供统一的SubmitTxInfo
-                unified_multi_txn=unified_multi_txn,  # 提供统一的MultiTransactions
+                unified_submit_tx_info=unified_submit_tx_info,
+                unified_multi_txn=unified_multi_txn,
                 merkle_tree=merkle_tree,
                 denomination_config=custom_denomination
             )
@@ -248,32 +377,36 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             if success:
                 total_value = sum(v.value_num for v in genesis_values)
                 available_balance = account.get_available_balance()
-                print(f"   ✅ {len(genesis_values)}个Values, 总面额{total_value}, 可用{available_balance}")
+                vpb_init_results.append(f"{account.name}({total_value})")
             else:
                 raise RuntimeError(f"账户 {account.name} VPB初始化失败")
+
+        print(f"VPB初始化: {', '.join(vpb_init_results)}")
 
         # 添加VPB基础检测
         self._perform_vpb_initialization_checks()
 
         # 可视化创世初始化后的VPB状态
-        print(f"\n📊 [创世初始化后] VPB状态可视化:")
-        for account in self.accounts:
-            account.vpb_manager.visualize_confirmed_values(f"After Genesis Initialization - {account.name}")
-            # 使用新的Value摘要打印方法
-            account.print_values_summary()
+        if self.show_vpb_visualization:
+            print(f"\n📊 [创世初始化后] VPB状态可视化:")
+            for account in self.accounts:
+                account.vpb_manager.visualize_confirmed_values(f"After Genesis Initialization - {account.name}")
+
+        # 使用新的Value摘要打印方法（受详细度控制）
+        if self.verbose_logging:
+            for account in self.accounts:
+                account.print_values_summary()
 
         print(f"🎉 所有账户创世初始化完成！")
 
     def _perform_vpb_initialization_checks(self):
         """对初始化的VPB进行基础检测"""
-        print("\n🔍 VPB初始化检测...")
+        print("VPB初始化检测... | ", end="")
 
         all_checks_passed = True
-        error_summary = []
+        check_results = []
 
         for account in self.accounts:
-            account_errors = []
-
             try:
                 # 获取账户的VPB数据
                 vpb_manager = account.vpb_manager
@@ -283,39 +416,26 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 account_balance = account.get_available_balance()
                 values_total = sum(value.value_num for value in all_values if value.is_unspent())
 
-                if account_balance != values_total:
-                    account_errors.append(f"余额不一致({account_balance}!={values_total})")
-
                 # 检测2: 每个Value都有对应的ProofUnit和BlockIndex
+                missing_items = 0
                 for value in all_values:
                     proof_units = vpb_manager.get_proof_units_for_value(value)
-                    if not proof_units:
-                        account_errors.append(f"Value{value.begin_index}缺少ProofUnit")
-
                     block_index = vpb_manager.get_block_index_for_value(value)
-                    if not block_index:
-                        account_errors.append(f"Value{value.begin_index}缺少BlockIndex")
+                    if not proof_units or not block_index:
+                        missing_items += 1
 
-                # 汇总账户检测结果
-                if account_errors:
-                    print(f"   ❌ {account.name}: {', '.join(account_errors[:3])}")
-                    if len(account_errors) > 3:
-                        print(f"      ...还有{len(account_errors)-3}个错误")
+                status = "✅" if account_balance == values_total and missing_items == 0 else "❌"
+                check_results.append(f"{status}{account.name}")
+
+                if account_balance != values_total or missing_items > 0:
                     all_checks_passed = False
-                    error_summary.extend([f"{account.name}:{err}" for err in account_errors])
-                else:
-                    print(f"   ✅ {account.name}: 检测通过 ({len(all_values)}个Values)")
 
             except Exception as e:
-                print(f"   💥 {account.name}: 检测异常 - {str(e)[:50]}")
+                check_results.append(f"💥{account.name}")
                 all_checks_passed = False
-                error_summary.append(f"{account.name}:异常-{str(e)[:30]}")
 
-        # 精简的检测结果总结
-        if all_checks_passed:
-            print("🎉 VPB初始化检测全部通过")
-        else:
-            print(f"⚠️  VPB检测发现问题({len(error_summary)}个错误)，测试继续")
+        result = "全部通过" if all_checks_passed else f"发现问题"
+        print(f"{' | '.join(check_results)} | {result}")
 
     def _create_eth_address(self, name: str) -> str:
         """创建有效的以太坊地址格式"""
@@ -339,7 +459,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     available_senders.append(account)
 
             if len(available_senders) < 2:
-                logger.warning(f"第{round_num}轮：可用发送者不足({len(available_senders)}个)，跳过此轮")
+                print(f"   ⚠️ 第{round_num}轮：可用发送者不足({len(available_senders)}个)，跳过此轮")
                 continue
 
             # 每轮创建随机数量的交易请求
@@ -364,7 +484,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                          if denom <= current_balance]
 
                 if not affordable_denominations:
-                    logger.warning(f"Account {sender_account.name} 余额不足: {current_balance}")
+                    print(f"   ⚠️ Account {sender_account.name} 余额不足: {current_balance}")
                     # 从可用发送者列表中移除余额不足的账户
                     if sender_account in available_senders:
                         available_senders.remove(sender_account)
@@ -387,7 +507,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 }
 
                 round_requests.append(transaction_request)
-                logger.info(f"创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount}")
+                # print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount}")  # 注释掉，减少输出
 
             if round_requests:
                 all_transaction_requests.append(round_requests)
@@ -462,51 +582,53 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
     def test_complete_real_account_transaction_flow(self):
         """测试完整的真实Account交易流程：创建→交易池→选择→区块→上链"""
-        print("\n" + "="*60)
-        print("[START] 开始完整真实Account交易流程测试")
+        print("="*60)
+        print("[START] 完整Account交易流程测试")
         print("="*60)
 
         # 步骤1：检查Account节点状态
-        print("\n💳 检查账户初始状态...")
+        print("💳 检查账户初始状态 | ", end="")
         total_balance = 0
+        account_status = []
         for account in self.accounts:
             account_info = account.get_account_info()
             total_balance += account_info['balances']['total']
-            print(f"   {account.name}: 余额{account_info['balances']['total']}, 可用{account_info['balances']['available']}")
+            account_status.append(f"{account.name}:{account_info['balances']['total']}")
             self.assertGreater(account_info['balances']['total'], 0,
                               f"Account {account.name} 应该有余额")
+        print(" | ".join(account_status))
 
         # 步骤2：创建真实交易请求
-        print("\n📝 2. 创建交易请求...")
-        transaction_requests_list = self.create_real_transaction_requests(1)  # 减少轮数
+        print("📝 创建交易请求... | ", end="")
+        transaction_requests_list = self.create_real_transaction_requests(1)
         total_requests = sum(len(requests) for requests in transaction_requests_list)
-        print(f"   创建 {len(transaction_requests_list)} 轮交易，总计 {total_requests} 个请求")
+        print(f"{len(transaction_requests_list)}轮 {total_requests}笔")
 
-        # 简明输出交易请求内容，方便调试
-        print("   📋 交易请求详情:")
-        for round_num, round_requests in enumerate(transaction_requests_list):
-            print(f"     第{round_num + 1}轮 ({len(round_requests)}笔交易):")
-            for req in round_requests[:10]:  # 只显示前10笔交易，避免输出过多
-                sender_name = self.get_account_by_address(req.get("sender")).name if req.get("sender") and self.get_account_by_address(req.get("sender")) else "未知"
-                recipient_name = self.get_account_by_address(req["recipient"]).name if self.get_account_by_address(req["recipient"]) else "未知"
-                print(f"       {sender_name} → {recipient_name}: {req['amount']}")
-            if len(round_requests) > 10:
-                print(f"       ... 还有 {len(round_requests) - 10} 笔交易")
+        # 简明输出交易请求内容
+        if self.verbose_logging:
+            print("📋 交易详情:")
+            for round_num, round_requests in enumerate(transaction_requests_list):
+                tx_summary = []
+                for req in round_requests[:5]:
+                    sender_name = self.get_account_by_address(req.get("sender")).name if req.get("sender") and self.get_account_by_address(req.get("sender")) else "未知"
+                    recipient_name = self.get_account_by_address(req["recipient"]).name if self.get_account_by_address(req["recipient"]) else "未知"
+                    tx_summary.append(f"{sender_name}→{recipient_name}:{req['amount']}")
+                print(f"  轮{round_num+1}: {', '.join(tx_summary)}{'...' if len(round_requests) > 5 else ''}")
 
         # 步骤3：使用真实Account创建交易
-        print("\n⚡ 3. 创建交易...")
+        print("⚡ 创建交易 | ", end="")
         submit_tx_data = self.create_transactions_from_accounts(transaction_requests_list)
-        print(f"   成功创建 {len(submit_tx_data)} 个交易数据包")
+        print(f"{len(submit_tx_data)}个交易包")
         self.assertGreater(len(submit_tx_data), 0, "应该创建成功一些交易")
 
         # 步骤4：使用Account的正确方法将交易提交到交易池并存储到本地
-        print("\n📥 4. 添加交易到交易池并存储到Account本地队列...")
+        print("📥 提交交易到池... | ", end="")
         added_count = 0
-        submit_tx_infos = []  # 用于后续步骤的SubmitTxInfo列表
+        submit_tx_infos = []
+        successful_accounts = []
 
         for submit_tx_info, multi_txn_result, account in submit_tx_data:
             try:
-                # 使用Account的submit_tx_infos_to_pool方法，确保同时提交到交易池和存储到本地队列
                 success = account.submit_tx_infos_to_pool(
                     submit_tx_info=submit_tx_info,
                     tx_pool=self.transaction_pool,
@@ -514,20 +636,16 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 )
                 if success:
                     added_count += 1
-                    submit_tx_infos.append(submit_tx_info)  # 保存用于后续步骤
-                    print(f"   成功提交交易: {account.name} ({submit_tx_info.submitter_address})")
-                else:
-                    print(f"   Account {account.name} 提交交易失败")
-                    # 不抛出异常，继续处理其他交易
+                    submit_tx_infos.append(submit_tx_info)
+                    successful_accounts.append(account.name)
             except Exception as e:
-                print(f"   Account {account.name} 提交交易异常: {e}")
                 continue
 
-        print(f"   ✅ 成功提交 {added_count}/{len(submit_tx_data)} 个交易到交易池并存储到本地队列")
+        print(f"{added_count}/{len(submit_tx_data)} 成功 | {', '.join(successful_accounts)}")
         self.assertGreater(added_count, 0, "至少应该提交成功一些交易到交易池")
 
-        # 步骤5：从交易池选择交易并打包（使用带默克尔证明的新模块）
-        print("\n⛏️  5. 打包区块...")
+        # 步骤5：从交易池选择交易并打包
+        print("⛏️  打包区块 | ", end="")
         try:
             package_data, block, picked_txs_mt_proofs, block_index, sender_addrs = pick_transactions_from_pool_with_proofs(
                 tx_pool=self.transaction_pool,
@@ -543,41 +661,30 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             self.assertEqual(block_index, block.index)
 
             if len(package_data.selected_submit_tx_infos) > 0:
-                print(f"   📦 创建区块 #{block.index}, 包含 {len(package_data.selected_submit_tx_infos)} 个交易")
-                print(f"   🌳 默克尔根: {package_data.merkle_root[:16]}...")
-                print(f"   🔗 生成 {len(picked_txs_mt_proofs)} 个默克尔证明")
-                print(f"   👥 发送者地址数量: {len(sender_addrs)}")
-
-                # 详细显示证明数据信息
-                print(f"   📋 证明数据详情:")
-                for i, (proof_hash, merkle_proof) in enumerate(picked_txs_mt_proofs[:3]):  # 只显示前3个
-                    proof_size = len(merkle_proof.mt_prf_list) if merkle_proof and hasattr(merkle_proof, 'mt_prf_list') else 0
-                    print(f"      证明{i+1}: {proof_hash[:16]}... (大小: {proof_size})")
-                if len(picked_txs_mt_proofs) > 3:
-                    print(f"      ... 还有 {len(picked_txs_mt_proofs) - 3} 个证明")
+                print(f"区块#{block.index} | {len(package_data.selected_submit_tx_infos)}交易 | {len(picked_txs_mt_proofs)}证明 | {len(sender_addrs)}发送者")
+                if self.verbose_logging:
+                    print(f"  默克尔根: {package_data.merkle_root[:16]}...")
             else:
-                print(f"   📦 创建空区块 #{block.index}")
+                print(f"空区块 #{block.index}")
 
         except Exception as e:
             logger.error(f"交易打包失败: {e}")
             raise RuntimeError(f"从交易池打包交易失败: {e}")
 
         # 步骤6：将区块添加到区块链
-        print("\n🔗 6. 添加区块到区块链...")
+        print("🔗 添加区块... | ", end="")
         main_chain_updated = self.blockchain.add_block(block)
         self.assertTrue(main_chain_updated)
 
         fork_node = self.blockchain.get_fork_node_by_hash(block.get_hash())
         block_status = fork_node.consensus_status if fork_node else ConsensusStatus.PENDING
-        print(f"   {'✅' if main_chain_updated else '⚠️'} 区块#{'已' if main_chain_updated else '未'}添加到主链, 状态: {block_status.value}")
+        print(f"{'主链' if main_chain_updated else '分支'} | 状态: {block_status.value}")
 
         # 步骤6.1：收集参与交易的账户地址
-        print("\n📦 6.1 收集参与交易的账户地址...")
+        print("📦 收集参与地址... | ", end="")
         participant_addresses = []
         for submit_tx_info in package_data.selected_submit_tx_infos:
             participant_addresses.append(submit_tx_info.submitter_address)
-
-            # 从account本地获取multi_txns信息以提取接收者地址
             sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
             if sender_account:
                 multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
@@ -586,123 +693,90 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                         if hasattr(txn, 'recipient'):
                             participant_addresses.append(txn.recipient)
 
-        # 去重
         participant_addresses = list(set(participant_addresses))
-        print(f"   ✅ 收集到 {len(participant_addresses)} 个参与交易地址")
+        print(f"{len(participant_addresses)}个地址")
 
         # 可视化发送者VPB更新后的状态
-        print(f"\n📊 [6.1步骤后] VPB状态可视化:")
-        for account in self.accounts:
-            account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
+        if self.show_vpb_visualization:
+            print(f"\n📊 [6.1步骤后] VPB状态可视化:")
+            for account in self.accounts:
+                account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
 
-        # 步骤6.2：发送者本地化处理VPB（使用真实的默克尔证明数据）
-        print("\n🔄 6.2 发送者本地化处理VPB...")
+        # 步骤6.2：发送者本地化处理VPB
+        print("🔄 发送者VPB更新... | ", end="")
         vpb_update_count = 0
         if package_data.selected_submit_tx_infos:
             try:
+                processed_senders = []
                 for submit_tx_info in package_data.selected_submit_tx_infos:
                     sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
                     if not sender_account:
                         continue
 
-                    # 获取发送者对应的默克尔证明
                     sender_merkle_proof = self.get_merkle_proof_for_sender(
                         submit_tx_info.submitter_address,
                         picked_txs_mt_proofs,
                         package_data
                     )
 
-                    print(f"   🔍 检查提交交易: {submit_tx_info.submitter_address}")
-
-                    # 从account本地获取对应的multi_txns信息（通过multi_txns_hash）
                     multi_txns_hash = submit_tx_info.multi_transactions_hash
                     multi_txns = sender_account.get_submitted_transaction(multi_txns_hash)
 
                     if multi_txns:
-                        print(f"      - 从account本地获取multi_txns成功，包含 {len(multi_txns.multi_txns)} 个交易")
-                        print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
-
-                        # 检查交易中的Value数据
-                        total_values = 0
-                        for i, txn in enumerate(multi_txns.multi_txns):
-                            if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
-                                total_values += len(txn.value)
-
-                        print(f"      - 总计 {total_values} 个Value数据待处理")
+                        total_values = sum(len(txn.value) for txn in multi_txns.multi_txns
+                                         if hasattr(txn, 'value') and txn.value)
 
                         if total_values > 0:
-                            # 获取主要接收者地址（使用第一个交易的接收者作为默认接收者）
-                            primary_recipient = None
-                            for txn in multi_txns.multi_txns:
-                                if hasattr(txn, 'recipient') and txn.recipient:
-                                    primary_recipient = txn.recipient
-                                    break
-
-                            # 调用发送者的VPB本地更新方法，使用新的批量处理接口
-                            print(f"   🔍 准备调用VPB批量更新，参数检查:")
-                            print(f"      - multi_txns: {len(multi_txns.multi_txns)} 个交易")
-                            print(f"      - total values: {total_values} 个")
-                            print(f"      - block_height: {block.index}")
-                            print(f"      - primary_recipient: {primary_recipient or 'unknown'}")
-                            proof_length = len(sender_merkle_proof.mt_prf_list) if sender_merkle_proof and hasattr(sender_merkle_proof, 'mt_prf_list') else 0
-                            print(f"      - mt_proof length: {proof_length}")
-                            print(f"      - multi_txns hash: {multi_txns_hash[:16]}...")
+                            primary_recipient = next((txn.recipient for txn in multi_txns.multi_txns
+                                                   if hasattr(txn, 'recipient') and txn.recipient), "unknown")
 
                             success = sender_account.update_vpb_after_transaction_sent(
                                 confirmed_multi_txns=multi_txns,
-                                mt_proof=sender_merkle_proof,  # 使用真实的默克尔证明数据
+                                mt_proof=sender_merkle_proof,
                                 block_height=block.index,
-                                recipient_address=primary_recipient or "unknown"
+                                recipient_address=primary_recipient
                             )
 
                             if success:
                                 vpb_update_count += 1
-                                print(f"   ✅ {sender_account.name} VPB批量更新成功 (交易数: {len(multi_txns.multi_txns)}, Value数: {total_values}, 证明数据长度: {proof_length})")
-                            else:
-                                print(f"   ❌ {sender_account.name} VPB批量更新失败")
-                        else:
-                            print(f"   ⚠️ {sender_account.name} 交易中没有Value数据")
-                    else:
-                        print(f"   ❌ 无法从account本地获取multi_txns数据，hash: {multi_txns_hash[:16]}...")
-                        print(f"   ⚠️ 检查account的submitted_transactions队列中是否包含该交易")
+                                processed_senders.append(sender_account.name)
 
-                print(f"   完成对 {len(package_data.selected_submit_tx_infos)} 个发送者的VPB本地处理")
-                print(f"   📊 成功更新: {vpb_update_count}/{len(package_data.selected_submit_tx_infos)} 个发送者")
+                print(f"{vpb_update_count}/{len(package_data.selected_submit_tx_infos)} 成功 | {', '.join(processed_senders)}")
 
                 # 可视化发送者VPB更新后的状态
-                print(f"\n📊 [6.2步骤后-发送者VPB更新] VPB状态可视化:")
-                for account in self.accounts:
-                    # 只显示参与了交易的发送者
-                    participated = any(submit_tx_info.submitter_address == account.address for submit_tx_info in package_data.selected_submit_tx_infos)
-                    if participated:
-                        account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
+                if self.show_vpb_visualization:
+                    print(f"\n📊 [6.2步骤后-发送者VPB更新] VPB状态可视化:")
+                    for account in self.accounts:
+                        # 只显示参与了交易的发送者
+                        participated = any(submit_tx_info.submitter_address == account.address for submit_tx_info in package_data.selected_submit_tx_infos)
+                        if participated:
+                            account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
             except Exception as e:
                 print(f"   ❌ 发送者VPB本地化处理异常: {e}")
                 import traceback
                 traceback.print_exc()
 
-        # 步骤6.3：接收者同步处理（完整版）
-        print("\n📤 6.3 接收者同步处理...")
+        # 步骤6.3：接收者同步处理
+        print("📤 接收者VPB处理... | ", end="")
 
-        # 完全静默所有验证器日志
+        # 静默验证器日志
         import logging
-        logging.getLogger().setLevel(logging.CRITICAL)  # 设置根logger为CRITICAL级别
+        logging.getLogger().setLevel(logging.CRITICAL)
         for logger_name in ['EZ_VPB_Validator', 'EZ_VPB_Validator.VPBSliceGenerator',
                            'EZ_VPB_Validator.DataStructureValidator', 'EZ_VPB_Validator.BloomFilterValidator',
                            'EZ_VPB_Validator.proof_validator', 'EpochExtractor', 'DataStructureValidator',
                            'VPBSliceGenerator', 'BloomFilterValidator', 'VPBValidator']:
             logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+
+        recipients_processed = 0
+        vpb_verification_success = 0
+        vpb_receive_success = 0
+
         if package_data.selected_submit_tx_infos:
             try:
-                recipients_processed = 0
-                vpb_verification_success = 0
-                vpb_receive_success = 0
-
-                # 收集所有需要发送给接收者的数据
                 sender_to_recipients_data = {}
 
                 for submit_tx_info in package_data.selected_submit_tx_infos:
-                    # 从account本地获取multi_txns信息
                     sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
                     if not sender_account:
                         continue
@@ -711,11 +785,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     if not multi_txns or not hasattr(multi_txns, 'multi_txns'):
                         continue
 
-                    # 为每个发送者初始化接收者数据列表
                     if sender_account.address not in sender_to_recipients_data:
                         sender_to_recipients_data[sender_account.address] = []
 
-                    # 遍历多笔交易，为每个接收者准备VPB数据
                     for txn in multi_txns.multi_txns:
                         recipient_address = getattr(txn, 'recipient', None)
                         if not recipient_address:
@@ -725,17 +797,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                         if not recipient_account:
                             continue
 
-                        # 获取交易中转移的Value（第一个Value作为转移的Value）
                         if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
-                            # 深拷贝Value对象，避免内存级别混乱
-                            transferred_value = copy.deepcopy(txn.value[0])  # 深拷贝转移的Value
-
-                            # 从发送者的VPB管理器获取对应的证明数据（深拷贝）
+                            transferred_value = copy.deepcopy(txn.value[0])
                             received_proof_units = copy.deepcopy(sender_account.vpb_manager.get_proof_units_for_value(transferred_value))
                             received_block_index = copy.deepcopy(sender_account.vpb_manager.get_block_index_for_value(transferred_value))
 
                             if received_proof_units and received_block_index:
-                                # 准备发送给接收者的数据（所有重要参数都深拷贝）
                                 recipient_data = {
                                     'recipient_account': recipient_account,
                                     'recipient_address': recipient_address,
@@ -745,11 +812,6 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 }
                                 sender_to_recipients_data[sender_account.address].append(recipient_data)
                                 recipients_processed += 1
-                                print(f"   📦 准备发送数据: {sender_account.name} → {recipient_account.name}, 金额: {transferred_value.value_num}")
-                            else:
-                                print(f"   ⚠️ 无法获取 {sender_account.name} → {recipient_account.name} 的VPB证明数据")
-
-                print(f"   ✅ 收集到 {recipients_processed} 个接收者数据")
 
                 # 为每个接收者进行VPB验证和接收
                 for sender_address, recipients_data in sender_to_recipients_data.items():
@@ -757,173 +819,82 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     if not sender_account:
                         continue
 
-                    print(f"   🔍 处理发送者 {sender_account.name} 的 {len(recipients_data)} 个接收者...")
-
                     for data in recipients_data:
                         recipient_account = data['recipient_account']
-                        recipient_address = data['recipient_address']
                         received_value = data['received_value']
                         received_proof_units = data['received_proof_units']
                         received_block_index = data['received_block_index']
 
                         try:
-                            # 步骤1: VPB合法性验证（使用上帝视角输入main_chain_info）
-                            print(f"      🔍 验证VPB合法性: {recipient_account.name} 接收金额 {received_value.value_num}")
+                            # VPB验证
+                            from EZ_VPB_Validator.core.types import MainChainInfo
+                            merkle_roots = {}
+                            bloom_filters = {}
 
-                            # 临时调整日志级别以减少输出
-                            import logging
-                            # 设置多个相关logger的级别以彻底减少输出
-                            loggers_to_quiet = [
-                                'EZ_VPB_Validator',
-                                'EZ_VPB_Validator.VPBSliceGenerator',
-                                'EZ_VPB_Validator.DataStructureValidator',
-                                'EZ_VPB_Validator.BloomFilterValidator',
-                                'EZ_VPB_Validator.proof_validator',
-                                'EpochExtractor'
-                            ]
+                            if received_block_index and hasattr(received_block_index, 'index_lst'):
+                                for block_height in received_block_index.index_lst:
+                                    if block_height == 0:
+                                        genesis_block = self.blockchain.get_block_by_index(0)
+                                        if genesis_block:
+                                            merkle_roots[block_height] = genesis_block.get_m_tree_root()
+                                            bloom_filters[block_height] = genesis_block.get_bloom()
+                                    else:
+                                        block_node = self.blockchain.get_fork_node_by_index(block_height)
+                                        if block_node and block_node.block:
+                                            merkle_roots[block_height] = block_node.block.get_m_tree_root()
+                                            bloom_filters[block_height] = block_node.block.get_bloom()
 
-                            logger_levels = {}
-                            for logger_name in loggers_to_quiet:
-                                logger = logging.getLogger(logger_name)
-                                logger_levels[logger_name] = logger.level
-                                logger.setLevel(logging.ERROR)  # 只显示ERROR及以上级别
+                            main_chain_info = MainChainInfo(
+                                merkle_roots=merkle_roots,
+                                bloom_filters=bloom_filters,
+                                current_block_height=self.blockchain.get_latest_block_index(),
+                                genesis_block_height=0
+                            )
 
-                            try:
-                                # 构造上帝视角的main_chain_info，使用MainChainInfo类
-                                from EZ_VPB_Validator.core.types import MainChainInfo
-                                from EZ_Units.Bloom import BloomFilter
-
-                                # 提取区块的Merkle根和布隆过滤器
-                                merkle_roots = {}
-                                bloom_filters = {}
-
-                                # 获取VPB相关区块的高度范围
-                                if received_block_index and hasattr(received_block_index, 'index_lst'):
-                                    for block_height in received_block_index.index_lst:
-                                        if block_height == 0:
-                                            # 创世块处理
-                                            genesis_block = self.blockchain.get_block_by_index(0)
-                                            if genesis_block:
-                                                merkle_roots[block_height] = genesis_block.get_m_tree_root()
-                                                # 创世块的布隆过滤器
-                                                bloom_filters[block_height] = genesis_block.get_bloom()
-                                        else:
-                                            # 普通区块处理
-                                            block_node = self.blockchain.get_fork_node_by_index(block_height)
-                                            if block_node and block_node.block:
-                                                merkle_roots[block_height] = block_node.block.get_m_tree_root()
-                                                # 直接使用区块的布隆过滤器
-                                                bloom_filters[block_height] = block_node.block.get_bloom()
-
-                                main_chain_info = MainChainInfo(
-                                    merkle_roots=merkle_roots,
-                                    bloom_filters=bloom_filters,
-                                    current_block_height=self.blockchain.get_latest_block_index(),
-                                    genesis_block_height=0
-                                )
-
-                                # 使用VPBValidator进行验证（传入深拷贝数据）
-                                verification_report = self.vpb_validator.verify_vpb_pair(
-                                    value=copy.deepcopy(received_value),
-                                    proof_units=copy.deepcopy(received_proof_units),
-                                    block_index_list=copy.deepcopy(received_block_index),
-                                    main_chain_info=main_chain_info,
-                                    account_address=recipient_address
-                                )
-                            finally:
-                                # 恢复原始日志级别
-                                for logger_name, original_level in logger_levels.items():
-                                    logger = logging.getLogger(logger_name)
-                                    logger.setLevel(original_level)
+                            verification_report = self.vpb_validator.verify_vpb_pair(
+                                value=copy.deepcopy(received_value),
+                                proof_units=copy.deepcopy(received_proof_units),
+                                block_index_list=copy.deepcopy(received_block_index),
+                                main_chain_info=main_chain_info,
+                                account_address=data['recipient_address']
+                            )
 
                             if verification_report.is_valid:
-                                print(f"         ✅ VPB验证成功")
                                 vpb_verification_success += 1
-
-                                # 步骤2: 若验证通过，调用receive_vpb_from_others更新本地VPB数据
-                                # 确保传入深拷贝的数据，避免分布式网络中的内存混乱
                                 receive_success = recipient_account.receive_vpb_from_others(
                                     received_value=copy.deepcopy(received_value),
                                     received_proof_units=copy.deepcopy(received_proof_units),
                                     received_block_index=copy.deepcopy(received_block_index)
                                 )
-
                                 if receive_success:
-                                    print(f"         ✅ VPB接收成功，{recipient_account.name} 本地数据已更新")
                                     vpb_receive_success += 1
-                                else:
-                                    print(f"         ❌ VPB接收失败，{recipient_account.name} 本地数据更新失败")
-                            else:
-                                # 详细的VPB验证失败输出，包含具体错误信息
-                                if verification_report.errors:
-                                    print(f"         ❌ VPB验证失败 (共{len(verification_report.errors)}个错误):")
-
-                                    # 按重要性排序错误类型（关键错误优先）
-                                    error_priority = {
-                                        'MISSING_GENESIS_VALUE_DISTRIBUTION': 1,
-                                        'NO_VALID_TARGET_VALUE_TRANSFER': 2,
-                                        'DOUBLE_SPEND_DETECTED': 3,
-                                        'MERKLE_PROOF_VERIFICATION_FAILED': 4,
-                                        'BLOOM_FILTER_VALIDATION_FAILED': 5,
-                                        'DATA_STRUCTURE_VALIDATION_FAILED': 6,
-                                        'PROOF_UNIT_VALIDATION_FAILED': 7,
-                                        'VERIFICATION_EXCEPTION': 8
-                                    }
-
-                                    sorted_errors = sorted(verification_report.errors,
-                                                         key=lambda e: error_priority.get(e.error_type, 9))
-
-                                    # 显示前3个最重要的错误
-                                    for i, error in enumerate(sorted_errors[:3]):
-                                        block_info = f"@区块{error.block_height}" if error.block_height else ""
-                                        proof_info = f"[证明{error.proof_index}]" if error.proof_index is not None else ""
-
-                                        # 格式化错误消息，确保简洁但信息完整
-                                        error_msg = error.error_message
-                                        if len(error_msg) > 80:
-                                            error_msg = error_msg[:77] + "..."
-
-                                        print(f"            {i+1}. {error.error_type} {block_info}{proof_info}")
-                                        print(f"               {error_msg}")
-
-                                    if len(sorted_errors) > 3:
-                                        print(f"               ... 还有 {len(sorted_errors) - 3} 个其他错误")
-
-                                    # 显示验证时间信息（如果耗时较长）
-                                    if verification_report.verification_time_ms > 1000:
-                                        print(f"               ⏱️ 验证耗时: {verification_report.verification_time_ms:.1f}ms")
-                                else:
-                                    print(f"         ❌ VPB验证失败 (未知错误)")
 
                         except Exception as e:
-                            print(f"         💥 处理 {recipient_account.name} VPB时异常: {e}")
-                            import traceback
-                            traceback.print_exc()
+                            if self.verbose_logging:
+                                print(f"处理 {recipient_account.name} VPB异常: {str(e)[:30]}")
 
-                print(f"   📊 接收者处理完成:")
-                print(f"      - 总接收者: {recipients_processed}")
-                print(f"      - VPB验证成功: {vpb_verification_success}")
-                print(f"      - VPB接收成功: {vpb_receive_success}")
+                print(f"总计:{recipients_processed} | 验证:{vpb_verification_success} | 接收:{vpb_receive_success}")
 
                 # 可视化接收者VPB更新后的状态
-                print(f"\n📊 [6.3步骤后-接收者VPB更新] VPB状态可视化:")
-                participant_accounts = set()
-                for submit_tx_info in package_data.selected_submit_tx_infos:
-                    participant_accounts.add(self.get_account_by_address(submit_tx_info.submitter_address))
-                    # 从account本地获取multi_txns信息以提取接收者地址
-                    sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
-                    if sender_account:
-                        multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
-                        if multi_txns and hasattr(multi_txns, 'single_txns'):
-                            for txn in multi_txns.single_txns:
-                                if hasattr(txn, 'recipient'):
-                                    recipient_account = self.get_account_by_address(txn.recipient)
-                                    if recipient_account:
-                                        participant_accounts.add(recipient_account)
+                if self.show_vpb_visualization:
+                    print(f"\n📊 [6.3步骤后-接收者VPB更新] VPB状态可视化:")
+                    participant_accounts = set()
+                    for submit_tx_info in package_data.selected_submit_tx_infos:
+                        participant_accounts.add(self.get_account_by_address(submit_tx_info.submitter_address))
+                        # 从account本地获取multi_txns信息以提取接收者地址
+                        sender_account = self.get_account_by_address(submit_tx_info.submitter_address)
+                        if sender_account:
+                            multi_txns = sender_account.get_submitted_transaction(submit_tx_info.multi_transactions_hash)
+                            if multi_txns and hasattr(multi_txns, 'single_txns'):
+                                for txn in multi_txns.single_txns:
+                                    if hasattr(txn, 'recipient'):
+                                        recipient_account = self.get_account_by_address(txn.recipient)
+                                        if recipient_account:
+                                            participant_accounts.add(recipient_account)
 
-                for account in participant_accounts:
-                    if account:
-                        account.vpb_manager.visualize_confirmed_values(f"After Receivers Update - {account.name}")
+                    for account in participant_accounts:
+                        if account:
+                            account.vpb_manager.visualize_confirmed_values(f"After Receivers Update - {account.name}")
 
             except Exception as e:
                 print(f"   ❌ 接收者处理异常: {e}")
@@ -931,40 +902,47 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 traceback.print_exc()
 
         # 步骤7：验证Account节点状态
-        print("\n🔍 7. 验证最终状态...")
+        print("🔍 验证最终状态... | ", end="")
         final_total_balance = 0
+        account_final_status = []
         for account in self.accounts:
             account_info = account.get_account_info()
             final_total_balance += account_info['balances']['total']
 
-            # 打印Value摘要
-            account.print_values_summary()
+            if self.verbose_logging:
+                account.print_values_summary()
 
-            # 验证账户完整性
             integrity_valid = account.validate_integrity()
             status_icon = "✅" if integrity_valid else "❌"
-            print(f"   {status_icon} {account.name}: 总余额={account_info['balances']['total']}, "
-                  f"可用={account_info['balances']['available']}, 交易历史={account_info['transaction_history_count']}")
+            account_final_status.append(f"{status_icon}{account.name}:{account_info['balances']['total']}")
 
             self.assertTrue(integrity_valid, f"Account {account.name} 完整性验证失败")
 
-        # 计算余额变化
         balance_change = final_total_balance - total_balance
         fee_rate = (abs(balance_change) / total_balance * 100) if total_balance > 0 else 0
 
-        print(f"\n💰 余额变化: {total_balance} → {final_total_balance} (交易费用: {fee_rate:.1f}%)")
-
-        print("\n" + "="*60)
+        print(f"{' | '.join(account_final_status)} | 余额变化:{total_balance}→{final_total_balance} ({fee_rate:.1f}%)")
+        print("="*60)
         print("🎉 真实Account完整交易流程测试通过！")
         print("="*60)
 
 
 def run_real_account_integration_tests():
     """运行所有真实Account集成测试"""
-    print("=" * 80)
-    print("🚀 EZchain 真实Account节点集成测试 - 优化版")
-    print("突出关键信息，精简输出，便于观察和调试")
-    print("=" * 80)
+    print("=" * 60)
+    print("🚀 EZchain Account集成测试 - 精简版")
+    print("=" * 60)
+
+    # 显示当前日志设置
+    verbose_logging = os.getenv('VERBOSE_TEST_LOGGING', 'false').lower() == 'true'
+    show_vpb_visualization = os.getenv('SHOW_VPB_VISUALIZATION', 'false').lower() == 'true'
+
+    print(f"📝 日志: 详细={verbose_logging} | VPB可视化={show_vpb_visualization}")
+    if not verbose_logging and not show_vpb_visualization:
+        print("🎯 简洁模式")
+    else:
+        print("📊 详细模式")
+    print("-" * 60)
 
     # 创建测试套件
     suite = unittest.TestSuite()
@@ -975,43 +953,35 @@ def run_real_account_integration_tests():
     result = runner.run(suite)
 
     # 输出精简测试结果摘要
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 60)
     print("📊 测试结果摘要")
-    print("=" * 80)
+    print("=" * 60)
 
     success_count = result.testsRun - len(result.failures) - len(result.errors)
     success_rate = (success_count / result.testsRun * 100) if result.testsRun > 0 else 0
 
-    print(f"📈 运行测试: {result.testsRun}")
-    print(f"✅ 成功: {success_count}")
-    print(f"❌ 失败: {len(result.failures)}")
-    print(f"💥 错误: {len(result.errors)}")
-    print(f"📊 成功率: {success_rate:.1f}%")
+    print(f"运行:{result.testsRun} | 成功:{success_count} | 失败:{len(result.failures)} | 错误:{len(result.errors)} | 成功率:{success_rate:.1f}%")
 
     if result.failures:
-        print("\n❌ 失败的测试:")
-        for test, traceback in result.failures:
-            print(f"  • {test}")
-
+        print(f"❌ 失败: {', '.join(str(test) for test, _ in result.failures)}")
     if result.errors:
-        print("\n💥 错误的测试:")
-        for test, traceback in result.errors:
-            print(f"  • {test}")
+        print(f"💥 错误: {', '.join(str(test) for test, _ in result.errors)}")
 
-    print("\n" + "=" * 80)
+    print("=" * 60)
     if success_rate >= 100:
-        print("🎉 真实Account集成测试全部通过！系统运行正常")
+        print("🎉 测试全部通过！系统运行正常")
     elif success_rate >= 80:
-        print("✅ 真实Account集成测试基本通过，部分功能正常")
+        print("✅ 测试基本通过，部分功能正常")
     else:
-        print("⚠️ 真实Account集成测试存在问题，需要进一步调试")
-    print("=" * 80)
+        print("⚠️ 测试存在问题，需要进一步调试")
+    print("=" * 60)
 
     return result.wasSuccessful()
 
 
 if __name__ == "__main__":
     import sys
+    import os
 
     # 设置编码以支持中文字符和emoji
     try:
@@ -1019,6 +989,8 @@ if __name__ == "__main__":
             # Windows下设置UTF-8编码
             sys.stdout.reconfigure(encoding='utf-8', errors='replace')
             sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            # 在Windows下设置环境变量以支持UTF-8
+            os.environ['PYTHONIOENCODING'] = 'utf-8'
     except:
         pass
 

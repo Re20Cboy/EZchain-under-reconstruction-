@@ -661,13 +661,17 @@ class VPBManager:
         except Exception as e:
             print(f"Error printing values summary: {e}")
 
-    def visualize_confirmed_values(self, title: str = "Confirmed Values Visualization") -> None:
+    def visualize_confirmed_values(self, title: str = "Confirmed Values Visualization", force_show: bool = False) -> None:
         """
         可视化当前账户所有已确认状态的Value
 
         Args:
             title: 可视化图表的标题
+            force_show: 是否强制显示，忽略环境变量设置
         """
+        # 检查是否应该显示可视化输出
+        if not force_show and os.getenv('SHOW_VPB_VISUALIZATION', 'false').lower() != 'true':
+            return
         try:
             print(f"\n🔒 {title}")
             print(f"Account: {self.account_address}")
@@ -749,13 +753,17 @@ class VPBManager:
             import traceback
             traceback.print_exc()
 
-    def visualize_vpb_mapping(self, title: str = "VPB Mapping Visualization") -> None:
+    def visualize_vpb_mapping(self, title: str = "VPB Mapping Visualization", force_show: bool = False) -> None:
         """
         可视化当前账户的Value-Proofs-BlockIndex映射关系
 
         Args:
             title: 可视化图表的标题
+            force_show: 是否强制显示，忽略环境变量设置
         """
+        # 检查是否应该显示可视化输出
+        if not force_show and os.getenv('SHOW_VPB_VISUALIZATION', 'false').lower() != 'true':
+            return
         try:
             print(f"\n📊 {title}")
             print(f"Account: {self.account_address}")
