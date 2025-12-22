@@ -1,3 +1,23 @@
+12/22目前多轮测试还有清结算bug，例如：
+仅是多轮中的第一轮：
+✅ Account david 创建交易 → bob, 金额: 1700
+✅ Account charlie 创建交易 → david, 金额: 1500
+✅ Account alice 创建交易 → bob, 金额: 1700
+------------
+最后结果：
+   🔴 CONFIRMED:  4 values, Amount:   1700
+   🟢 UNSPENT: 18 values, Amount:    605
+
+   🟢 UNSPENT: 24 values, Amount:   4305 （应该是5705，少1400）
+
+   🔴 CONFIRMED:  2 values, Amount:   1500
+   🟢 UNSPENT: 20 values, Amount:    805
+
+   🔴 CONFIRMED:  4 values, Amount:   1700
+   🟢 UNSPENT: 19 values, Amount:   1605（应该是2105，少500）
+
+
+
 12/17：update_after_transaction_sent方法更新，将先前的方法作为旧方法弃用。
 新的update_after_transaction_sent还未测试，老方法的调用还未调整为新方法。
 

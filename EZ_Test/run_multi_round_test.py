@@ -17,11 +17,23 @@ from test_multi_round_real_account_transaction import run_multi_round_integratio
 
 def main():
     """主函数"""
+
+    # 设置编码以支持中文字符和emoji
+    try:
+        if sys.platform == "win32":
+            # Windows下设置UTF-8编码
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            # 在Windows下设置环境变量以支持UTF-8
+            os.environ['PYTHONIOENCODING'] = 'utf-8'
+    except:
+        pass
+
     print("🚀 EZchain 多轮交易测试启动器")
     print("=" * 50)
 
     # 解析命令行参数
-    num_rounds = 3  # 默认3轮
+    num_rounds = 3  # 默认8轮
 
     if len(sys.argv) > 1:
         try:
@@ -39,14 +51,6 @@ def main():
     print(f"📊 计划执行 {num_rounds} 轮完整交易流程")
     print(f"💡 每轮包含: 创建→交易池→选择→区块→上链")
     print("=" * 50)
-
-    # 设置编码支持中文
-    try:
-        if sys.platform == "win32":
-            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-    except:
-        pass
 
     # 运行多轮测试
     success = run_multi_round_integration_tests(num_rounds)

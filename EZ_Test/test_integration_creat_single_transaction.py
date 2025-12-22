@@ -19,6 +19,7 @@ from EZ_Transaction.CreateSingleTransaction import CreateTransaction
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_VPB.values.Value import Value, ValueState
 from EZ_VPB.values.AccountPickValues import AccountPickValues
+from EZ_VPB.values.AccountValueCollection import AccountValueCollection
 
 
 class TestIntegrationCreateTransaction:
@@ -61,14 +62,15 @@ class TestIntegrationCreateTransaction:
     @pytest.fixture
     def value_selector(self, test_address):
         """Real AccountPickValues instance for testing."""
-        return AccountPickValues(test_address)
+        collection = AccountValueCollection(test_address)
+        return AccountPickValues(test_address, collection)
 
     @pytest.fixture
     def create_transaction(self, test_address, value_selector):
         """CreateTransaction instance with real value selector."""
         # 使用真实的value_selector而不是mock
-        transaction = CreateTransaction(test_address)
-        transaction.value_selector = value_selector
+        collection = AccountValueCollection(test_address)
+        transaction = CreateTransaction(test_address, collection)
         return transaction
 
     def test_real_value_state_management(self, create_transaction, value_selector):

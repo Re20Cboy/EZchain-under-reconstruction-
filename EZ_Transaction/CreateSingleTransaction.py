@@ -27,14 +27,17 @@ class CreateTransaction:
     value selection and secure signature functionality.
     """
     
-    def __init__(self, sender_address: str, existing_collection: Optional[AccountValueCollection] = None):
+    def __init__(self, sender_address: str, existing_collection: AccountValueCollection):
         """
         Initialize the transaction creator with sender's account.
 
         Args:
             sender_address: The address of the sender account
-            existing_collection: Optional existing ValueCollection to use
+            existing_collection: Required existing ValueCollection to use for transaction
         """
+        if existing_collection is None:
+            raise ValueError("必须提供existing_collection参数用于交易创建，不能为空")
+
         self.sender_address = sender_address
         self.value_selector = AccountPickValues(sender_address, existing_collection)
         self.created_transactions = []

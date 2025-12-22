@@ -24,6 +24,8 @@ from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_VPB.proofs.ProofUnit import ProofUnit
 from EZ_VPB.block_index.BlockIndexList import BlockIndexList
+from EZ_CheckPoint.CheckPoint import CheckPoint
+from EZ_VPB_Validator.vpb_validator import VPBValidator
 
 class Account:
     """
@@ -59,6 +61,13 @@ class Account:
         # VPB管理 - VPBManager是唯一的VPB操作接口，支持自定义数据目录
         self.vpb_manager = VPBManager(address, data_directory=data_directory)
         self._lock = threading.RLock()
+
+        # CheckPoint管理 - 为账户提供检查点功能，支持自定义数据目录
+        checkpoint_db_path = f"ez_checkpoint_{address}.db" if not data_directory else f"{data_directory}/ez_checkpoint_{address}.db"
+        self.checkpoint_manager = CheckPoint(checkpoint_db_path)
+
+        # VPBValidator - 为账户提供VPB验证功能，传入checkpoint管理器
+        self.vpb_validator = VPBValidator(checkpoint=self.checkpoint_manager)
 
         # CreateMultiTransactions for transaction creation
         self.transaction_creator = CreateMultiTransactions(
@@ -260,6 +269,53 @@ class Account:
         """验证VPB完整性"""
         return self.vpb_manager.validate_vpb_integrity()
 
+    # ========== CheckPoint管理接口 ==========
+
+    def create_checkpoint(self, value: Value, block_height: int) -> bool:
+        """为Value创建检查点"""
+        return self.checkpoint_manager.create_checkpoint(value, self.address, block_height)
+
+    def update_checkpoint(self, value: Value, new_block_height: int) -> bool:
+        """更新Value的检查点"""
+        return self.checkpoint_manager.update_checkpoint(value, self.address, new_block_height)
+
+    def find_containing_checkpoint(self, value: Value):
+        """查找包含给定Value的checkpoint"""
+        return self.checkpoint_manager.find_containing_checkpoint(value)
+
+    def list_my_checkpoints(self):
+        """查找当前地址的所有checkpoint"""
+        return self.checkpoint_manager.find_checkpoints_by_owner(self.address)
+
+    def list_all_checkpoints(self):
+        """列出所有checkpoint"""
+        return self.checkpoint_manager.list_all_checkpoints()
+
+    def verify_vpb(self, value: Value, proof_units: List, block_index_list, main_chain_info) -> Any:
+        """
+        验证VPB三元组的完整性和合法性
+
+        Args:
+            value: 待验证的Value对象
+            proof_units: 对应的ProofUnit列表
+            block_index_list: 对应的BlockIndexList对象
+            main_chain_info: 主链信息
+
+        Returns:
+            VPBVerificationReport: 详细的验证报告
+        """
+        return self.vpb_validator.verify_vpb_pair(
+            value, proof_units, block_index_list, main_chain_info, self.address
+        )
+
+    def get_verification_stats(self) -> Dict[str, Any]:
+        """获取VPB验证统计信息"""
+        return self.vpb_validator.get_verification_stats()
+
+    def reset_verification_stats(self):
+        """重置VPB验证统计信息"""
+        self.vpb_validator.reset_stats()
+
     # ========== 交易创建和管理接口 ==========
 
     def create_batch_transactions(self, transaction_requests: List[Dict],
@@ -453,6 +509,8 @@ class Account:
         try:
             self.clear_all_data()
             self.signature_handler.clear_key()
+            if hasattr(self, 'checkpoint_manager'):
+                self.checkpoint_manager.clear_cache()
             print(f"Account {self.name} 清理完成")
         except Exception as e:
             print(f"清理资源失败: {e}")

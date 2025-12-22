@@ -41,7 +41,6 @@ from EZ_VPB.values.Value import Value
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_account
 from EZ_Miner.miner import Miner
-from EZ_VPB_Validator.vpb_validator import VPBValidator
 
 # Configure logging - 精简输出，只保留关键信息
 import logging
@@ -97,7 +96,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
     def __init__(self, methodName='runTest'):
         super().__init__(methodName)
         # 添加日志详细度控制开关
-        self.verbose_logging = os.getenv('VERBOSE_TEST_LOGGING', 'false').lower() == 'true'
+        self.verbose_logging = os.getenv('VERBOSE_TEST_LOGGING', 'true').lower() == 'true'
         # 添加VPB可视化控制开关
         self.show_vpb_visualization = os.getenv('SHOW_VPB_VISUALIZATION', 'false').lower() == 'true'
 
@@ -158,8 +157,10 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             blockchain=self.blockchain
         )
 
-        # 创建VPB验证器
-        self.vpb_validator = VPBValidator()
+        # 性能优化：创建账户地址到Account对象的映射字典，提高查找效率
+        self.account_address_map = {account.address: account for account in self.accounts}
+
+        # 不再需要创建通用VPB验证器，每个Account都有自己的VPBValidator
 
     def _cleanup_legacy_test_files(self):
         """清理旧的测试文件"""
@@ -443,123 +444,188 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         hash_bytes = hashlib.sha256(name.encode()).digest()
         return f"0x{hash_bytes[:20].hex()}"
 
-    def create_real_transaction_requests(self, num_transactions: int = 5) -> List[List[Dict]]:
-        """使用真实Account创建交易请求，使用随机选择发送者和接收者，随机金额"""
+    def create_real_transaction_requests(self, num_transactions: int = None) -> List[List[Dict]]:
+        """
+        使用真实Account创建交易请求，按照指定逻辑：
+        1）创建随机m个交易（m在2~10之间），随机选择m对发送者+接收者
+        2）检查发送者的value列表（假设有n个value），确定合理的交易金额（基于value数量的1/4左右）
+        3）若发送者没有value等原因造成无法生成交易，则跳过此account
+        4）若所有的m对发送者+接收者都完成遍历，无论最后是否真的生成了m笔交易，都将返回结果（至少保障有1笔交易）
+        """
         all_transaction_requests = []
 
-        for round_num in range(num_transactions):
-            round_requests = []
-            available_senders = []
+        # 1）创建随机m个交易（m在2~10之间）
+        m = random.randint(2, 10) if num_transactions is None else num_transactions
 
-            # 首先找出所有有足够余额的发送者
-            min_amount = 1  # 最小交易金额
-            for account in self.accounts:
-                available_balance = account.get_available_balance()
-                if available_balance >= min_amount:
-                    available_senders.append(account)
+        # 随机选择m对发送者+接收者（确保发送者和接收者不同）
+        sender_receiver_pairs = []
+        for _ in range(m):
+            # 随机选择发送者和接收者
+            available_accounts = list(self.accounts)
+            sender = random.choice(available_accounts)
+            # 确保接收者不是发送者
+            possible_recipients = [acc for acc in available_accounts if acc.address != sender.address]
+            if possible_recipients:
+                recipient = random.choice(possible_recipients)
+                sender_receiver_pairs.append((sender, recipient))
 
-            if len(available_senders) < 2:
-                print(f"   ⚠️ 第{round_num}轮：可用发送者不足({len(available_senders)}个)，跳过此轮")
-                continue
+        if not sender_receiver_pairs:
+            print("   ⚠️ 无法创建发送者-接收者对")
+            return []
 
-            # 每轮创建随机数量的交易请求
-            num_requests_this_round = min(random.randint(1, len(available_senders)), len(self.accounts) - 1)
-            num_requests_this_round = 8
+        # 预先计算所有账户的未花费values和总余额，避免重复计算
+        account_values_cache = {}
+        account_balance_cache = {}
+        for account in self.accounts:
+            unspent_values = account.get_unspent_values()
+            account_values_cache[account.address] = unspent_values
+            account_balance_cache[account.address] = sum(value.value_num for value in unspent_values)
 
-            for i in range(num_requests_this_round):
-                # 随机选择发送者和接收者
-                sender_account = random.choice(available_senders)
-                # 接收者从所有账户中随机选择，但不能是自己
-                possible_recipients = [acc for acc in self.accounts if acc.address != sender_account.address]
-                recipient_account = random.choice(possible_recipients)
+        # 为每一对创建交易请求
+        for i, (sender_account, recipient_account) in enumerate(sender_receiver_pairs):
+            try:
+                # 2）检查发送者的value列表（使用缓存）
+                sender_values = account_values_cache[sender_account.address]
+                n = len(sender_values)
 
-                # 检查发送者当前余额（可能之前的交易已经改变了余额）
-                current_balance = sender_account.get_available_balance()
+                if n == 0:
+                    print(f"   ⚠️ 发送者 {sender_account.name} 没有可用value，跳过")
+                    continue  # 3）若发送者没有value，跳过此account
 
-                # 定义可用的面额值（基于创世块配置）
-                available_denominations = [100, 50, 10, 1]
+                # 获取发送者的总余额（使用缓存）
+                total_balance = account_balance_cache[sender_account.address]
 
-                # 过滤出发送者余额支持的面额
-                affordable_denominations = [denom for denom in available_denominations
-                                         if denom <= current_balance]
-
-                if not affordable_denominations:
-                    print(f"   ⚠️ Account {sender_account.name} 余额不足: {current_balance}")
-                    # 从可用发送者列表中移除余额不足的账户
-                    if sender_account in available_senders:
-                        available_senders.remove(sender_account)
+                if total_balance <= 0:
+                    print(f"   ⚠️ 发送者 {sender_account.name} 总余额为0，跳过")
                     continue
 
-                # 从可用的面额中随机选择一个金额
-                amount = random.choice(affordable_denominations)
+                # 2）基于value数量确定合理的交易金额范围（模拟选择1~n/4个value的效果）
+                max_selectable = max(1, n // 4)  # 确保至少能选1个
+                num_values_to_simulate = random.randint(1, max_selectable)
 
-                # 生成更真实的nonce和reference
-                nonce = random.randint(10000, 99999) + round_num * 100000
-                reference = f"tx_{sender_account.name[:3]}_{recipient_account.name[:3]}_{round_num}_{i}"
+                # 按value金额排序，取前num_values_to_simulate个value的总和作为交易金额
+                sorted_values = sorted(sender_values, key=lambda v: v.value_num, reverse=True)
+                selected_total = sum(v.value_num for v in sorted_values[:num_values_to_simulate])
 
-                # 创建交易请求
+                # 确保交易金额合理：不超过总余额，且至少为1
+                amount = max(1, min(selected_total, total_balance))
+
+                # 生成nonce和reference
+                nonce = random.randint(10000, 99999) + i * 100000
+                reference = f"tx_{sender_account.name[:3]}_{recipient_account.name[:3]}_{i}"
+
+                # 创建交易请求（保持sender字段以便后续处理）
                 transaction_request = {
-                    "sender": sender_account.address,  # 添加sender字段以便后续处理
+                    "sender": sender_account.address,  # 保留sender字段
                     "recipient": recipient_account.address,
                     "amount": amount,
                     "nonce": nonce,
                     "reference": reference
                 }
 
-                round_requests.append(transaction_request)
-                # print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount}")  # 注释掉，减少输出
+                all_transaction_requests.append([transaction_request])  # 每个交易请求单独成轮
+                print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount} (模拟选择{num_values_to_simulate}个value)")
 
-            if round_requests:
-                all_transaction_requests.append(round_requests)
+            except Exception as e:
+                print(f"   ❌ 创建交易请求失败: {sender_account.name} → {recipient_account.name}, 错误: {e}")
+                continue  # 3）若无法生成交易，跳过此account
+
+        # 4）无论最后是否真的生成了m笔交易，都将返回结果（注意，这里至少应该保障有1笔交易）
+        if not all_transaction_requests:
+            print("   ⚠️ 没有成功创建任何交易，尝试强制创建一笔最小交易")
+            # 强制尝试创建一笔最小交易（使用缓存）
+            for sender in self.accounts:
+                if account_balance_cache[sender.address] > 0:
+                    for recipient in self.accounts:
+                        if recipient.address != sender.address:
+                            amount = 1  # 最小交易金额
+                            transaction_request = {
+                                "sender": sender.address,
+                                "recipient": recipient.address,
+                                "amount": amount,
+                                "nonce": random.randint(10000, 99999),
+                                "reference": f"emergency_tx_{sender.name[:3]}_{recipient.name[:3]}"
+                            }
+                            all_transaction_requests.append([transaction_request])
+                            print(f"   🆘 强制创建紧急交易: {sender.name} → {recipient.name}, 金额: {amount}")
+                            break
+                    if all_transaction_requests:
+                        break
 
         return all_transaction_requests
 
     def create_transactions_from_accounts(self, transaction_requests_list: List[List[Dict]]) -> List[Tuple[SubmitTxInfo, Dict, Account]]:
-        """使用真实Account创建交易，返回SubmitTxInfo、multi_txn_result和Account的元组列表"""
+        """
+        使用真实Account创建交易，返回SubmitTxInfo、multi_txn_result和Account的元组列表
+        更新：适配新的交易请求结构，每个交易请求都是独立的轮次，并明确指定发送者
+        """
         submit_tx_data = []
 
+        # 预先缓存账户查找结果，避免重复查找
+        account_cache = {}
+        def get_cached_account(address):
+            if address not in account_cache:
+                account_cache[address] = self.get_account_by_address(address)
+            return account_cache[address]
+
         for round_num, round_requests in enumerate(transaction_requests_list):
-            # 为每个账户创建批量交易
-            for i, account in enumerate(self.accounts):
-                # 找到这个账户的请求
-                account_requests = [req for req in round_requests
-                                 if self.get_account_by_address(req.get("sender")) == account]
+            if not round_requests:
+                continue
 
-                if not account_requests:
+            # 每轮只有一个交易请求，且已经包含了发送者信息
+            transaction_request = round_requests[0]
+            sender_address = transaction_request.get("sender")
+
+            if not sender_address:
+                print(f"   ⚠️ 第{round_num}轮交易请求缺少sender信息，跳过")
+                continue
+
+            # 找到对应的发送账户（使用缓存）
+            sender_account = get_cached_account(sender_address)
+            if not sender_account:
+                print(f"   ⚠️ 第{round_num}轮找不到发送账户 {sender_address}，跳过")
+                continue
+
+            try:
+                # 验证发送者是否有足够的余额
+                required_amount = transaction_request.get("amount", 0)
+                available_balance = sender_account.get_available_balance()
+
+                if available_balance < required_amount:
+                    print(f"   ⚠️ 发送者 {sender_account.name} 余额不足 ({available_balance} < {required_amount})，跳过")
                     continue
 
-                try:
-                    # 使用Account的批量交易创建功能
-                    multi_txn_result = account.create_batch_transactions(
-                        transaction_requests=account_requests,
-                        reference=f"round_{round_num}_account_{account.name}"
-                    )
+                # 使用Account的批量交易创建功能
+                multi_txn_result = sender_account.create_batch_transactions(
+                    transaction_requests=[transaction_request],
+                    reference=f"round_{round_num}_account_{sender_account.name}"
+                )
 
-                    if multi_txn_result:
-                        # 创建SubmitTxInfo
-                        submit_tx_info = account.create_submit_tx_info(multi_txn_result)
+                if multi_txn_result:
+                    # 创建SubmitTxInfo
+                    submit_tx_info = sender_account.create_submit_tx_info(multi_txn_result)
 
-                        if submit_tx_info:
-                            # 存储元组：(SubmitTxInfo, multi_txn_result, Account)
-                            submit_tx_data.append((submit_tx_info, multi_txn_result, account))
-                            logger.info(f"Account {account.name} 创建了 {len(account_requests)} 笔交易")
-                        else:
-                            logger.error(f"Account {account.name} 创建SubmitTxInfo失败")
+                    if submit_tx_info:
+                        # 存储元组：(SubmitTxInfo, multi_txn_result, Account)
+                        submit_tx_data.append((submit_tx_info, multi_txn_result, sender_account))
+                        # 优化：减少重复的账户查找
+                        recipient_account = get_cached_account(transaction_request.get("recipient"))
+                        recipient_name = recipient_account.name if recipient_account else "未知"
+                        print(f"   ✅ Account {sender_account.name} 创建交易 → {recipient_name}, 金额: {required_amount}")
                     else:
-                        logger.error(f"Account {account.name} 批量创建交易失败")
+                        print(f"   ❌ Account {sender_account.name} 创建SubmitTxInfo失败")
+                else:
+                    print(f"   ❌ Account {sender_account.name} 批量创建交易失败")
 
-                except Exception as e:
-                    logger.error(f"Account {account.name} 创建交易异常: {e}")
-                    continue
+            except Exception as e:
+                print(f"   ❌ Account {sender_account.name} 创建交易异常: {e}")
+                continue
 
         return submit_tx_data
 
     def get_account_by_address(self, address: str) -> Account:
-        """根据地址获取Account节点"""
-        for account in self.accounts:
-            if account.address == address:
-                return account
-        return None
+        """根据地址获取Account节点（使用字典查找优化性能）"""
+        return self.account_address_map.get(address)
 
     def get_merkle_proof_for_sender(self, sender_address: str, picked_txs_mt_proofs: List[Tuple[str, Any]],
                                    package_data) -> List[Any]:
@@ -600,7 +666,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
         # 步骤2：创建真实交易请求
         print("📝 创建交易请求... | ", end="")
-        transaction_requests_list = self.create_real_transaction_requests(1)
+        transaction_requests_list = self.create_real_transaction_requests()
         total_requests = sum(len(requests) for requests in transaction_requests_list)
         print(f"{len(transaction_requests_list)}轮 {total_requests}笔")
 
@@ -851,13 +917,16 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 genesis_block_height=0
                             )
 
-                            verification_report = self.vpb_validator.verify_vpb_pair(
+                            verification_report = recipient_account.verify_vpb(
                                 value=copy.deepcopy(received_value),
                                 proof_units=copy.deepcopy(received_proof_units),
                                 block_index_list=copy.deepcopy(received_block_index),
-                                main_chain_info=main_chain_info,
-                                account_address=data['recipient_address']
+                                main_chain_info=main_chain_info
                             )
+
+                            # 检查是否使用了checkpoint
+                            if verification_report.checkpoint_used:
+                                print(f"   🔍 Checkpoint触发: 账户{recipient_account.name} 使用高度{verification_report.checkpoint_used.block_height}的检查点")
 
                             if verification_report.is_valid:
                                 vpb_verification_success += 1

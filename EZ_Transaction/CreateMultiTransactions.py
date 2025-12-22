@@ -28,14 +28,17 @@ class CreateMultiTransactions:
     value selection and secure signature functionality.
     """
     
-    def __init__(self, sender_address: str, existing_collection: Optional[AccountValueCollection] = None):
+    def __init__(self, sender_address: str, existing_collection: AccountValueCollection):
         """
         Initialize the multi-transaction creator with sender's account.
 
         Args:
             sender_address: The address of the sender account
-            existing_collection: Existing AccountValueCollection to use (optional)
+            existing_collection: Required AccountValueCollection to use for multi-transaction creation
         """
+        if existing_collection is None:
+            raise ValueError("必须提供existing_collection参数用于多交易创建，不能为空")
+
         self.sender_address = sender_address
         self.value_selector = AccountPickValues(sender_address, existing_collection)
         self.created_multi_transactions = []

@@ -20,16 +20,20 @@ def _get_transaction_class():
 class AccountPickValues:
     """增强版Value选择器，基于AccountValueCollection实现高效调度"""
     
-    def __init__(self, account_address: str, existing_collection: Optional[AccountValueCollection] = None):
+    def __init__(self, account_address: str, existing_collection: AccountValueCollection):
         """初始化AccountPickValues
         Args:
             account_address: 账户地址
-            existing_collection: 现有的ValueCollection，如果提供则使用现有的而不是创建新的
+            existing_collection: 现有的ValueCollection，必须提供用于交易的Value选择
         """
-        if existing_collection is not None:
-            self.account_collection = existing_collection
-        else:
-            self.account_collection = AccountValueCollection(account_address)
+        if existing_collection is None:
+            raise ValueError("必须提供existing_collection参数用于交易Value选择，不能为空")
+
+        # 验证传入的collection与账户地址是否匹配
+        if existing_collection.account_address != account_address:
+            raise ValueError(f"提供的AccountValueCollection账户地址({existing_collection.account_address})与指定账户地址({account_address})不匹配")
+
+        self.account_collection = existing_collection
         
     def add_values_from_list(self, values: List[Value]) -> int:
         """从Value列表批量添加Value"""
@@ -77,7 +81,7 @@ class AccountPickValues:
         # 检查余额是否足够
         if total_selected < required_amount:
             raise ValueError("余额不足！")
-            
+        
         # 计算找零
         change_amount = total_selected - required_amount
         
@@ -198,14 +202,3 @@ class AccountPickValues:
         if node_id:
             return self.account_collection.update_value_state(node_id, new_state)
         return False
-    
-    # 暂时不需要使用合并功能（EZchain系统暂不提供此功能）
-    def _are_adjacent(self, value1: Value, value2: Value) -> bool:
-        """检查两个Value是否相邻"""
-        if value1.state != value2.state:
-            return False
-            
-        end1 = value1.get_decimal_end_index()
-        start2 = value2.get_decimal_begin_index()
-        
-        return end1 + 1 == start2

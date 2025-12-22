@@ -104,7 +104,7 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
         self.transaction_picker = self.base_test.transaction_picker
         self.miner_address = self.base_test.miner_address
         self.miner = self.base_test.miner
-        self.vpb_validator = self.base_test.vpb_validator
+        # 注意：vpb_validator 已经不存在，每个Account都有自己的VPBValidator
 
         print(f"✅ 基础环境初始化完成")
         print(f"   - 账户数量: {len(self.accounts)}")
@@ -389,6 +389,18 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
 
 def run_multi_round_integration_tests(num_rounds: int = 3):
     """运行多轮集成测试"""
+
+    # 设置编码以支持中文字符和emoji
+    try:
+        if sys.platform == "win32":
+            # Windows下设置UTF-8编码
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            # 在Windows下设置环境变量以支持UTF-8
+            os.environ['PYTHONIOENCODING'] = 'utf-8'
+    except:
+        pass
+
     print("=" * 80)
     print("🚀 EZchain 多轮真实Account节点集成测试")
     print(f"📈 计划执行 {num_rounds} 轮完整交易流程")

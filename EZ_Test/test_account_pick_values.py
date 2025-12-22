@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from EZ_VPB.values.AccountPickValues import AccountPickValues
+    from EZ_VPB.values.AccountValueCollection import AccountValueCollection
     from EZ_VPB.values.Value import Value, ValueState
     from EZ_Transaction.SingleTransaction import Transaction
 except ImportError as e:
@@ -40,13 +41,15 @@ def test_values():
 @pytest.fixture
 def account_pick_values(account_address):
     """Fixture for AccountPickValues instance."""
-    return AccountPickValues(account_address)
+    collection = AccountValueCollection(account_address)
+    return AccountPickValues(account_address, collection)
 
 
 @pytest.fixture
 def populated_account_pick_values(account_address, test_values):
     """Fixture for AccountPickValues with test values."""
-    apv = AccountPickValues(account_address)
+    collection = AccountValueCollection(account_address)
+    apv = AccountPickValues(account_address, collection)
     apv.add_values_from_list(test_values)
     return apv
 

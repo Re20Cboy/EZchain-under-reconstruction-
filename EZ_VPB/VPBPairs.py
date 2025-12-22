@@ -366,9 +366,8 @@ class VPBManager:
                 # 加载现有VPB数据
                 self._load_existing_vpbs()
             elif self._value_collection is not None:
-                # 即使没有account_address，也应该初始化_value_selector
-                self._value_selector = AccountPickValues("", self._value_collection)
-                print("Warning: VPBManager initialized without account_address")
+                print("Warning: VPBManager initialized without account_address, AccountPickValues not initialized")
+                self._value_selector = None
         except Exception as e:
             print(f"Warning: Failed to initialize AccountPickValues: {e}")
             self._value_selector = None
@@ -377,15 +376,23 @@ class VPBManager:
         """设置账户地址并加载现有VPB"""
         self.account_address = address
         if self._value_collection:
-            self._value_selector = AccountPickValues(address, self._value_collection)
-            self._load_existing_vpbs()
+            try:
+                self._value_selector = AccountPickValues(address, self._value_collection)
+                self._load_existing_vpbs()
+            except ValueError as e:
+                print(f"Warning: Failed to set account address: {e}")
+                self._value_selector = None
 
     def set_value_collection(self, collection: AccountValueCollection):
         """设置AccountValueCollection"""
         self._value_collection = collection
         if self.account_address:
-            self._value_selector = AccountPickValues(self.account_address, self._value_collection)
-            self._load_existing_vpbs()
+            try:
+                self._value_selector = AccountPickValues(self.account_address, self._value_collection)
+                self._load_existing_vpbs()
+            except ValueError as e:
+                print(f"Warning: Failed to set value collection: {e}")
+                self._value_selector = None
 
     def set_lock(self, lock: threading.RLock):
         """设置外部锁（用于与Account同步）"""
