@@ -37,7 +37,7 @@ from EZ_Transaction.SubmitTxInfo import SubmitTxInfo
 from EZ_Transaction.MultiTransactions import MultiTransactions
 from EZ_Transaction.SingleTransaction import Transaction
 from EZ_Account.Account import Account
-from EZ_VPB.values.Value import Value
+from EZ_VPB.values.Value import Value, ValueState
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_account
 from EZ_Miner.miner import Miner
@@ -769,7 +769,18 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 account.vpb_manager.visualize_confirmed_values(f"After Senders Update - {account.name}")
 
         # 步骤6.2：发送者本地化处理VPB
-        print("🔄 发送者VPB更新... | ", end="")
+        print("🔄 发送者VPB更新...")
+
+        # 【调试】记录发送者VPB更新前的状态
+        print("\n   📊 [6.2更新前] 各账户状态:")
+        for account in self.accounts:
+            unspent_values = account.get_unspent_values()
+            confirmed_values = account.get_values(ValueState.CONFIRMED)
+            unspent_total = sum(v.value_num for v in unspent_values)
+            confirmed_total = sum(v.value_num for v in confirmed_values)
+            print(f"      {account.name}: UNSPENT={unspent_total} ({len(unspent_values)}个), CONFIRMED={confirmed_total} ({len(confirmed_values)}个)")
+
+        print("   | 开始更新... | ", end="")
         vpb_update_count = 0
         if package_data.selected_submit_tx_infos:
             try:
@@ -809,6 +820,16 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
 
                 print(f"{vpb_update_count}/{len(package_data.selected_submit_tx_infos)} 成功 | {', '.join(processed_senders)}")
 
+                # 【调试】记录发送者VPB更新后的状态
+                print("\n   📊 [6.2更新后] 各账户状态:")
+                for account in self.accounts:
+                    unspent_values = account.get_unspent_values()
+                    confirmed_values = account.get_values(ValueState.CONFIRMED)
+                    unspent_total = sum(v.value_num for v in unspent_values)
+                    confirmed_total = sum(v.value_num for v in confirmed_values)
+                    total_values = unspent_total + confirmed_total
+                    print(f"      {account.name}: UNSPENT={unspent_total} ({len(unspent_values)}个), CONFIRMED={confirmed_total} ({len(confirmed_values)}个), TOTAL={total_values}")
+
                 # 可视化发送者VPB更新后的状态
                 if self.show_vpb_visualization:
                     print(f"\n📊 [6.2步骤后-发送者VPB更新] VPB状态可视化:")
@@ -823,7 +844,17 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 traceback.print_exc()
 
         # 步骤6.3：接收者同步处理
-        print("📤 接收者VPB处理... | ", end="")
+        print("📤 接收者VPB处理...")
+
+        # 【调试】记录接收者VPB处理前的状态
+        print("\n   📊 [6.3处理前] 各账户状态:")
+        for account in self.accounts:
+            unspent_values = account.get_unspent_values()
+            confirmed_values = account.get_values(ValueState.CONFIRMED)
+            unspent_total = sum(v.value_num for v in unspent_values)
+            confirmed_total = sum(v.value_num for v in confirmed_values)
+            total_values = unspent_total + confirmed_total
+            print(f"      {account.name}: UNSPENT={unspent_total} ({len(unspent_values)}个), CONFIRMED={confirmed_total} ({len(confirmed_values)}个), TOTAL={total_values}")
 
         # 静默验证器日志
         import logging
@@ -863,21 +894,26 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                         if not recipient_account:
                             continue
 
+                        # 遍历交易中的所有value，为每个value都进行VPB检查
                         if hasattr(txn, 'value') and txn.value and len(txn.value) > 0:
-                            transferred_value = copy.deepcopy(txn.value[0])
-                            received_proof_units = copy.deepcopy(sender_account.vpb_manager.get_proof_units_for_value(transferred_value))
-                            received_block_index = copy.deepcopy(sender_account.vpb_manager.get_block_index_for_value(transferred_value))
+                            if self.verbose_logging and len(txn.value) > 1:
+                                print(f"   💡 处理交易到 {recipient_account.name}: 发现 {len(txn.value)} 个value，将逐个进行VPB检查")
 
-                            if received_proof_units and received_block_index:
-                                recipient_data = {
-                                    'recipient_account': recipient_account,
-                                    'recipient_address': recipient_address,
-                                    'received_value': transferred_value,
-                                    'received_proof_units': received_proof_units,
-                                    'received_block_index': received_block_index
-                                }
-                                sender_to_recipients_data[sender_account.address].append(recipient_data)
-                                recipients_processed += 1
+                            for single_value in txn.value:
+                                transferred_value = copy.deepcopy(single_value)
+                                received_proof_units = copy.deepcopy(sender_account.vpb_manager.get_proof_units_for_value(transferred_value))
+                                received_block_index = copy.deepcopy(sender_account.vpb_manager.get_block_index_for_value(transferred_value))
+
+                                if received_proof_units and received_block_index:
+                                    recipient_data = {
+                                        'recipient_account': recipient_account,
+                                        'recipient_address': recipient_address,
+                                        'received_value': transferred_value,
+                                        'received_proof_units': received_proof_units,
+                                        'received_block_index': received_block_index
+                                    }
+                                    sender_to_recipients_data[sender_account.address].append(recipient_data)
+                                    recipients_processed += 1
 
                 # 为每个接收者进行VPB验证和接收
                 for sender_address, recipients_data in sender_to_recipients_data.items():
@@ -942,7 +978,17 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                             if self.verbose_logging:
                                 print(f"处理 {recipient_account.name} VPB异常: {str(e)[:30]}")
 
-                print(f"总计:{recipients_processed} | 验证:{vpb_verification_success} | 接收:{vpb_receive_success}")
+                print(f"总计value:{recipients_processed} | 验证成功:{vpb_verification_success} | 接收成功:{vpb_receive_success}")
+
+                # 【调试】记录接收者VPB处理后的状态
+                print("\n   📊 [6.3处理后] 各账户状态:")
+                for account in self.accounts:
+                    unspent_values = account.get_unspent_values()
+                    confirmed_values = account.get_values(ValueState.CONFIRMED)
+                    unspent_total = sum(v.value_num for v in unspent_values)
+                    confirmed_total = sum(v.value_num for v in confirmed_values)
+                    total_values = unspent_total + confirmed_total
+                    print(f"      {account.name}: UNSPENT={unspent_total} ({len(unspent_values)}个), CONFIRMED={confirmed_total} ({len(confirmed_values)}个), TOTAL={total_values}")
 
                 # 可视化接收者VPB更新后的状态
                 if self.show_vpb_visualization:
