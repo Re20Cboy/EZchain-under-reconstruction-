@@ -358,9 +358,9 @@ class TestTransactionSignature(unittest.TestCase):
         result = self.tx.check_txn_sig(self.public_key_pem)
         self.assertTrue(result)
         
-        # Change state again to LOCAL_COMMITTED
-        self.tx.value[0].set_state(ValueState.LOCAL_COMMITTED)
-        
+        # Change state again to PENDING
+        self.tx.value[0].set_state(ValueState.PENDING)
+
         # Signature should still be valid
         result = self.tx.check_txn_sig(self.public_key_pem)
         self.assertTrue(result)

@@ -274,28 +274,28 @@ class AccountValueCollectionStorage:
                     SELECT COUNT(*) as total_values,
                            COUNT(DISTINCT node_id) as unique_nodes,
                            SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as unspent_count,
-                           SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as selected_count,
-                           SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as spent_count,
+                           SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as pending_count,
+                           SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as onchain_count,
                            SUM(CASE WHEN state = ? THEN 1 ELSE 0 END) as confirmed_count
                     FROM value_data
                     WHERE account_address = ?
                 """, (
                     ValueState.UNSPENT.value if hasattr(ValueState.UNSPENT, 'value') else str(ValueState.UNSPENT),
-                    ValueState.SELECTED.value if hasattr(ValueState.SELECTED, 'value') else str(ValueState.SELECTED),
-                    ValueState.SPENT.value if hasattr(ValueState.SPENT, 'value') else str(ValueState.SPENT),
+                    ValueState.PENDING.value if hasattr(ValueState.PENDING, 'value') else str(ValueState.PENDING),
+                    ValueState.ONCHAIN.value if hasattr(ValueState.ONCHAIN, 'value') else str(ValueState.ONCHAIN),
                     ValueState.CONFIRMED.value if hasattr(ValueState.CONFIRMED, 'value') else str(ValueState.CONFIRMED),
                     account_address
                 ))
 
                 row = cursor.fetchone()
                 if row:
-                    total_values, unique_nodes, unspent_count, selected_count, spent_count, confirmed_count = row
+                    total_values, unique_nodes, unspent_count, pending_count, onchain_count, confirmed_count = row
                     return {
                         'total_values': total_values,
                         'unique_nodes': unique_nodes,
                         'unspent_count': unspent_count,
-                        'selected_count': selected_count,
-                        'spent_count': spent_count,
+                        'pending_count': pending_count,
+                        'onchain_count': onchain_count,
                         'confirmed_count': confirmed_count
                     }
         except Exception as e:
@@ -305,8 +305,8 @@ class AccountValueCollectionStorage:
             'total_values': 0,
             'unique_nodes': 0,
             'unspent_count': 0,
-            'selected_count': 0,
-            'spent_count': 0,
+            'pending_count': 0,
+            'onchain_count': 0,
             'confirmed_count': 0
         }
 
@@ -683,17 +683,17 @@ class AccountValueCollection:
             current = current.next
         return False
 
-    def revert_selected_to_unspent(self) -> int:
+    def revert_pending_to_unspent(self) -> int:
         """
-        将所有SELECTED状态的Value恢复为UNSPENT状态
+        将所有PENDING状态的Value恢复为UNSPENT状态
 
         Returns:
             恢复的Value数量
         """
         reverted_count = 0
-        selected_node_ids = list(self._state_index[ValueState.SELECTED])
+        pending_node_ids = list(self._state_index[ValueState.PENDING])
 
-        for node_id in selected_node_ids:
+        for node_id in pending_node_ids:
             if self.update_value_state(node_id, ValueState.UNSPENT):
                 reverted_count += 1
 
@@ -877,8 +877,8 @@ class AccountValueCollection:
                 'total_values': 0,
                 'unique_nodes': 0,
                 'unspent_count': 0,
-                'selected_count': 0,
-                'spent_count': 0,
+                'pending_count': 0,
+                'onchain_count': 0,
                 'confirmed_count': 0,
                 'memory_size': self.size,
                 'memory_cached_nodes': len(self._index_map),

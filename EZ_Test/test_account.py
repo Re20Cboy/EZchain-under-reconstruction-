@@ -78,7 +78,7 @@ def sample_values():
     values = [
         Value("0x1000", 100, ValueState.UNSPENT),
         Value("0x2000", 200, ValueState.UNSPENT),
-        Value("0x3000", 150, ValueState.SELECTED)
+        Value("0x3000", 150, ValueState.PENDING)
     ]
     return values
 
@@ -164,18 +164,17 @@ class TestAccountBalance:
 
         assert isinstance(all_balances, dict)
         assert ValueState.UNSPENT.name in all_balances
-        assert ValueState.SELECTED.name in all_balances
-        assert ValueState.LOCAL_COMMITTED.name in all_balances
+        assert ValueState.PENDING.name in all_balances
         assert ValueState.CONFIRMED.name in all_balances
 
     def test_get_balance_specific_state(self, test_account, sample_values):
         """Test getting balance for a specific state."""
         test_account.add_values(sample_values)
 
-        selected_balance = test_account.get_balance(ValueState.SELECTED)
-        expected_selected = sum(v.value_num for v in sample_values
-                               if v.state == ValueState.SELECTED)
-        assert selected_balance == expected_selected
+        pending_balance = test_account.get_balance(ValueState.PENDING)
+        expected_pending = sum(v.value_num for v in sample_values
+                              if v.state == ValueState.PENDING)
+        assert pending_balance == expected_pending
 
 
 class TestAccountValueManagement:
@@ -734,7 +733,7 @@ class TestAccountUnifiedInterface:
         balances = test_account.get_all_balances()
         assert isinstance(balances, dict)
         assert 'UNSPENT' in balances
-        assert 'LOCAL_COMMITTED' in balances
+        assert 'PENDING' in balances
 
         # Verify specific balance - calculate based on actual Value states
         unspent_balance = test_account.get_balance(ValueState.UNSPENT)

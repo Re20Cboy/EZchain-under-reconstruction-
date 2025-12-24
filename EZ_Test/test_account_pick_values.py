@@ -93,15 +93,15 @@ class TestAccountPickValuesAddValues:
         """Test adding values with different states."""
         values = [
             Value("0x1000", 100, ValueState.UNSPENT),
-            Value("0x2000", 200, ValueState.SELECTED),
-            Value("0x3000", 150, ValueState.LOCAL_COMMITTED),
+            Value("0x2000", 200, ValueState.PENDING),  # Changed from SELECTED
+            Value("0x3000", 150, ValueState.ONCHAIN),  # Changed from LOCAL_COMMITTED
             Value("0x4000", 300, ValueState.CONFIRMED)
         ]
         result = account_pick_values.add_values_from_list(values)
         assert result == len(values)
         assert account_pick_values.get_account_balance(ValueState.UNSPENT) == 100
-        assert account_pick_values.get_account_balance(ValueState.SELECTED) == 200
-        assert account_pick_values.get_account_balance(ValueState.LOCAL_COMMITTED) == 150
+        assert account_pick_values.get_account_balance(ValueState.PENDING) == 200
+        assert account_pick_values.get_account_balance(ValueState.ONCHAIN) == 150
         assert account_pick_values.get_account_balance(ValueState.CONFIRMED) == 300
 
 
@@ -276,12 +276,13 @@ class TestAccountPickValuesStateManagement:
         )
 
         # Check initial state
-        assert selected_values[0].state == ValueState.SELECTED
+        assert selected_values[0].state == ValueState.PENDING
 
         # Commit the values
         result = populated_account_pick_values.commit_transaction_values(selected_values)
         assert result is True
-        assert selected_values[0].state == ValueState.LOCAL_COMMITTED
+        # After commit, values should move to ONCHAIN state
+        assert selected_values[0].state == ValueState.ONCHAIN
 
     def test_confirm_transaction_values(self, populated_account_pick_values):
         """Test confirming transaction values."""
@@ -317,7 +318,7 @@ class TestAccountPickValuesStateManagement:
         )
 
         # Check initial state
-        assert selected_values[0].state == ValueState.SELECTED
+        assert selected_values[0].state == ValueState.PENDING
 
         # Rollback the selection
         result = populated_account_pick_values.rollback_transaction_selection(selected_values)
@@ -336,15 +337,15 @@ class TestAccountPickValuesBalanceManagement:
         # Add values with different states
         values = [
             Value("0x6000", 100, ValueState.UNSPENT),
-            Value("0x7000", 200, ValueState.SELECTED),
-            Value("0x8000", 150, ValueState.LOCAL_COMMITTED),
+            Value("0x7000", 200, ValueState.PENDING),  # Changed from SELECTED
+            Value("0x8000", 150, ValueState.ONCHAIN),  # Changed from LOCAL_COMMITTED
             Value("0x9000", 300, ValueState.CONFIRMED)
         ]
         populated_account_pick_values.add_values_from_list(values)
 
         assert populated_account_pick_values.get_account_balance(ValueState.UNSPENT) == initial_unspent + 100
-        assert populated_account_pick_values.get_account_balance(ValueState.SELECTED) == 200
-        assert populated_account_pick_values.get_account_balance(ValueState.LOCAL_COMMITTED) == 150
+        assert populated_account_pick_values.get_account_balance(ValueState.PENDING) == 200
+        assert populated_account_pick_values.get_account_balance(ValueState.ONCHAIN) == 150
         assert populated_account_pick_values.get_account_balance(ValueState.CONFIRMED) == 300
 
     def test_get_total_account_balance(self, populated_account_pick_values):
@@ -358,18 +359,18 @@ class TestAccountPickValuesBalanceManagement:
         """Test getting account values by state."""
         # Add values with different states
         values = [
-            Value("0x6000", 100, ValueState.SELECTED),
+            Value("0x6000", 100, ValueState.PENDING),  # Changed from SELECTED
             Value("0x7000", 200, ValueState.CONFIRMED)
         ]
         populated_account_pick_values.add_values_from_list(values)
 
         unspent_values = populated_account_pick_values.get_account_values(ValueState.UNSPENT)
-        selected_values = populated_account_pick_values.get_account_values(ValueState.SELECTED)
+        pending_values = populated_account_pick_values.get_account_values(ValueState.PENDING)  # Changed from SELECTED
         confirmed_values = populated_account_pick_values.get_account_values(ValueState.CONFIRMED)
         all_values = populated_account_pick_values.get_account_values()
 
         assert len(unspent_values) == 5
-        assert len(selected_values) == 1
+        assert len(pending_values) == 1
         assert len(confirmed_values) == 1
         assert len(all_values) == 7
 
@@ -458,10 +459,10 @@ class TestAccountPickValuesEdgeCases:
         test_value = populated_account_pick_values.get_account_values()[0]
         original_state = test_value.state
 
-        # Update to SELECTED
-        result = populated_account_pick_values._update_value_state(test_value, ValueState.SELECTED)
+        # Update to PENDING
+        result = populated_account_pick_values._update_value_state(test_value, ValueState.PENDING)
         assert result is True
-        assert test_value.state == ValueState.SELECTED
+        assert test_value.state == ValueState.PENDING
 
         # Update back to UNSPENT
         result = populated_account_pick_values._update_value_state(test_value, ValueState.UNSPENT)
@@ -470,7 +471,7 @@ class TestAccountPickValuesEdgeCases:
 
         # Test with non-existent value
         fake_value = Value("0x9999", 100, ValueState.UNSPENT)
-        result = populated_account_pick_values._update_value_state(fake_value, ValueState.SELECTED)
+        result = populated_account_pick_values._update_value_state(fake_value, ValueState.PENDING)
         assert result is False
 
 

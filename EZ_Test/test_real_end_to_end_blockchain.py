@@ -513,7 +513,7 @@ class TestRealEndToEndBlockchain(unittest.TestCase):
             account = data['account']
             final_balance = account.get_available_balance()
             all_balances = account.get_all_balances()
-            pending_count = len(account.value_collection.find_by_state(ValueState.LOCAL_COMMITTED))
+            pending_count = len(account.value_collection.find_by_state(ValueState.PENDING))
             confirmed_count = len(account.value_collection.find_by_state(ValueState.CONFIRMED))
 
             print(f"  {name}:")

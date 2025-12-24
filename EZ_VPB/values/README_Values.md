@@ -67,14 +67,13 @@ EZ_Value 模块是 EZChain 区块链系统中用于管理 Value（数值）的�
 ## Value 状态流转
 
 ```
-UNSPENT → SELECTED → LOCAL_COMMITTED → CONFIRMED
-    ↑                                        ↓
-    ←────────────── 回滚 ←───────────────────
+UNSPENT → SELECTED → CONFIRMED
+    ↑              ↓
+    ←─ 回滚 ←──────
 ```
 
 - **UNSPENT**: 未花销状态，可用于交易
 - **SELECTED**: 已选中，准备注入交易
-- **LOCAL_COMMITTED**: 本地提交待确认
 - **CONFIRMED**: 链上已确认（=已花费）
 
 ## 架构优势

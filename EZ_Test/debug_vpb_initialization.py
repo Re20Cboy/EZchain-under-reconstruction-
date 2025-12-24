@@ -210,8 +210,8 @@ def test_value_state_comparison():
 
     values = [
         Value("0x0001", 10, ValueState.UNSPENT),
-        Value("0x0002", 20, ValueState.SELECTED),
-        Value("0x0003", 30, ValueState.LOCAL_COMMITTED),
+        Value("0x0002", 20, ValueState.PENDING),  # Changed from SELECTED
+        Value("0x0003", 30, ValueState.ONCHAIN),  # Changed from LOCAL_COMMITTED
         Value("0x0004", 40, ValueState.CONFIRMED),
         Value("0x0005", 50, ValueState.UNSPENT),
     ]

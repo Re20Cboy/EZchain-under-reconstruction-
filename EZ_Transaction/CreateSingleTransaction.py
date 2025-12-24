@@ -104,9 +104,6 @@ class CreateTransaction:
             # Sign the change transaction
             change_transaction.sig_txn(private_key_pem)
         
-        # Commit the selected values
-        self.value_selector.commit_transaction_values(selected_values)
-        
         # Store created transactions
         result = {
             "main_transaction": main_transaction,

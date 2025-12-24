@@ -29,8 +29,8 @@ def test_values():
     """Fixture for test values."""
     return [
         Value("0x1000", 100, ValueState.UNSPENT),
-        Value("0x2000", 200, ValueState.SELECTED),
-        Value("0x3000", 150, ValueState.LOCAL_COMMITTED),
+        Value("0x2000", 200, ValueState.PENDING),  # Changed from SELECTED
+        Value("0x3000", 150, ValueState.ONCHAIN),  # Changed from LOCAL_COMMITTED
         Value("0x4000", 300, ValueState.CONFIRMED),
         Value("0x5000", 250, ValueState.UNSPENT)
     ]
@@ -409,7 +409,7 @@ class TestAccountValueCollectionValueMerging:
     def test_merge_different_states(self, empty_collection):
         """Test merging values with different states."""
         value1 = Value("0x1000", 100, ValueState.UNSPENT)
-        value2 = Value("0x1064", 100, ValueState.SELECTED)  # Different state
+        value2 = Value("0x1064", 100, ValueState.PENDING)  # Different state
         
         empty_collection.add_value(value1)
         empty_collection.add_value(value2)
@@ -743,8 +743,8 @@ class TestValueNode:
 # Global test values for the test
 global_test_values = [
     Value("0x1000", 100, ValueState.UNSPENT),
-    Value("0x2000", 200, ValueState.SELECTED),
-    Value("0x3000", 150, ValueState.LOCAL_COMMITTED),
+    Value("0x2000", 200, ValueState.PENDING),  # Changed from SELECTED
+    Value("0x3000", 150, ValueState.ONCHAIN),  # Changed from LOCAL_COMMITTED
     Value("0x4000", 300, ValueState.CONFIRMED),
     Value("0x5000", 250, ValueState.UNSPENT)
 ]

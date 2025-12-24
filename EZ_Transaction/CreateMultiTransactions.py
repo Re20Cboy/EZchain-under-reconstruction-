@@ -7,7 +7,7 @@ value selection, secure signature handling, and batch transaction management.
 
 import sys
 import os
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 from datetime import datetime
 
 # Add the project root to Python path
@@ -20,6 +20,12 @@ from EZ_VPB.values.AccountValueCollection import AccountValueCollection
 from EZ_VPB.values.Value import Value, ValueState
 from EZ_Tool_Box.SecureSignature import secure_signature_handler
 from EZ_Tool_Box.Hash import sha256_hash
+
+# Import CheckPoint types
+try:
+    from EZ_CheckPoint.CheckPoint import CheckPointRecord
+except ImportError:
+    CheckPointRecord = None
 
 
 class CreateMultiTransactions:
@@ -47,117 +53,87 @@ class CreateMultiTransactions:
         self,
         transaction_requests: List[Dict[str, Any]],
         private_key_pem: bytes,
-        base_nonce: Optional[int] = None
+        base_nonce: Optional[int] = None,
+        checkpoint: Optional['CheckPointRecord'] = None
     ) -> Dict[str, Any]:
         """
         Create multiple transactions as a single MultiTransactions batch.
-        
+
         Args:
             transaction_requests: List of transaction requests with 'recipient' and 'amount'
             private_key_pem: Private key in PEM format for signing
             base_nonce: Base nonce for transactions (auto-generated if None)
-            
+            checkpoint: Optional checkpoint record for value selection prioritization
+
         Returns:
             Dictionary containing MultiTransactions data and metadata
         """
         if not transaction_requests:
             raise ValueError("Transaction requests cannot be empty")
-        
+
         if base_nonce is None:
             base_nonce = self._generate_nonce()
-        
+
         timestamp = datetime.now().isoformat()
-        
+
         # Process each transaction request
         transactions = []
         selected_values_list = []
-        change_values_list = []
         total_amount = 0
-        
+
         for i, request in enumerate(transaction_requests):
             recipient = request.get('recipient')
             amount = request.get('amount')
-            
+            request_checkpoint = request.get('checkpoint', checkpoint)  # Use request-specific checkpoint if provided
+
             if not recipient or amount is None:
                 raise ValueError(f"Transaction request {i} missing recipient or amount")
-            
+
             # Calculate nonce for this transaction
             nonce = base_nonce + i
-            
-            # Select values for this transaction
-            selected_values, change_value, change_transaction, main_transaction = \
+
+            # Select values for this transaction (new interface: no change support)
+            selected_values, main_transaction = \
                 self.value_selector.pick_values_for_transaction(
                     required_amount=amount,
                     sender=self.sender_address,
                     recipient=recipient,
                     nonce=nonce,
-                    time=timestamp
+                    time=timestamp,
+                    checkpoint=request_checkpoint
                 )
-            
-            # Create main transaction
-            main_transaction = Transaction(
-                sender=self.sender_address,
-                recipient=recipient,
-                nonce=nonce,
-                signature=None,
-                value=selected_values,
-                time=timestamp
-            )
-            
+
             # Sign the main transaction
             main_transaction.sig_txn(private_key_pem)
-            
-            # Handle change transaction if needed
-            change_txn_obj = None
-            if change_value:
-                change_transaction = Transaction(
-                    sender=self.sender_address,
-                    recipient=self.sender_address,
-                    nonce=nonce,
-                    signature=None,
-                    value=[change_value],
-                    time=timestamp
-                )
-                
-                # Sign the change transaction
-                change_transaction.sig_txn(private_key_pem)
-                change_txn_obj = change_transaction
-                change_values_list.append(change_value)
-            
+
             transactions.append(main_transaction)
-            if change_txn_obj:
-                transactions.append(change_txn_obj)
-            
             selected_values_list.extend(selected_values)
             total_amount += amount
-        
+
         # Create MultiTransactions object
         multi_txn = MultiTransactions(
             sender=self.sender_address,
             multi_txns=transactions
         )
-        
+
         # Set the timestamp
         multi_txn.time = timestamp
-        
+
         # Sign the MultiTransactions
         multi_txn.sig_acc_txn(private_key_pem)
-        
-        # Commit all selected values
-        self.value_selector.commit_transaction_values(selected_values_list)
-        
+
         # Store created multi-transactions
         result = {
             "multi_transactions": multi_txn,
             "transactions": transactions,
             "selected_values": selected_values_list,
-            "change_values": change_values_list,
+            "change_values": [],  # New design: no change values
             "total_amount": total_amount,
             "transaction_count": len(transaction_requests),
             "base_nonce": base_nonce,
             "timestamp": timestamp
         }
-        
+
         self.created_multi_transactions.append(result)
         return result
     

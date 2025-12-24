@@ -72,17 +72,18 @@ class TestValueInitialization:
         
     def test_custom_state(self):
         """Test Value initialization with custom state."""
-        value = Value("0x1000", 100, ValueState.LOCAL_COMMITTED)
-        assert not value.is_unspent()
-        assert value.is_local_committed()
-        assert not value.is_confirmed()
-        assert value.state == ValueState.LOCAL_COMMITTED
-        
+        # Test with CONFIRMED state
         value2 = Value("0x1000", 100, ValueState.CONFIRMED)
         assert not value2.is_unspent()
         assert not value2.is_local_committed()
         assert value2.is_confirmed()
         assert value2.state == ValueState.CONFIRMED
+
+        # Test with PENDING state (replaces SELECTED)
+        value3 = Value("0x1000", 100, ValueState.PENDING)
+        assert not value3.is_unspent()
+        assert not value3.is_confirmed()
+        assert value3.state == ValueState.PENDING
 
 
 class TestValueValidation:
@@ -334,14 +335,16 @@ class TestValueStateManagement:
     def test_set_state_valid(self):
         """Test setting valid state."""
         value = Value("0x1000", 100)
-        value.set_state(ValueState.LOCAL_COMMITTED)
-        assert value.is_local_committed()
+
+        # Test PENDING state
+        value.set_state(ValueState.PENDING)
         assert not value.is_unspent()
-        
+        assert not value.is_confirmed()
+
         value.set_state(ValueState.CONFIRMED)
         assert value.is_confirmed()
-        assert not value.is_local_committed()
-        
+        assert not value.is_unspent()
+
         value.set_state(ValueState.UNSPENT)
         assert value.is_unspent()
         assert not value.is_confirmed()
@@ -364,13 +367,13 @@ class TestValueStateManagement:
         assert value.is_unspent()
         assert not value.is_local_committed()
         assert not value.is_confirmed()
-        
-        # Test LOCAL_COMMITTED state
-        value.set_state(ValueState.LOCAL_COMMITTED)
+
+        # Test PENDING state
+        value.set_state(ValueState.PENDING)
         assert not value.is_unspent()
-        assert value.is_local_committed()
+        assert not value.is_local_committed()
         assert not value.is_confirmed()
-        
+
         # Test CONFIRMED state
         value.set_state(ValueState.CONFIRMED)
         assert not value.is_unspent()
@@ -381,24 +384,24 @@ class TestValueStateManagement:
         """Test that state persists during value operations."""
         # Set initial state
         value = Value("0x1000", 100)
-        value.set_state(ValueState.LOCAL_COMMITTED)
-        
+        value.set_state(ValueState.PENDING)  # Changed from SELECTED
+
         # Split value and check state persistence
         v1, v2 = value.split_value(50)
-        
+
         # Both parts should maintain the same state
-        assert v1.state == ValueState.LOCAL_COMMITTED
-        assert v2.state == ValueState.LOCAL_COMMITTED
-        
+        assert v1.state == ValueState.PENDING
+        assert v2.state == ValueState.PENDING
+
         # Test intersection operations
         other_value = Value("0x1080", 100, ValueState.UNSPENT)
         result = value.get_intersect_value(other_value)
-        
+
         if result:
             intersect_value, rest_values = result
-            assert intersect_value.state == ValueState.LOCAL_COMMITTED
+            assert intersect_value.state == ValueState.PENDING
             for rest_value in rest_values:
-                assert rest_value.state == ValueState.LOCAL_COMMITTED
+                assert rest_value.state == ValueState.PENDING
 
 
 class TestValueErrorHandling:

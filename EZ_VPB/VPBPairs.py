@@ -555,12 +555,6 @@ class VPBManager:
             print(f"Error picking values for transaction: {e}")
             return None
 
-    def commit_transaction_values(self, selected_values: List[Value]) -> bool:
-        """提交交易值状态"""
-        if not self._value_selector:
-            return False
-        return self._value_selector.commit_transaction_values(selected_values)
-
     def rollback_transaction_selection(self, selected_values: List[Value]) -> bool:
         """回滚交易选择"""
         if not self._value_selector:
@@ -777,20 +771,6 @@ class VPBPairs:
         return self.manager.pick_values_for_transaction(
             required_amount, sender, recipient, nonce, time
         )
-
-    def commit_transaction(self, selected_values: List[Value]) -> bool:
-        """
-        提交交易，更新Value状态
-
-        在交易确认后调用，更新相关Value的状态为已消费
-
-        Args:
-            selected_values: 交易中使用的Value列表
-
-        Returns:
-            bool: 提交成功返回True，失败返回False
-        """
-        return self.manager.commit_transaction_values(selected_values)
 
     def rollback_transaction(self, selected_values: List[Value]) -> bool:
         """

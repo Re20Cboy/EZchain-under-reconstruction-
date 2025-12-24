@@ -14,7 +14,14 @@ Key Features:
 
 import threading
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+# Import CheckPoint for type hints
+if TYPE_CHECKING:
+    try:
+        from EZ_CheckPoint.CheckPoint import CheckPointRecord
+    except ImportError:
+        CheckPointRecord = Any
 
 # Core EZChain imports - VPB system is the primary interface
 from EZ_VPB import Value, ValueState
@@ -140,8 +147,17 @@ class Account:
                     confirmed_multi_txns, mt_proof,
                     block_height, recipient_address
                 )
+
                 if success:
+                    # 将所有交易的所有Value状态置为ONCHAIN（通过VPBManager更新索引）
+                    all_values = []
+                    for txn in confirmed_multi_txns.multi_txns:
+                        all_values.extend(txn.value)
+
+                    updated_count = self.vpb_manager.update_values_state(all_values, ValueState.ONCHAIN)
+                    print(f"Set {updated_count} transaction values to ONCHAIN state")
                     self.last_activity = datetime.now()
+
                 return success
             except Exception as e:
                 print(f"发送交易后更新VPB失败: {e}")
@@ -175,7 +191,7 @@ class Account:
                 print(f"发送交易后更新VPB失败: {e}")
                 return False
 
-    def receive_vpb_from_others(self, received_value: Value, received_proof_units: List[ProofUnit], 
+    def receive_vpb_from_others(self, received_value: Value, received_proof_units: List[ProofUnit],
                                 received_block_index: BlockIndexList) -> bool:
         """
         作为receiver接收其他账户发送的VPB
@@ -193,8 +209,6 @@ class Account:
                 success = self.vpb_manager.receive_vpb_from_others(
                     received_value, received_proof_units, received_block_index
                 )
-                if success:
-                    self.last_activity = datetime.now()
                 return success
             except Exception as e:
                 print(f"接收VPB失败: {e}")
@@ -304,9 +318,21 @@ class Account:
         Returns:
             VPBVerificationReport: 详细的验证报告
         """
-        return self.vpb_validator.verify_vpb_pair(
+        # 执行验证
+        verification_report = self.vpb_validator.verify_vpb_pair(
             value, proof_units, block_index_list, main_chain_info, self.address
         )
+
+        # 如果验证通过，将待验证的value状态置为VERIFIED
+        if verification_report.is_valid:
+            try:
+                value.set_state(ValueState.VERIFIED)
+                print(f"VPB verification passed - Set value {value.begin_index} (amount: {value.value_num}) to VERIFIED state")
+                self.last_activity = datetime.now()
+            except Exception as e:
+                print(f"Warning: Failed to set VERIFIED state for value {value.begin_index}: {e}")
+
+        return verification_report
 
     def get_verification_stats(self) -> Dict[str, Any]:
         """获取VPB验证统计信息"""
@@ -319,13 +345,18 @@ class Account:
     # ========== 交易创建和管理接口 ==========
 
     def create_batch_transactions(self, transaction_requests: List[Dict],
-                                reference: Optional[str] = None) -> Optional[Dict]:
+                                reference: Optional[str] = None,
+                                checkpoint: Optional['CheckPointRecord'] = None) -> Optional[Dict]:
         """
         批量创建交易
 
         Args:
-            transaction_requests: 交易请求列表
+            transaction_requests: 交易请求列表，每个请求可以包含：
+                - recipient: 接收方地址
+                - amount: 金额
+                - checkpoint: 可选的检查点记录（用于特定交易的检查点优化）
             reference: 可选的参考标识
+            checkpoint: 全局检查点记录，应用于所有未指定检查点的交易
 
         Returns:
             多交易结果字典
@@ -333,13 +364,28 @@ class Account:
         try:
             multi_transaction_result = self.transaction_creator.create_multi_transactions(
                 transaction_requests=transaction_requests,
-                private_key_pem=self.private_key_pem
+                private_key_pem=self.private_key_pem,
+                checkpoint=checkpoint
             )
 
             if multi_transaction_result:
+                # 将所有使用的Value状态置为PENDING（通过VPBManager更新索引）
+                with self._lock:
+                    # 设置selected_values的状态为PENDING
+                    self.vpb_manager.update_values_state(
+                        multi_transaction_result.get("selected_values", []),
+                        ValueState.PENDING
+                    )
+
+                    # 新设计：没有change_values，但仍保持兼容性
+                    change_values = multi_transaction_result.get("change_values", [])
+                    if change_values:
+                        self.vpb_manager.update_values_state(
+                            change_values,
+                            ValueState.PENDING
+                        )
+
                 self._record_multi_transaction(multi_transaction_result, "batch_created", reference)
-                multi_txn_hash = multi_transaction_result["multi_transactions"].digest
-                # 精简输出: print(f"批量交易创建成功: {multi_txn_hash[:16] if multi_txn_hash else 'N/A'}...")
                 return multi_transaction_result
             else:
                 print("批量交易创建失败")
@@ -457,8 +503,6 @@ class Account:
                 'available': self.get_available_balance(),
                 'unspent': self.get_balance(ValueState.UNSPENT),
                 'confirmed': self.get_balance(ValueState.CONFIRMED),
-                'selected': self.get_balance(ValueState.SELECTED),
-                'local_committed': self.get_balance(ValueState.LOCAL_COMMITTED)
             },
             'values_count': len(self.get_values()),
             'vpb_summary': self.get_vpb_summary(),

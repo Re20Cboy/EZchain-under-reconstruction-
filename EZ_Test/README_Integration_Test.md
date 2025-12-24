@@ -74,7 +74,7 @@ python -m pytest test_integration_creat_single_transaction.py::TestIntegrationCr
 ### Value对象
 - `beginIndex`: 16进制字符串，如 "0x1000"
 - `valueNum`: 10进制整数，表示金额
-- `state`: Value状态枚举 (UNSPENT, SELECTED, LOCAL_COMMITTED, CONFIRMED)
+- `state`: Value状态枚举 (UNSPENT, SELECTED, CONFIRMED)
 
 ### 交易对象
 - `sender`: 发送方地址

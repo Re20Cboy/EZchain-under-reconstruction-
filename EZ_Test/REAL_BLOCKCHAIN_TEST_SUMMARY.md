@@ -34,7 +34,7 @@
 
 #### ✅ Value和余额管理
 - **Value对象**：真实的Value对象创建和管理
-- **状态管理**：完整的Value状态转换（UNSPENT → SELECTED → LOCAL_COMMITTED → CONFIRMED）
+- **状态管理**：完整的Value状态转换（UNSPENT → SELECTED → CONFIRMED）
 - **余额计算**：准确的余额计算和状态查询
 - **链表结构**：使用AccountValueCollection进行高效的Value管理
 

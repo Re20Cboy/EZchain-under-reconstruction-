@@ -2,10 +2,12 @@ import re
 from enum import Enum
 
 class ValueState(Enum):
-    UNSPENT = "unspent"  # 未花销
-    SELECTED = "selected"  # 已选中，准备注入交易
-    LOCAL_COMMITTED = "local_committed"  # 本地提交待确认
-    CONFIRMED = "confirmed"  # 链上已确认（=已花费）
+    UNSPENT = "unspent"  # 未花费状态，表示该value尚未被用于任何交易
+    PENDING = "pending"  # 待确认状态，表示该value已被用于交易，但交易尚未被区块链网络确认
+    ONCHAIN = "onchain"  # 链上提交状态，表示该value已被用于交易，并且该交易已提交到区块链网络，但尚未被确认
+    RECEIVED = "received"  # 已接收状态，表示该value已被交易的接收方成功接收到（暂未开始检测vpb合法性）
+    VERIFIED = "verified"  # 已验证状态，表示该value已被交易的接收方成功验证通过（vpb合法性验证通过）
+    CONFIRMED = "confirmed"  # 已确认状态，表示value已在主链上被确认超过制定区块数（e.g.,3块），表示该value已被用于交易
 
 class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16^65（总量暂未定）
     def __init__(self, beginIndex, valueNum, state=ValueState.UNSPENT):  # beginIndex是16进制str，valueNum是10进制int，state是ValueState枚举
@@ -68,20 +70,26 @@ class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16
             raise TypeError("new_state must be a ValueState enum")
         self.state = new_state
 
-    def is_unspent(self):  # 检查值是否为未花销状态
+    def is_unspent(self):  # 检查值是否为未花费状态
         return self.state == ValueState.UNSPENT
-    
-    def is_selected(self):  # 检查值是否为被选中状态
-        return self.state == ValueState.SELECTED
 
-    def is_local_committed(self):  # 检查值是否为本地提交待确认状态
-        return self.state == ValueState.LOCAL_COMMITTED
+    def is_pending(self):  # 检查值是否为待确认状态
+        return self.state == ValueState.PENDING
 
-    def is_confirmed(self):  # 检查值是否为链上已确认状态
+    def is_onchain(self):  # 检查值是否为链上提交状态
+        return self.state == ValueState.ONCHAIN
+
+    def is_received(self):  # 检查值是否为已接收状态
+        return self.state == ValueState.RECEIVED
+
+    def is_verified(self):  # 检查值是否为已验证状态
+        return self.state == ValueState.VERIFIED
+
+    def is_confirmed(self):  # 检查值是否为已确认状态
         return self.state == ValueState.CONFIRMED
 
-    def can_be_select(self):  # 检查值是否为链上已确认状态
-        return self.is_unspent() and not self.is_selected()
+    def can_be_selected(self):  # 检查值是否可以被选中（只有未花费状态可以）
+        return self.is_unspent()
 
     '''def can_be_spent(self):  # 检查值是否可以被花费（只有未花销状态可以）
         return self.is_unspent()'''

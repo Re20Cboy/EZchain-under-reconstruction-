@@ -519,6 +519,46 @@ class VPBManager:
 
     # ==================== 辅助方法 ====================
 
+    def update_value_state(self, value: Value, new_state: ValueState) -> bool:
+        """
+        更新Value的状态（通过ValueCollection更新索引）
+
+        Args:
+            value: 要更新状态的Value对象
+            new_state: 新的状态
+
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            node_id = self._get_node_id_for_value(value)
+            if node_id:
+                return self.value_collection.update_value_state(node_id, new_state)
+            else:
+                # 如果找不到node_id，直接更新Value对象的状态（fallback）
+                value.set_state(new_state)
+                return True
+        except Exception as e:
+            print(f"Error updating value state: {e}")
+            return False
+
+    def update_values_state(self, values: List[Value], new_state: ValueState) -> int:
+        """
+        批量更新多个Value的状态（通过ValueCollection更新索引）
+
+        Args:
+            values: 要更新状态的Value列表
+            new_state: 新的状态
+
+        Returns:
+            int: 成功更新的Value数量
+        """
+        updated_count = 0
+        for value in values:
+            if self.update_value_state(value, new_state):
+                updated_count += 1
+        return updated_count
+
     def _get_node_id_for_value(self, value: Value) -> Optional[str]:
         """
         通过Value获取对应的node_id（通过AccountValueCollection）

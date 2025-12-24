@@ -11,10 +11,15 @@
       [CONFIRMED] ─────┘
          (已花费)
 
-预计修改为以下几种状态：
+预计修改为以下几种状态（流转状态）：
 1）UNSPENT：未花费状态，表示该value尚未被用于任何交易。
 2）PENDING：待确认状态，表示该value已被用于交易，但交易尚未被区块链网络确认。
-3）CONFIRMED：已确认状态，表示该value已被用于交易，并且
+3）ONCHAIN：链上提交状态，表示该value已被用于交易，并且该交易已提交到区块链网络，但尚未被确认。[✅ 已在Account.update_vpb_after_transaction_sent中实现]
+4）RECEIVED：已接收状态，表示该value已被交易的接收方成功接收到（暂未开始检测vpb合法性）。
+5）VERIFIED：已验证状态，表示该value已被交易的接收方成功验证通过（vpb合法性验证通过）。[✅ 已在Account.verify_vpb中实现]
+6）CONFIRMED：已确认状态，表示value已在主链上被确认超过制定区块数（e.g.,3块），表示该value已被用于交易。[✅ 已在Account.receive_vpb_from_others中实现]
+7&1）UNSPENT：未花费状态，表示该value尚未被用于任何交易。
+
 
 12/22目前多轮测试还有清结算bug，例如：
 仅是多轮中的第一轮：

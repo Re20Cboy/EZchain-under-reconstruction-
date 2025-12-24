@@ -142,11 +142,11 @@ class TestIntegrationCreateTransaction:
             print(f"Change amount: {result['change_value'].value_num}")
         
         # 6. 验证账户状态变化
-        # 选中的Value应该被标记为LOCAL_COMMITTED（在create_transaction中被commit）
-        committed_values = value_selector.get_account_values(ValueState.LOCAL_COMMITTED)
-        print(f"Committed values: {len(committed_values)}")
+        # 选中的Value应该被标记为PENDING
+        pending_values = value_selector.get_account_values(ValueState.PENDING)
+        print(f"Pending values: {len(pending_values)}")
         
-        # 找零Value应该被标记为LOCAL_COMMITTED
+        # 找零Value应该被标记为PENDING
         all_values = value_selector.get_account_values()
         print(f"All values: {len(all_values)}")
         for i, value in enumerate(all_values):
@@ -270,9 +270,9 @@ class TestIntegrationCreateTransaction:
         selected_values = result["selected_values"]
         change_value = result["change_value"]
         
-        # 3. 验证初始状态：Value应该已经被标记为LOCAL_COMMITTED（在create_transaction中）
-        committed_values_before = value_selector.get_account_values(ValueState.LOCAL_COMMITTED)
-        assert len(committed_values_before) >= 1
+        # 3. 验证初始状态：Value应该已经被标记为PENDING
+        pending_values_before = value_selector.get_account_values(ValueState.PENDING)
+        assert len(pending_values_before) >= 1
         
         # 4. 确认交易（调用confirm_transaction）
         confirmation_result = create_transaction.confirm_transaction(result)
@@ -540,8 +540,8 @@ class TestIntegrationCreateTransaction:
         )
         
         # 验证交易创建后的状态
-        committed_values = value_selector.get_account_values(ValueState.LOCAL_COMMITTED)
-        assert len(committed_values) >= 1
+        pending_values = value_selector.get_account_values(ValueState.PENDING)
+        assert len(pending_values) >= 1
         
         # 验证可以通过确认交易来完成流程
         confirmation_result = create_transaction.confirm_transaction(result)
