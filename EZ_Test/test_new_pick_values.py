@@ -101,7 +101,8 @@ def test_checkpoint_prioritization():
 
     # 创建测试账户
     account_address = "0xTestAccount2"
-    collection = AccountValueCollection(account_address, ":memory:")
+    db_path = "test_temp_account_collection2.db"
+    collection = AccountValueCollection(account_address, db_path=db_path)
 
     # 添加一些测试 values
     value1 = Value("0x100", 50)  # 50 units
@@ -136,16 +137,16 @@ def test_checkpoint_prioritization():
             checkpoint=checkpoint
         )
         total = sum(v.value_num for v in selected_values)
-        print(f"✓ 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
+        print(f"[OK] 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
         print(f"  选中的 values: {[f'{v.begin_index}({v.value_num})' for v in selected_values]}")
 
         # 验证是否优先选择了匹配检查点的 value
         if selected_values and selected_values[0].begin_index == "0x100":
-            print("  ✓ 确认: 优先选择了匹配检查点的 value")
+            print("  [OK] 确认: 优先选择了匹配检查点的 value")
         else:
-            print("  ✗ 警告: 没有优先选择匹配检查点的 value")
+            print("  [WARNING] 没有优先选择匹配检查点的 value")
     except ValueError as e:
-        print(f"✗ 失败: {e}")
+        print(f"[FAIL] 失败: {e}")
 
     # 测试场景: recipient 不是检查点的 owner，不应该有优先级
     print("\n场景 2b: recipient 不是检查点的历史 owner，使用常规贪婪策略")
@@ -159,10 +160,10 @@ def test_checkpoint_prioritization():
             checkpoint=checkpoint
         )
         total = sum(v.value_num for v in selected_values)
-        print(f"✓ 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
+        print(f"[OK] 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
         print(f"  选中的 values: {[f'{v.begin_index}({v.value_num})' for v in selected_values]}")
     except ValueError as e:
-        print(f"✗ 失败: {e}")
+        print(f"[FAIL] 失败: {e}")
 
 
 def test_legacy_method():
@@ -173,7 +174,8 @@ def test_legacy_method():
 
     # 创建测试账户
     account_address = "0xTestAccount3"
-    collection = AccountValueCollection(account_address, ":memory:")
+    db_path = "test_temp_account_collection3.db"
+    collection = AccountValueCollection(account_address, db_path=db_path)
 
     # 添加一些测试 values
     value1 = Value("0x100", 50)  # 50 units
@@ -196,12 +198,12 @@ def test_legacy_method():
                 time="2024-01-01T00:00:00"
             )
         total = sum(v.value_num for v in selected_values)
-        print(f"✓ 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
+        print(f"[OK] 成功: 选中了 {len(selected_values)} 个 values, 总金额: {total}")
         print(f"  选中的 values: {[f'{v.begin_index}({v.value_num})' for v in selected_values]}")
         if change_value:
             print(f"  找零: {change_value.value_num} 单位")
     except ValueError as e:
-        print(f"✗ 失败: {e}")
+        print(f"[FAIL] 失败: {e}")
 
 
 def run_all_tests():

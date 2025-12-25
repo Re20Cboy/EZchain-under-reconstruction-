@@ -327,7 +327,7 @@ class Account:
         if verification_report.is_valid:
             try:
                 value.set_state(ValueState.VERIFIED)
-                print(f"VPB verification passed - Set value {value.begin_index} (amount: {value.value_num}) to VERIFIED state")
+                # 精简输出: print(f"VPB verification passed - Set value {value.begin_index} (amount: {value.value_num}) to VERIFIED state")
                 self.last_activity = datetime.now()
             except Exception as e:
                 print(f"Warning: Failed to set VERIFIED state for value {value.begin_index}: {e}")

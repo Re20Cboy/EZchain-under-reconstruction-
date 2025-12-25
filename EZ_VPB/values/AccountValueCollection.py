@@ -737,8 +737,8 @@ class AccountValueCollection:
             True if integrity is valid
         """
         try:
-            print(f"[DEBUG] Starting integrity validation for account {self.account_address}")
-            print(f"[DEBUG] Collection size: {self.size}, Head: {self.head.node_id if self.head else None}")
+            # 精简输出: print(f"[DEBUG] Starting integrity validation for account {self.account_address}")
+            # 精简输出: print(f"[DEBUG] Collection size: {self.size}, Head: {self.head.node_id if self.head else None}")
 
             # 检查链表结构完整性
             current = self.head
@@ -777,7 +777,7 @@ class AccountValueCollection:
 
                 current = current.next
 
-            print(f"[DEBUG] Traversed {index} nodes, visited nodes: {len(visited_nodes)}")
+            # 精简输出: print(f"[DEBUG] Traversed {index} nodes, visited nodes: {len(visited_nodes)}")
 
             # 检查size是否正确
             if index != self.size:
@@ -794,7 +794,8 @@ class AccountValueCollection:
             if total_state_count != self.size:
                 print(f"[ERROR] State index count mismatch: total={total_state_count} vs size={self.size}")
                 for state, state_set in self._state_index.items():
-                    print(f"[DEBUG] State {state}: {len(state_set)} nodes")
+                    # 精简输出: print(f"[DEBUG] State {state}: {len(state_set)} nodes")
+                    pass
                 return False
 
             # 检查是否有重复访问的节点（循环检测）
@@ -803,7 +804,7 @@ class AccountValueCollection:
                 return False
 
             # 检查无重叠
-            print(f"[DEBUG] Checking for value overlaps...")
+            # 精简输出: print(f"[DEBUG] Checking for value overlaps...")
             if not self.validate_no_overlap():
                 print(f"[ERROR] Value overlap detected")
                 values = self.get_values_sorted_by_begin_index()
@@ -814,7 +815,7 @@ class AccountValueCollection:
                         print(f"[ERROR]   Value {i+1}: begin={values[i+1].begin_index}, end={values[i+1].get_decimal_end_index()}, state={values[i+1].state}")
                 return False
 
-            print(f"[DEBUG] Integrity validation passed for account {self.account_address}")
+            # 精简输出: print(f"[DEBUG] Integrity validation passed for account {self.account_address}")
             return True
 
         except Exception as e:

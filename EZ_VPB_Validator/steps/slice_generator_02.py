@@ -47,7 +47,9 @@ class VPBSliceGenerator(ValidatorBase):
             if checkpoint_record:
                 checkpoint_used = checkpoint_record
                 start_height = checkpoint_record.block_height + 1  # 从检查点的下一个区块开始验证
-                self.logger.info(f"Using checkpoint at height {checkpoint_record.block_height}, starting verification from height {start_height} for value {value.begin_index}")
+                # 精简输出: self.logger.info(f"Using checkpoint at height {checkpoint_record.block_height}, starting verification from height {start_height} for value {value.begin_index}")
+                value_short = value.begin_index[:10] if len(value.begin_index) > 10 else value.begin_index
+                self.logger.info(f"⚡ Checkpoint triggered: height={checkpoint_record.block_height}, start_from={start_height}, value={value_short}...")
 
         # 验证检查点高度的合法性
         if checkpoint_used:
@@ -81,16 +83,18 @@ class VPBSliceGenerator(ValidatorBase):
                     break
 
             # 调试信息
-            self.logger.debug(f"Slice generation: start_height={start_height}, start_index={start_index}, total_indices={len(block_index_list.index_lst)}")
-            self.logger.debug(f"Original index_lst: {block_index_list.index_lst}")
-            self.logger.debug(f"Will include indices from: {block_index_list.index_lst[start_index:]}")
+            # 精简输出: self.logger.debug(f"Slice generation: start_height={start_height}, start_index={start_index}, total_indices={len(block_index_list.index_lst)}")
+            # 精简输出: self.logger.debug(f"Original index_lst: {block_index_list.index_lst}")
+            # 精简输出: self.logger.debug(f"Will include indices from: {block_index_list.index_lst[start_index:]}")
+            self.logger.debug(f"🔪 Slice: start_idx={start_index}/{len(block_index_list.index_lst)}, heights={len(block_index_list.index_lst[start_index:])} blocks")
 
             # 创世块特殊处理说明：
             # 根据slice_generator_demo.md，如果start_height > 0（有checkpoint），
             # 且创世块高度小于start_height，则创世块会被正常截断掉
             # 不需要额外包含创世块，因为checkpoint已经保证了之前的验证状态
             if genesis_index >= 0 and start_height > 0 and genesis_index < start_index:
-                self.logger.debug(f"Genesis block at index {genesis_index} will be truncated due to checkpoint at {start_height-1}")
+                # 精简输出: self.logger.debug(f"Genesis block at index {genesis_index} will be truncated due to checkpoint at {start_height-1}")
+                self.logger.debug(f"✂️ Genesis truncated: checkpoint @height{start_height-1} skips genesis")
 
             # 生成切片
             proofs_slice = proof_units[start_index:] if start_index < len(proof_units) else []

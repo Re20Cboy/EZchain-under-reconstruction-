@@ -120,11 +120,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         pool_db_path = self.temp_manager.get_pool_db_path()
         account_storage_dir = self.temp_manager.get_account_storage_dir()
 
-        if self.verbose_logging:
-            print(f"[DEBUG] 临时会话目录: {session_dir}")
-            print(f"[DEBUG] 区块链数据目录: {blockchain_dir}")
-            print(f"[DEBUG] 交易池数据库路径: {pool_db_path}")
-            print(f"[DEBUG] 账户存储目录: {account_storage_dir}")
+        # 精简输出: 不再显示这些DEBUG信息
+        # if self.verbose_logging:
+        #     print(f"[DEBUG] 临时会话目录: {session_dir}")
+        #     print(f"[DEBUG] 区块链数据目录: {blockchain_dir}")
+        #     print(f"[DEBUG] 交易池数据库路径: {pool_db_path}")
+        #     print(f"[DEBUG] 账户存储目录: {account_storage_dir}")
 
         # 配置区块链参数（快速确认用于测试）
         self.config = ChainConfig(
@@ -394,9 +395,10 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 account.vpb_manager.visualize_confirmed_values(f"After Genesis Initialization - {account.name}")
 
         # 使用新的Value摘要打印方法（受详细度控制）
-        if self.verbose_logging:
-            for account in self.accounts:
-                account.print_values_summary()
+        # 精简输出: 不再显示详细的Values Summary
+        # if self.verbose_logging:
+        #     for account in self.accounts:
+        #         account.print_values_summary()
 
         print(f"🎉 所有账户创世初始化完成！")
 
@@ -651,6 +653,13 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         print("="*60)
         print("[START] 完整Account交易流程测试")
         print("="*60)
+
+        # 初始化checkpoint统计
+        checkpoint_stats = {
+            'total_verifications': 0,
+            'checkpoint_used_count': 0,
+            'checkpoint_details': []
+        }
 
         # 步骤1：检查Account节点状态
         print("💳 检查账户初始状态 | ", end="")
@@ -961,8 +970,19 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                             )
 
                             # 检查是否使用了checkpoint
+                            checkpoint_stats['total_verifications'] += 1
                             if verification_report.checkpoint_used:
-                                print(f"   🔍 Checkpoint触发: 账户{recipient_account.name} 使用高度{verification_report.checkpoint_used.block_height}的检查点")
+                                checkpoint = verification_report.checkpoint_used
+                                checkpoint_stats['checkpoint_used_count'] += 1
+                                value_info = f"{checkpoint.value_begin_index[:10]}...({checkpoint.value_num})"
+                                print(f"   ⚡ Checkpoint: {recipient_account.name} @高度{checkpoint.block_height} | {value_info}")
+
+                                # 记录checkpoint详情
+                                checkpoint_stats['checkpoint_details'].append({
+                                    'account': recipient_account.name,
+                                    'block_height': checkpoint.block_height,
+                                    'value_info': value_info
+                                })
 
                             if verification_report.is_valid:
                                 vpb_verification_success += 1
@@ -1024,8 +1044,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             account_info = account.get_account_info()
             final_total_balance += account_info['balances']['total']
 
-            if self.verbose_logging:
-                account.print_values_summary()
+            # 精简输出: 不再显示详细的Values Summary
+            # if self.verbose_logging:
+            #     account.print_values_summary()
 
             integrity_valid = account.validate_integrity()
             status_icon = "✅" if integrity_valid else "❌"
@@ -1037,9 +1058,22 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         fee_rate = (abs(balance_change) / total_balance * 100) if total_balance > 0 else 0
 
         print(f"{' | '.join(account_final_status)} | 余额变化:{total_balance}→{final_total_balance} ({fee_rate:.1f}%)")
+
+        # 输出checkpoint统计
+        if checkpoint_stats['total_verifications'] > 0:
+            checkpoint_rate = (checkpoint_stats['checkpoint_used_count'] / checkpoint_stats['total_verifications'] * 100)
+            print(f"⚡ Checkpoint统计: {checkpoint_stats['checkpoint_used_count']}/{checkpoint_stats['total_verifications']} 次验证使用checkpoint ({checkpoint_rate:.1f}%)")
+            if checkpoint_stats['checkpoint_used_count'] > 0 and self.verbose_logging:
+                print(f"   详情:")
+                for detail in checkpoint_stats['checkpoint_details']:
+                    print(f"   - {detail['account']} @高度{detail['block_height']} | {detail['value_info']}")
+
         print("="*60)
         print("🎉 真实Account完整交易流程测试通过！")
         print("="*60)
+
+        # 返回checkpoint统计信息供多轮测试使用
+        return checkpoint_stats
 
 
 def run_real_account_integration_tests():

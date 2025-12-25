@@ -250,9 +250,8 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
             # 执行单轮交易 - 复用base_test的成熟方法
             print(f"\n⚡ 开始执行第 {round_num} 轮交易...")
 
-            # 调用单轮测试的核心交易流程方法
-            # 但需要调整一些参数以适应多轮测试
-            self.base_test.test_complete_real_account_transaction_flow()
+            # 调用单轮测试的核心交易流程方法，并获取checkpoint统计
+            checkpoint_stats = self.base_test.test_complete_real_account_transaction_flow()
 
             print(f"✅ 第 {round_num} 轮交易执行完成")
 
@@ -262,7 +261,8 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
                 'success': True,
                 'start_state': round_start_state,
                 'block_count': self.blockchain.get_latest_block_index(),
-                'error': None
+                'error': None,
+                'checkpoint_stats': checkpoint_stats  # 添加checkpoint统计
             }
 
         except Exception as e:
@@ -274,7 +274,8 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
                 'success': False,
                 'start_state': round_start_state,
                 'block_count': self.blockchain.get_latest_block_index(),
-                'error': str(e)
+                'error': str(e),
+                'checkpoint_stats': None  # 失败时checkpoint统计为None
             }
 
         # 打印轮次结束后状态
@@ -333,6 +334,36 @@ class TestMultiRoundBlockchainIntegration(unittest.TestCase):
         print(f"✅ 成功轮数: {successful_rounds}")
         print(f"🔗 生成区块: {blocks_generated}")
         print(f"🛡️ 完整性验证通过: {integrity_valid_rounds}")
+
+        # Checkpoint统计汇总
+        total_checkpoint_used = 0
+        total_verifications = 0
+        checkpoint_rounds = []
+
+        for result in round_results:
+            if result.get('checkpoint_stats'):
+                stats = result['checkpoint_stats']
+                if stats.get('total_verifications', 0) > 0:
+                    total_verifications += stats['total_verifications']
+                    total_checkpoint_used += stats['checkpoint_used_count']
+                    checkpoint_rounds.append({
+                        'round': result['round_num'],
+                        'used': stats['checkpoint_used_count'],
+                        'total': stats['total_verifications']
+                    })
+
+        if total_verifications > 0:
+            checkpoint_rate = (total_checkpoint_used / total_verifications * 100)
+            print(f"⚡ Checkpoint优化: {total_checkpoint_used}/{total_verifications} 次验证使用checkpoint ({checkpoint_rate:.1f}%)")
+
+            # 显示各轮checkpoint使用情况
+            if checkpoint_rounds:
+                print(f"   📊 各轮使用情况:")
+                for cr in checkpoint_rounds:
+                    rate = (cr['used'] / cr['total'] * 100) if cr['total'] > 0 else 0
+                    print(f"      第{cr['round']:2d}轮: {cr['used']}/{cr['total']} ({rate:.0f}%)")
+        else:
+            print(f"⚡ Checkpoint优化: 本轮测试未触发VPB验证")
 
         # 显示每轮简要结果
         print(f"\n📋 各轮结果摘要:")

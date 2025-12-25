@@ -162,12 +162,12 @@ class VPBManager:
             bool: 初始化是否成功
         """
         try:
-            print(f"Initializing VPB for {self.account_address} from genesis block...")
+            # 精简输出: print(f"Initializing VPB for {self.account_address} from genesis block...")
 
             # 1. 检查Value是否已存在
             existing_node_id = self._get_node_id_for_value(genesis_value)
             if existing_node_id:
-                print(f"Genesis value {genesis_value.begin_index} already exists, updating...")
+                # 精简输出: print(f"Genesis value {genesis_value.begin_index} already exists, updating...")
                 node_id = existing_node_id
             else:
                 # 2. 添加Value到本地数据库，获取node_id
@@ -181,7 +181,7 @@ class VPBManager:
                     print("Error: Failed to get node_id for genesis value")
                     return False
 
-                print(f"Added genesis value with node_id: {node_id}")
+                # 精简输出: print(f"Added genesis value with node_id: {node_id}")
 
             self._node_id_to_value_id[node_id] = genesis_value.begin_index
 
@@ -190,16 +190,17 @@ class VPBManager:
                 print("Error: Failed to add genesis value mapping to proof manager")
                 return False
 
-            print(f"Added genesis value mapping to ProofManager for node_id: {node_id}")
+            # 精简输出: print(f"Added genesis value mapping to ProofManager for node_id: {node_id}")
 
             # 为每个ProofUnit建立映射（使用优化的添加方法，使用node_id作为value_id）
             for proof_unit in genesis_proof_units:
                 if not self.proof_manager.add_proof_unit_optimized(node_id, proof_unit):
-                    print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis node {node_id}")
+                    # 精简输出: print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for genesis node {node_id}")
+                    pass
 
             # 4. 添加BlockIndex到本地数据库（使用AccountBlockIndexManager）
             if self.block_index_manager.has_block_index(node_id):
-                print(f"Merging BlockIndex for existing node_id: {node_id}")
+                # 精简输出: print(f"Merging BlockIndex for existing node_id: {node_id}")
                 # 使用AccountBlockIndexManager的合并功能
                 if not self.block_index_manager.update_block_index_merge(node_id, genesis_block_index):
                     print(f"Error: Failed to merge genesis block index for existing node {node_id}")
@@ -238,7 +239,7 @@ class VPBManager:
             bool: 批量更新是否成功
         """
         try:
-            print(f"Updating VPB for {self.account_address} after sending {len(confirmed_multi_txns.multi_txns)} transactions...")
+            # 精简输出: print(f"Updating VPB for {self.account_address} after sending {len(confirmed_multi_txns.multi_txns)} transactions...")
 
             # 收集所有交易中的目标值
             all_target_values = []
@@ -250,10 +251,10 @@ class VPBManager:
                 txn_recipients.append(txn.recipient)
 
             if not all_target_values:
-                print("Warning: No target values found in transactions")
+                # 精简输出: print("Warning: No target values found in transactions")
                 return True  # 没有目标值也算成功
 
-            print(f"Found {len(all_target_values)} target values across {len(confirmed_multi_txns.multi_txns)} transactions")
+            # 精简输出: print(f"Found {len(all_target_values)} target values across {len(confirmed_multi_txns.multi_txns)} transactions")
 
             # 获取所有目标值的node_id
             target_node_ids = []
@@ -262,7 +263,8 @@ class VPBManager:
                 if target_node_id:
                     target_node_ids.append(target_node_id)
                 else:
-                    print(f"Warning: Target value {target_value.begin_index} not found in local collection")
+                    # 精简输出: print(f"Warning: Target value {target_value.begin_index} not found in local collection")
+                    pass
 
             if not target_node_ids:
                 print("Error: No target values found in local collection")
@@ -273,9 +275,10 @@ class VPBManager:
             # 1. 将所有交易中的所有目标值标记为"已花销"状态
             for target_node_id in target_node_ids:
                 if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
-                    print(f"Warning: Could not update target value state to CONFIRMED for node {target_node_id}")
+                    # 精简输出: print(f"Warning: Could not update target value state to CONFIRMED for node {target_node_id}")
+                    pass
 
-            print(f"Marked {len(target_node_ids)} target values as CONFIRMED (spent)")
+            # 精简输出: print(f"Marked {len(target_node_ids)} target values as CONFIRMED (spent)")
 
             # 2. 将本地VPB中的所有非目标且状态为"未花销"的值，仅在BlockIndex中添加区块高度h
             all_unspent_values = self.value_collection.find_by_state(ValueState.UNSPENT)
@@ -286,11 +289,12 @@ class VPBManager:
                 if value_node_id and value_node_id not in target_node_ids_set:
                     # 非目标未花销值，仅添加区块高度
                     if not self.block_index_manager.add_block_height_to_index(value_node_id, block_height):
-                        print(f"Warning: Failed to add block height to non-target value {value_node_id}")
+                        # 精简输出: print(f"Warning: Failed to add block height to non-target value {value_node_id}")
+                        pass
                     else:
                         non_target_count += 1
 
-            print(f"Added block height to {non_target_count} non-target unspent values")
+            # 精简输出: print(f"Added block height to {non_target_count} non-target unspent values")
 
             # 3. 对本地所有状态为"已花销"的目标值，通过管理器对其BlockIndex添加高度h和所有权信息
             target_updated_count = 0
@@ -299,11 +303,12 @@ class VPBManager:
                 current_recipient = txn_recipients[i] if i < len(txn_recipients) else recipient_address
 
                 if not self.block_index_manager.add_block_height_to_index(target_node_id, block_height, current_recipient):
-                    print(f"Warning: Failed to add block height and ownership to target value {target_node_id}")
+                    # 精简输出: print(f"Warning: Failed to add block height and ownership to target value {target_node_id}")
+                    pass
                 else:
                     target_updated_count += 1
 
-            print(f"Updated block index for {target_updated_count} target values with ownership changes")
+            # 精简输出: print(f"Updated block index for {target_updated_count} target values with ownership changes")
 
             # 4. 向本地数据库中新增proof unit（基于提交的MultiTransactions+默克尔树证明生成）
             new_proof_unit = ProofUnit(
@@ -318,13 +323,14 @@ class VPBManager:
                 if self.proof_manager.add_proof_unit_optimized(target_node_id, new_proof_unit):
                     proof_added_count += 1
                 else:
-                    print(f"Warning: Failed to add new proof unit for target value node {target_node_id}")
+                    # 精简输出: print(f"Warning: Failed to add new proof unit for target value node {target_node_id}")
+                    pass
 
             if proof_added_count == 0:
                 print("Error: Failed to add proof unit to any target value")
                 return False
 
-            print(f"Added new proof unit to {proof_added_count} target values")
+            # 精简输出: print(f"Added new proof unit to {proof_added_count} target values")
 
             # 5. 对于本地所有的value，对其proof映射新增一个对上述proof unit的映射（使用优化的添加方法）
             all_values = self.value_collection.get_all_values()
@@ -337,19 +343,19 @@ class VPBManager:
                         mapping_added_count += 1
                     # 注意：这里不打印警告，因为有些值可能已经有这个proof unit，add_proof_unit_optimized会自动处理重复
 
-            print(f"Added proof unit mappings to {mapping_added_count} total values")
+            # 精简输出: print(f"Added proof unit mappings to {mapping_added_count} total values")
 
-            print(f"VPB batch update completed successfully for {self.account_address}")
-            print(f"  - Processed {len(confirmed_multi_txns.multi_txns)} transactions")
-            print(f"  - Updated {len(target_node_ids)} target values")
-            print(f"  - Updated {non_target_count} non-target unspent values")
-            print(f"  - Added proof mappings to {mapping_added_count} values")
+            # 精简输出: print(f"VPB batch update completed successfully for {self.account_address}")
+            # 精简输出: print(f"  - Processed {len(confirmed_multi_txns.multi_txns)} transactions")
+            # 精简输出: print(f"  - Updated {len(target_node_ids)} target values")
+            # 精简输出: print(f"  - Updated {non_target_count} non-target unspent values")
+            # 精简输出: print(f"  - Added proof mappings to {mapping_added_count} values")
             return True
 
         except Exception as e:
             print(f"Error during VPB update after transaction sent: {e}")
             import traceback
-            print(f"Detailed error: {traceback.format_exc()}")
+            # 精简输出: print(f"Detailed error: {traceback.format_exc()}")
             return False
         
 
@@ -449,34 +455,38 @@ class VPBManager:
             bool: 接收是否成功
         """
         try:
-            print(f"Receiving VPB for {self.account_address} from other account...")
+            # 精简输出: print(f"Receiving VPB for {self.account_address} from other account...")
 
             received_node_id = self._get_node_id_for_value(received_value)
 
             if received_node_id:
-                print(f"Value {received_value.begin_index} already exists with node_id: {received_node_id}, merging with existing data...")
+                # 精简输出: print(f"Value {received_value.begin_index} already exists with node_id: {received_node_id}, merging with existing data...")
 
                 # 1. 对proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
                 # 使用node_id作为value_id
                 for proof_unit in received_proof_units:
                     if not self.proof_manager.add_proof_unit_optimized(received_node_id, proof_unit):
-                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing node {received_node_id}")
+                        # 精简输出: print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for existing node {received_node_id}")
+                        pass
 
                 # 2. 对blockIndex进行添加操作
                 if self.block_index_manager.has_block_index(received_node_id):
                     # 使用AccountBlockIndexManager的合并功能
                     if not self.block_index_manager.update_block_index_merge(received_node_id, received_block_index):
-                        print(f"Warning: Failed to merge received block index for existing node {received_node_id}")
+                        # 精简输出: print(f"Warning: Failed to merge received block index for existing node {received_node_id}")
+                        pass
                 else:
                     if not self.block_index_manager.add_block_index(received_node_id, received_block_index):
-                        print(f"Warning: Failed to add received block index for new node {received_node_id}")
+                        # 精简输出: print(f"Warning: Failed to add received block index for new node {received_node_id}")
+                        pass
 
                 # 3. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
                 if not self.value_collection.update_value_state(received_node_id, ValueState.UNSPENT):
-                    print(f"Warning: Could not update existing value state to UNSPENT")
+                    # 精简输出: print(f"Warning: Could not update existing value state to UNSPENT")
+                    pass
 
             else:
-                print(f"Value {received_value.begin_index} does not exist, adding new value...")
+                # 精简输出: print(f"Value {received_value.begin_index} does not exist, adding new value...")
 
                 # 1. 直接添加value到本地数据库中（通过AccountValueCollection）
                 if not self.value_collection.add_value(received_value):
@@ -494,23 +504,26 @@ class VPBManager:
                 if not self.proof_manager.add_value(new_node_id):
                     return False
 
-                print(f"Added received value mapping to ProofManager for node_id: {new_node_id}")
+                # 精简输出: print(f"Added received value mapping to ProofManager for node_id: {new_node_id}")
 
                 # 3. 将proofs的proof unit挨个添加到本地数据库中，进行本地化查重（使用优化的添加方法）
                 # 使用node_id作为value_id
                 for proof_unit in received_proof_units:
                     if not self.proof_manager.add_proof_unit_optimized(new_node_id, proof_unit):
-                        print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new node {new_node_id}")
+                        # 精简输出: print(f"Warning: Failed to add proof unit {proof_unit.unit_id} for new node {new_node_id}")
+                        pass
 
                 # 4. 对blockIndex进行添加操作
                 if not self.block_index_manager.add_block_index(new_node_id, received_block_index):
-                    print(f"Warning: Failed to add received block index for new node {new_node_id}")
+                    # 精简输出: print(f"Warning: Failed to add received block index for new node {new_node_id}")
+                    pass
 
                 # 5. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
                 if not self.value_collection.update_value_state(new_node_id, ValueState.UNSPENT):
-                    print(f"Warning: Could not update new value state to UNSPENT")
+                    # 精简输出: print(f"Warning: Could not update new value state to UNSPENT")
+                    pass
 
-            print(f"VPB reception completed successfully for value {received_value.begin_index}")
+            # 精简输出: print(f"VPB reception completed successfully for value {received_value.begin_index}")
             return True
 
         except Exception as e:
