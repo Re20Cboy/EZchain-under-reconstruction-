@@ -156,6 +156,29 @@ class Account:
 
                     updated_count = self.vpb_manager.update_values_state(all_values, ValueState.ONCHAIN)
                     print(f"Set {updated_count} transaction values to ONCHAIN state")
+
+                    # 根据Checkpoint的更新生成机制，当Value完成一次合法交易且被主链确认后
+                    # （区块高度为h），发送方可创建/更新该Value的检查点
+                    # 记录信息为：(Value; sender's addr; block height h-1)
+                    checkpoint_height = block_height - 1
+                    checkpoint_success_count = 0
+                    checkpoint_failed_count = 0
+
+                    for value in all_values:
+                        # 为每个Value创建/更新Checkpoint
+                        # Checkpoint记录高度为确认高度-1
+                        checkpoint_success = self.checkpoint_manager.save_checkpoint(
+                            value=value,
+                            owner_address=self.address,
+                            block_height=checkpoint_height
+                        )
+
+                        if checkpoint_success:
+                            checkpoint_success_count += 1
+                        else:
+                            checkpoint_failed_count += 1
+
+                    print(f"Checkpoint update: {checkpoint_success_count} succeeded, {checkpoint_failed_count} failed at height {checkpoint_height}")
                     self.last_activity = datetime.now()
 
                 return success
@@ -285,13 +308,9 @@ class Account:
 
     # ========== CheckPoint管理接口 ==========
 
-    def create_checkpoint(self, value: Value, block_height: int) -> bool:
-        """为Value创建检查点"""
-        return self.checkpoint_manager.create_checkpoint(value, self.address, block_height)
-
-    def update_checkpoint(self, value: Value, new_block_height: int) -> bool:
-        """更新Value的检查点"""
-        return self.checkpoint_manager.update_checkpoint(value, self.address, new_block_height)
+    def save_checkpoint(self, value: Value, block_height: int) -> bool:
+        """为Value保存或更新检查点"""
+        return self.checkpoint_manager.save_checkpoint(value, self.address, block_height)
 
     def find_containing_checkpoint(self, value: Value):
         """查找包含给定Value的checkpoint"""

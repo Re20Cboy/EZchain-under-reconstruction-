@@ -439,7 +439,7 @@ class TestCase1_SimpleNormalWithCheckpoint:
             try:
                 TestOutputManager.print_info("创建checkpoint...")
                 # 创建checkpoint：bob在区块27将value转移给charlie前的状态
-                checkpoint.create_checkpoint(
+                checkpoint.save_checkpoint(
                     test_data['target_value'],
                     test_data['account_address'],
                     test_data['expected_checkpoint_height']
@@ -725,7 +725,7 @@ class TestCase3_SimpleDoubleSpendWithCheckpoint:
             try:
                 TestOutputManager.print_info("创建checkpoint...")
                 # 创建checkpoint
-                checkpoint.create_checkpoint(
+                checkpoint.save_checkpoint(
                     test_data['target_value'],
                     "0xabcdef1234567890abcdef1234567890abcdef12",
                     test_data['expected_checkpoint_height']
@@ -1087,7 +1087,7 @@ class TestCase5_CombinedNormalWithCheckpoint:
                 TestOutputManager.print_info("创建qian的checkpoint...")
                 # 创建checkpoint：qian在区块38前的状态（针对value_2）
                 # qian在区块38将value_2转移给sun，所以在区块37有checkpoint
-                checkpoint.create_checkpoint(
+                checkpoint.save_checkpoint(
                     test_data['target_value_2'],  # 为value_2创建checkpoint
                     test_data['account_address'],  # qian的地址
                     test_data['expected_checkpoint_height']  # 区块37
@@ -1553,7 +1553,7 @@ class TestCase7_CombinedDoubleSpendWithCheckpoint:
                 TestOutputManager.print_info("创建sun的checkpoint...")
                 # 创建checkpoint：sun在区块38前的状态（针对value_2）
                 # sun在区块38将value_2转移给dave，所以在区块37有checkpoint
-                checkpoint.create_checkpoint(
+                checkpoint.save_checkpoint(
                     test_data['target_value_2'],  # 为value_2创建checkpoint
                     test_data['account_address'],  # sun的地址
                     test_data['expected_checkpoint_height']  # 区块37
@@ -2108,7 +2108,7 @@ class TestVPBValidatorIntegration:
                 )
 
                 # 创建checkpoint
-                checkpoint.create_checkpoint(target_value, "0xowner2", 19)
+                checkpoint.save_checkpoint(target_value, "0xowner2", 19)
 
                 # 执行完整验证
                 report = validator.verify_vpb_pair(

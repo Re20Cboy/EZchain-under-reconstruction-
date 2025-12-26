@@ -257,7 +257,7 @@ class TestCheckPoint:
 
     def test_create_checkpoint(self, temp_checkpoint, sample_value):
         """测试创建检查点"""
-        success = temp_checkpoint.create_checkpoint(
+        success = temp_checkpoint.save_checkpoint(
             value=sample_value,
             owner_address="0x1234567890abcdef",
             block_height=99  # 假设交易在区块100确认，检查点记录区块99
@@ -274,17 +274,18 @@ class TestCheckPoint:
     def test_update_checkpoint(self, temp_checkpoint, sample_value):
         """测试更新检查点"""
         # 创建原始检查点
-        temp_checkpoint.create_checkpoint(
+        temp_checkpoint.save_checkpoint(
             value=sample_value,
             owner_address="0x1234567890abcdef",
             block_height=99
         )
 
         # 更新检查点
-        success = temp_checkpoint.update_checkpoint(
+        # 更新检查点（使用save_checkpoint）
+        success = temp_checkpoint.save_checkpoint(
             value=sample_value,
-            new_owner_address="0xfedcba0987654321",
-            new_block_height=199
+            owner_address="0xfedcba0987654321",
+            block_height=199
         )
 
         assert success == True
@@ -297,7 +298,7 @@ class TestCheckPoint:
     def test_trigger_checkpoint_verification(self, temp_checkpoint, sample_value):
         """测试触发检查点验证"""
         # 创建检查点
-        temp_checkpoint.create_checkpoint(
+        temp_checkpoint.save_checkpoint(
             value=sample_value,
             owner_address="0x1234567890abcdef",
             block_height=99
@@ -326,9 +327,9 @@ class TestCheckPoint:
         value3 = Value("0x3000", 25)
 
         # 为同一个所有者创建多个检查点
-        temp_checkpoint.create_checkpoint(value1, "0xowner123", 50)
-        temp_checkpoint.create_checkpoint(value2, "0xowner123", 75)
-        temp_checkpoint.create_checkpoint(value3, "0xowner456", 25)
+        temp_checkpoint.save_checkpoint(value1, "0xowner123", 50)
+        temp_checkpoint.save_checkpoint(value2, "0xowner123", 75)
+        temp_checkpoint.save_checkpoint(value3, "0xowner456", 25)
 
         # 查找owner123的检查点
         owner123_checkpoints = temp_checkpoint.find_checkpoints_by_owner("0xowner123")
@@ -341,7 +342,7 @@ class TestCheckPoint:
     def test_delete_checkpoint(self, temp_checkpoint, sample_value):
         """测试删除检查点"""
         # 创建检查点
-        temp_checkpoint.create_checkpoint(
+        temp_checkpoint.save_checkpoint(
             sample_value,
             "0x1234567890abcdef",
             99
@@ -362,7 +363,7 @@ class TestCheckPoint:
     def test_serialization(self, temp_checkpoint, sample_value):
         """测试序列化和反序列化"""
         # 创建检查点
-        temp_checkpoint.create_checkpoint(
+        temp_checkpoint.save_checkpoint(
             sample_value,
             "0x1234567890abcdef",
             99
@@ -389,8 +390,8 @@ class TestCheckPoint:
         value1 = Value("0x1000", 50)
         value2 = Value("0x2000", 75)
 
-        temp_checkpoint.create_checkpoint(value1, "0xowner123", 50)
-        temp_checkpoint.create_checkpoint(value2, "0xowner456", 75)
+        temp_checkpoint.save_checkpoint(value1, "0xowner123", 50)
+        temp_checkpoint.save_checkpoint(value2, "0xowner456", 75)
 
         # 导出检查点
         export_file = tempfile.mktemp(suffix='.json')
@@ -435,7 +436,7 @@ class TestCheckPoint:
     def test_cache_functionality(self, temp_checkpoint, sample_value):
         """测试缓存功能"""
         # 创建检查点
-        temp_checkpoint.create_checkpoint(
+        temp_checkpoint.save_checkpoint(
             sample_value,
             "0x1234567890abcdef",
             99
@@ -458,24 +459,24 @@ class TestCheckPoint:
 
         # 测试无效的owner_address
         with pytest.raises(ValueError):
-            temp_checkpoint.create_checkpoint(value, "", 99)
+            temp_checkpoint.save_checkpoint(value, "", 99)
 
         with pytest.raises(ValueError):
-            temp_checkpoint.create_checkpoint(value, None, 99)
+            temp_checkpoint.save_checkpoint(value, None, 99)
 
         # 测试无效的block_height
         with pytest.raises(ValueError):
-            temp_checkpoint.create_checkpoint(value, "0x123", -1)
+            temp_checkpoint.save_checkpoint(value, "0x123", -1)
 
         # 测试无效的value类型
         with pytest.raises(TypeError):
-            temp_checkpoint.create_checkpoint("not_a_value", "0x123", 99)
+            temp_checkpoint.save_checkpoint("not_a_value", "0x123", 99)
 
     def test_containing_checkpoint_verification(self, temp_checkpoint):
         """测试包含检查点验证功能"""
         # 创建一个大的Value作为检查点
         large_value = Value("0x1000", 100)
-        temp_checkpoint.create_checkpoint(large_value, "0xAlice", 99)
+        temp_checkpoint.save_checkpoint(large_value, "0xAlice", 99)
 
         # 模拟Value被拆分后的场景
         # 假设large_value被拆分成多个子Value
@@ -515,9 +516,9 @@ class TestCheckPoint:
         value2 = Value("0x2000", 50)   # 0x2000-0x2031
         value3 = Value("0x3000", 75)   # 0x3000-0x304A
 
-        temp_checkpoint.create_checkpoint(value1, "0xAlice", 100)
-        temp_checkpoint.create_checkpoint(value2, "0xBob", 200)
-        temp_checkpoint.create_checkpoint(value3, "0xCharlie", 300)
+        temp_checkpoint.save_checkpoint(value1, "0xAlice", 100)
+        temp_checkpoint.save_checkpoint(value2, "0xBob", 200)
+        temp_checkpoint.save_checkpoint(value3, "0xCharlie", 300)
 
         # 测试精确匹配
         exact_match = temp_checkpoint.find_containing_checkpoint(value1)

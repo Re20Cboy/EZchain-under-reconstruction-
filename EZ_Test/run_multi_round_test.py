@@ -33,7 +33,7 @@ def main():
     print("=" * 50)
 
     # 解析命令行参数
-    num_rounds = 5  # 默认5轮
+    num_rounds = 8  # 默认5轮
 
     if len(sys.argv) > 1:
         try:

@@ -137,22 +137,48 @@ class CheckPointStorage:
                 conn.commit()
 
     def store_checkpoint(self, checkpoint: CheckPointRecord) -> bool:
-        """存储或更新检查点记录"""
+        """
+        存储或更新检查点记录（正确的upsert操作）
+
+        如果记录已存在，则更新（保留原有的created_at）
+        如果记录不存在，则插入（使用传入的created_at）
+
+        Returns:
+            bool: 操作成功返回True，操作失败返回False
+        """
         try:
             with self._lock:
                 with sqlite3.connect(self.db_path) as conn:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO checkpoints
-                        (value_begin_index, value_num, owner_address, block_height, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                    # 先尝试UPDATE（保留原有的created_at）
+                    cursor = conn.execute("""
+                        UPDATE checkpoints
+                        SET owner_address = ?,
+                            block_height = ?,
+                            updated_at = ?
+                        WHERE value_begin_index = ? AND value_num = ?
                     """, (
-                        checkpoint.value_begin_index,
-                        checkpoint.value_num,
                         checkpoint.owner_address,
                         checkpoint.block_height,
-                        checkpoint.created_at,
-                        checkpoint.updated_at
+                        checkpoint.updated_at,
+                        checkpoint.value_begin_index,
+                        checkpoint.value_num
                     ))
+
+                    # 如果更新了0行，说明记录不存在，执行INSERT
+                    if cursor.rowcount == 0:
+                        conn.execute("""
+                            INSERT INTO checkpoints
+                            (value_begin_index, value_num, owner_address, block_height, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            checkpoint.value_begin_index,
+                            checkpoint.value_num,
+                            checkpoint.owner_address,
+                            checkpoint.block_height,
+                            checkpoint.created_at,
+                            checkpoint.updated_at
+                        ))
+
                     conn.commit()
                     return True
         except Exception as e:
@@ -312,9 +338,11 @@ class CheckPoint:
         # 缓存键使用 (begin_index, value_num) 元组
         self._checkpoint_cache: Dict[Tuple[str, int], CheckPointRecord] = {}
 
-    def create_checkpoint(self, value: Value, owner_address: str, block_height: int) -> bool:
+    def save_checkpoint(self, value: Value, owner_address: str, block_height: int) -> bool:
         """
-        创建新的检查点记录
+        保存或更新检查点记录（upsert操作）
+
+        如果检查点不存在则创建，如果已存在则更新（保留原有的created_at）
 
         Args:
             value: Value对象
@@ -322,8 +350,9 @@ class CheckPoint:
             block_height: 区块高度（交易确认高度-1）
 
         Returns:
-            bool: 创建成功返回True
+            bool: 操作成功返回True，操作失败返回False
         """
+        # 参数验证
         if not isinstance(value, Value):
             raise TypeError("value必须是Value对象")
 
@@ -333,74 +362,37 @@ class CheckPoint:
         if not isinstance(block_height, int) or block_height < 0:
             raise ValueError("block_height必须是非负整数")
 
-        current_time = datetime.now(timezone.utc)
         cache_key = (value.begin_index, value.value_num)
+        current_time = datetime.now(timezone.utc)
 
+        # 检查是否已存在
+        existing_checkpoint = self.get_checkpoint(value)
+
+        # 根据是否存在决定created_at的值
+        if existing_checkpoint:
+            # 已存在：保留原有的created_at
+            created_at = existing_checkpoint.created_at
+        else:
+            # 不存在：使用当前时间作为created_at
+            created_at = current_time
+
+        # 创建检查点记录
         checkpoint = CheckPointRecord(
             value_begin_index=value.begin_index,
             value_num=value.value_num,
             owner_address=owner_address,
             block_height=block_height,
-            created_at=current_time,
+            created_at=created_at,
             updated_at=current_time
         )
 
-        # 存储到数据库
+        # 存储到数据库（会自动处理insert或update）
         success = self.storage.store_checkpoint(checkpoint)
 
         if success:
             # 更新缓存
             with self._lock:
                 self._checkpoint_cache[cache_key] = checkpoint
-
-        return success
-
-    def update_checkpoint(self, value: Value, new_owner_address: str, new_block_height: int) -> bool:
-        """
-        更新现有的检查点记录
-
-        Args:
-            value: Value对象
-            new_owner_address: 新的持有者地址
-            new_block_height: 新的区块高度（交易确认高度-1）
-
-        Returns:
-            bool: 更新成功返回True，检查点不存在返回False
-        """
-        if not isinstance(value, Value):
-            raise TypeError("value必须是Value对象")
-
-        if not isinstance(new_owner_address, str) or not new_owner_address.strip():
-            raise ValueError("new_owner_address必须是非空字符串")
-
-        if not isinstance(new_block_height, int) or new_block_height < 0:
-            raise ValueError("new_block_height必须是非负整数")
-
-        cache_key = (value.begin_index, value.value_num)
-        current_time = datetime.now(timezone.utc)
-
-        # 检查检查点是否存在
-        existing_checkpoint = self.get_checkpoint(value)
-        if not existing_checkpoint:
-            return False
-
-        # 创建更新后的检查点
-        updated_checkpoint = CheckPointRecord(
-            value_begin_index=value.begin_index,
-            value_num=value.value_num,
-            owner_address=new_owner_address,
-            block_height=new_block_height,
-            created_at=existing_checkpoint.created_at,
-            updated_at=current_time
-        )
-
-        # 存储到数据库
-        success = self.storage.store_checkpoint(updated_checkpoint)
-
-        if success:
-            # 更新缓存
-            with self._lock:
-                self._checkpoint_cache[cache_key] = updated_checkpoint
 
         return success
 
