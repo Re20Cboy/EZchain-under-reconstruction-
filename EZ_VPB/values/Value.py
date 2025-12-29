@@ -1,5 +1,7 @@
 import re
 from enum import Enum
+from typing import Optional
+import time
 
 class ValueState(Enum):
     UNSPENT = "unspent"  # 未花费状态，表示该value尚未被用于任何交易
@@ -10,7 +12,7 @@ class ValueState(Enum):
     CONFIRMED = "confirmed"  # 已确认状态，表示value已在主链上被确认超过制定区块数（e.g.,3块），表示该value已被用于交易
 
 class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16^65（总量暂未定）
-    def __init__(self, beginIndex, valueNum, state=ValueState.UNSPENT):  # beginIndex是16进制str，valueNum是10进制int，state是ValueState枚举
+    def __init__(self, beginIndex, valueNum, state=ValueState.UNSPENT, verified_timestamp: Optional[float] = None):  # beginIndex是16进制str，valueNum是10进制int，state是ValueState枚举
         # 输入参数验证
         if not isinstance(beginIndex, str):
             raise TypeError("beginIndex must be a string")
@@ -18,18 +20,25 @@ class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16
             raise TypeError("valueNum must be an integer")
         if not isinstance(state, ValueState):
             raise TypeError("state must be a ValueState enum")
-        
+
         if valueNum <= 0:
             raise ValueError("valueNum must be positive")
-        
+
         if not self._is_valid_hex(beginIndex):
             raise ValueError("beginIndex must be a valid hexadecimal string starting with '0x'")
-        
+
         # 值的开始和结束index都包含在值内
         self.begin_index = beginIndex
         self.value_num = valueNum
         self.state = state
         self.end_index = self.get_end_index(beginIndex, valueNum)
+
+        # 记录设置为VERIFIED状态的时间戳（用于自动转换为UNSPENT）
+        # 如果状态为VERIFIED但没有提供时间戳，则使用当前时间
+        if state == ValueState.VERIFIED and verified_timestamp is None:
+            self.verified_timestamp = time.time()
+        else:
+            self.verified_timestamp = verified_timestamp
 
     def print_value(self):
         print('value #begin:' + str(self.begin_index))
@@ -68,6 +77,14 @@ class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16
     def set_state(self, new_state):  # 设置值的状态
         if not isinstance(new_state, ValueState):
             raise TypeError("new_state must be a ValueState enum")
+
+        # 当状态设置为VERIFIED时，记录当前时间戳
+        if new_state == ValueState.VERIFIED and self.state != ValueState.VERIFIED:
+            self.verified_timestamp = time.time()
+        elif new_state != ValueState.VERIFIED:
+            # 如果状态从VERIFIED变为其他状态，清除时间戳
+            self.verified_timestamp = None
+
         self.state = new_state
 
     def is_unspent(self):  # 检查值是否为未花费状态

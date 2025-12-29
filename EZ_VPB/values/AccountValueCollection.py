@@ -45,6 +45,7 @@ class AccountValueCollectionStorage:
                     begin_index TEXT NOT NULL,
                     value_num INTEGER NOT NULL,
                     state TEXT NOT NULL,
+                    verified_timestamp REAL,
                     sequence INTEGER NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -54,6 +55,9 @@ class AccountValueCollectionStorage:
 
             # 检查是否需要添加sequence字段（数据库迁移）
             self._check_and_migrate_sequence_column(conn)
+
+            # 检查是否需要添加verified_timestamp字段（数据库迁移）
+            self._check_and_migrate_verified_timestamp_column(conn)
 
             conn.commit()
 
@@ -110,6 +114,21 @@ class AccountValueCollectionStorage:
         except Exception as e:
             print(f"[AccountValueCollectionStorage] Error during database migration: {e}")
 
+    def _check_and_migrate_verified_timestamp_column(self, conn):
+        """检查并迁移verified_timestamp字段"""
+        try:
+            # 检查value_data表是否有verified_timestamp字段
+            cursor = conn.execute("PRAGMA table_info(value_data)")
+            columns = [column[1] for column in cursor.fetchall()]
+
+            if 'verified_timestamp' not in columns:
+                print("[AccountValueCollectionStorage] Migrating database: adding verified_timestamp column...")
+                # 添加verified_timestamp字段
+                conn.execute("ALTER TABLE value_data ADD COLUMN verified_timestamp REAL")
+                print("[AccountValueCollectionStorage] verified_timestamp column migration completed successfully")
+        except Exception as e:
+            print(f"[AccountValueCollectionStorage] Error during verified_timestamp migration: {e}")
+
     def ensure_account_exists(self, account_address: str) -> bool:
         """确保账户记录存在"""
         try:
@@ -141,17 +160,23 @@ class AccountValueCollectionStorage:
                     max_sequence = cursor.fetchone()[0]
                     sequence = max_sequence + 1
 
+            # 获取verified_timestamp（如果存在）
+            verified_timestamp = None
+            if hasattr(value, 'verified_timestamp'):
+                verified_timestamp = value.verified_timestamp
+
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
                     INSERT OR REPLACE INTO value_data
-                    (account_address, node_id, begin_index, value_num, state, sequence, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    (account_address, node_id, begin_index, value_num, state, verified_timestamp, sequence, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, (
                     account_address,
                     node_id,
                     value.begin_index,
                     value.value_num,
                     value.state.value if hasattr(value.state, 'value') else str(value.state),
+                    verified_timestamp,
                     sequence
                 ))
                 conn.commit()
@@ -165,13 +190,13 @@ class AccountValueCollectionStorage:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    SELECT begin_index, value_num, state FROM value_data
+                    SELECT begin_index, value_num, state, verified_timestamp FROM value_data
                     WHERE account_address = ? AND node_id = ?
                 """, (account_address, node_id))
 
                 row = cursor.fetchone()
                 if row:
-                    begin_index, value_num, state_str = row
+                    begin_index, value_num, state_str, verified_timestamp = row
 
                     # 将字符串状态转换回ValueState枚举
                     try:
@@ -182,7 +207,8 @@ class AccountValueCollectionStorage:
                     except (ValueError, AttributeError):
                         state = ValueState.UNSPENT  # 默认状态
 
-                    return Value(begin_index, value_num, state)
+                    # 创建Value对象，传入verified_timestamp
+                    return Value(begin_index, value_num, state, verified_timestamp)
         except Exception as e:
             print(f"Error loading Value: {e}")
         return None
@@ -206,14 +232,14 @@ class AccountValueCollectionStorage:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    SELECT node_id, begin_index, value_num, state FROM value_data
+                    SELECT node_id, begin_index, value_num, state, verified_timestamp FROM value_data
                     WHERE account_address = ?
                     ORDER BY sequence ASC
                 """, (account_address,))
 
                 result = []
                 for row in cursor.fetchall():
-                    node_id, begin_index, value_num, state_str = row
+                    node_id, begin_index, value_num, state_str, verified_timestamp = row
                     try:
                         # 将字符串状态转换回ValueState枚举
                         if hasattr(ValueState, state_str):
@@ -221,7 +247,7 @@ class AccountValueCollectionStorage:
                         else:
                             state = ValueState(state_str)
 
-                        value = Value(begin_index, value_num, state)
+                        value = Value(begin_index, value_num, state, verified_timestamp)
                         result.append((node_id, value))
                     except Exception as parse_error:
                         print(f"Warning: Failed to parse Value for node {node_id}: {parse_error}")
@@ -237,15 +263,15 @@ class AccountValueCollectionStorage:
             state_str = state.value if hasattr(state, 'value') else str(state)
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    SELECT node_id, begin_index, value_num, state FROM value_data
+                    SELECT node_id, begin_index, value_num, verified_timestamp FROM value_data
                     WHERE account_address = ? AND state = ?
                     ORDER BY sequence ASC
                 """, (account_address, state_str))
 
                 result = []
                 for row in cursor.fetchall():
-                    node_id, begin_index, value_num, _ = row
-                    value = Value(begin_index, value_num, state)
+                    node_id, begin_index, value_num, verified_timestamp = row
+                    value = Value(begin_index, value_num, state, verified_timestamp)
                     result.append((node_id, value))
                 return result
         except Exception as e:

@@ -469,7 +469,7 @@ class CheckPoint:
         # 使用包含匹配查找检查点
         checkpoint = self.find_containing_checkpoint(value)
 
-        if checkpoint and checkpoint.owner_address == expected_owner:
+        if checkpoint:
             return checkpoint
 
         return None

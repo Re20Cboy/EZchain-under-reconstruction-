@@ -1,3 +1,6 @@
+12/29：目前貌似还没有触发UNSPENT状态转换（因为运行run_multi_round_test.py时，可用状态的value一直在减少，checkpoint几乎不触发）
+猜测可能是UNSPENT状态转换未触发，具体原因待研判。
+
 12/23： 目前value状态设置还有问题，目前的设计如下图所示：
 状态转换图
      接收新VPB/创世

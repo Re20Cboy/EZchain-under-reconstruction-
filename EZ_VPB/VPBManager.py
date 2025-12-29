@@ -273,10 +273,10 @@ class VPBManager:
             target_node_ids_set = set(target_node_ids)  # 使用集合提高查找效率
 
             # 1. 将所有交易中的所有目标值标记为"已花销"状态
-            for target_node_id in target_node_ids:
+            '''for target_node_id in target_node_ids:
                 if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
                     # 精简输出: print(f"Warning: Could not update target value state to CONFIRMED for node {target_node_id}")
-                    pass
+                    pass'''
 
             # 精简输出: print(f"Marked {len(target_node_ids)} target values as CONFIRMED (spent)")
 
@@ -429,8 +429,8 @@ class VPBManager:
                     self.proof_manager.add_proof_unit_optimized(value_node_id, new_proof_unit)
 
             # 7. 对目标Value进行标记为"已花销"状态更新（通过AccountValueCollection）
-            if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
-                print(f"Warning: Could not update target value state to CONFIRMED")
+            """if not self.value_collection.update_value_state(target_node_id, ValueState.CONFIRMED):
+                print(f"Warning: Could not update target value state to CONFIRMED")"""
 
             # 精简输出: print(f"VPB update after transaction sent completed successfully")
             return True
@@ -481,9 +481,9 @@ class VPBManager:
                         pass
 
                 # 3. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
-                if not self.value_collection.update_value_state(received_node_id, ValueState.UNSPENT):
+                """if not self.value_collection.update_value_state(received_node_id, ValueState.UNSPENT):
                     # 精简输出: print(f"Warning: Could not update existing value state to UNSPENT")
-                    pass
+                    pass"""
 
             else:
                 # 精简输出: print(f"Value {received_value.begin_index} does not exist, adding new value...")
@@ -519,9 +519,9 @@ class VPBManager:
                     pass
 
                 # 5. 将此value的状态更新为"未花销"状态（通过AccountValueCollection）
-                if not self.value_collection.update_value_state(new_node_id, ValueState.UNSPENT):
+                """if not self.value_collection.update_value_state(new_node_id, ValueState.UNSPENT):
                     # 精简输出: print(f"Warning: Could not update new value state to UNSPENT")
-                    pass
+                    pass"""
 
             # 精简输出: print(f"VPB reception completed successfully for value {received_value.begin_index}")
             return True

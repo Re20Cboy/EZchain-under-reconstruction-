@@ -48,6 +48,9 @@ class Account:
     - Clean separation of concerns
     """
 
+    # 配置常量：VERIFIED状态自动转换为UNSPENT的延迟时间（秒）
+    VERIFIED_TO_UNSPENT_DELAY = 1  # 默认1秒后转换
+
     def __init__(self, address: str, private_key_pem: bytes, public_key_pem: bytes,
                  name: Optional[str] = None, data_directory: Optional[str] = None):
         """
@@ -98,7 +101,14 @@ class Account:
         self.submitted_transactions: Dict[str, Any] = {}
         self.submitted_tx_lock = threading.RLock()
 
+        # 初始化时检查所有VERIFIED状态的values，处理Account离线后重新上线的情况
         # 精简输出: print(f"Account {self.name} ({address}) initialized with VPBManager")
+        try:
+            converted_count = self._check_and_convert_verified_to_unspent()
+            if converted_count > 0:
+                print(f"Account {self.name}: {converted_count} VERIFIED value(s) auto-converted to UNSPENT during initialization")
+        except Exception as e:
+            print(f"Warning: Failed to check VERIFIED values during initialization: {e}")
 
     # ========== VPB管理接口（通过VPBManager） ==========
 
@@ -219,6 +229,9 @@ class Account:
         """
         作为receiver接收其他账户发送的VPB
 
+        注意: 此方法假设传入的VPB已经通过了验证(通过verify_vpb方法)。
+        接收成功后,会将value的状态设置为VERIFIED。
+
         Args:
             received_value: 接收到的Value
             received_proof_units: 接收到的ProofUnits
@@ -232,6 +245,25 @@ class Account:
                 success = self.vpb_manager.receive_vpb_from_others(
                     received_value, received_proof_units, received_block_index
                 )
+
+                if success:
+                    # 接收成功后,将value的状态设置为VERIFIED
+                    # 使用VPBManager的统一接口来更新状态和索引
+                    updated = self.vpb_manager.update_value_state(received_value, ValueState.VERIFIED)
+                    if updated:
+                        # 精简输出: print(f"Successfully set value {received_value.begin_index} to VERIFIED state")
+                        self.last_activity = datetime.now()
+
+                        # 接收成功后，检查是否有其他VERIFIED状态的values超时需要转换为UNSPENT
+                        try:
+                            converted_count = self._check_and_convert_verified_to_unspent()
+                            if converted_count > 0:
+                                print(f"Auto-converted {converted_count} VERIFIED value(s) to UNSPENT after receiving new VPB")
+                        except Exception as check_error:
+                            print(f"Warning: Failed to check VERIFIED values after receiving: {check_error}")
+                    else:
+                        print(f"Warning: Failed to update value state to VERIFIED for {received_value.begin_index}")
+
                 return success
             except Exception as e:
                 print(f"接收VPB失败: {e}")
@@ -579,6 +611,52 @@ class Account:
             print(f"清理资源失败: {e}")
 
     # ========== 私有辅助方法 ==========
+
+    def _check_and_convert_verified_to_unspent(self) -> int:
+        """
+        检查所有VERIFIED状态的values，如果超时则自动转换为UNSPENT状态
+
+        此方法处理Account离线后重新上线的情况：
+        - 检查所有VERIFIED状态的values
+        - 如果当前时间与verified_timestamp的时间差超过配置的延迟时间
+        - 则自动将其状态转换为UNSPENT
+
+        Returns:
+            int: 成功转换的value数量
+        """
+        try:
+            import time
+            current_time = time.time()
+            converted_count = 0
+
+            # 获取所有VERIFIED状态的values
+            verified_values = self.get_values(ValueState.VERIFIED)
+
+            for value in verified_values:
+                # 检查value是否有verified_timestamp
+                if not hasattr(value, 'verified_timestamp') or value.verified_timestamp is None:
+                    # 如果没有时间戳，说明是旧数据，直接转换为UNSPENT
+                    print(f"Warning: VERIFIED value {value.begin_index} has no timestamp, converting to UNSPENT")
+                    updated = self.vpb_manager.update_value_state(value, ValueState.UNSPENT)
+                    if updated:
+                        converted_count += 1
+                    continue
+
+                # 检查是否超时
+                time_elapsed = current_time - value.verified_timestamp
+                if time_elapsed >= self.VERIFIED_TO_UNSPENT_DELAY:
+                    # 超时，转换为UNSPENT
+                    updated = self.vpb_manager.update_value_state(value, ValueState.UNSPENT)
+                    if updated:
+                        converted_count += 1
+                        # 精简输出: print(f"Auto-converted VERIFIED value {value.begin_index} to UNSPENT (elapsed: {time_elapsed:.2f}s)")
+                    else:
+                        print(f"Warning: Failed to convert value {value.begin_index} from VERIFIED to UNSPENT")
+
+            return converted_count
+        except Exception as e:
+            print(f"Error checking and converting VERIFIED to UNSPENT: {e}")
+            return 0
 
     def _record_multi_transaction(self, multi_txn_result: Dict, action: str,
                                 reference: Optional[str] = None):
