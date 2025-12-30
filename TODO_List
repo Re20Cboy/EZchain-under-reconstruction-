@@ -1,3 +1,11 @@
+12/30:
+1）目前AccountPickValues.py中的pick_values_for_transaction有逻辑问题：
+   a）第二阶段中，若检查点选中的值（checkpoint_matching_values）无法凑出所需金额（例如：最小的单个值都大于所需金额），那么检查点的值也是不可用的，应该跳过，然后重新凑。
+   b）_select_values_without_change方法不应该使用贪心策略，而是应该使用真实的凑整算法（类似于子集和问题的解决方案），以确保能够精确匹配所需金额，避免找零。
+2）目前的多轮测试脚本test_blockchain_integration_with_real_account.py中，创建交易请求也存在问题：
+   目前还是以多轮生成，每轮只生成1笔交易请求，这导致相同sender无法打包到一个MultiTransactions中，导致提交失败。
+   需要修改为单轮多交易模式，同sender多交易打包进一个MultiTransactions中。
+
 12/29：目前貌似还没有触发UNSPENT状态转换（因为运行run_multi_round_test.py时，可用状态的value一直在减少，checkpoint几乎不触发）
 猜测可能是UNSPENT状态转换未触发，具体原因待研判。
 

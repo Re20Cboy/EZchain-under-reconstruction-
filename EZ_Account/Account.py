@@ -49,7 +49,10 @@ class Account:
     """
 
     # 配置常量：VERIFIED状态自动转换为UNSPENT的延迟时间（秒）
-    VERIFIED_TO_UNSPENT_DELAY = 1  # 默认1秒后转换
+    VERIFIED_TO_UNSPENT_DELAY = 0.2  # 0.5秒后自动转换，由后台线程定期检查
+
+    # 定时刷新间隔（秒），建议设置为VERIFIED_TO_UNSPENT_DELAY的一半或更小，以确保及时转换
+    VERIFIED_CONVERTER_CHECK_INTERVAL = 0.5  # 每0.5秒检查一次
 
     def __init__(self, address: str, private_key_pem: bytes, public_key_pem: bytes,
                  name: Optional[str] = None, data_directory: Optional[str] = None):
@@ -100,6 +103,11 @@ class Account:
         # Structure: {multi_tx_hash: multi_tx_data}
         self.submitted_transactions: Dict[str, Any] = {}
         self.submitted_tx_lock = threading.RLock()
+
+        # 定时刷新VERIFIED到UNSPENT转换的后台线程
+        self._verified_converter_stop_event = threading.Event()
+        self._verified_converter_thread = None
+        self._start_verified_converter_thread()
 
         # 初始化时检查所有VERIFIED状态的values，处理Account离线后重新上线的情况
         # 精简输出: print(f"Account {self.name} ({address}) initialized with VPBManager")
@@ -254,13 +262,10 @@ class Account:
                         # 精简输出: print(f"Successfully set value {received_value.begin_index} to VERIFIED state")
                         self.last_activity = datetime.now()
 
-                        # 接收成功后，检查是否有其他VERIFIED状态的values超时需要转换为UNSPENT
-                        try:
-                            converted_count = self._check_and_convert_verified_to_unspent()
-                            if converted_count > 0:
-                                print(f"Auto-converted {converted_count} VERIFIED value(s) to UNSPENT after receiving new VPB")
-                        except Exception as check_error:
-                            print(f"Warning: Failed to check VERIFIED values after receiving: {check_error}")
+                        # 注意：不再在这里立即调用_check_and_convert_verified_to_unspent()
+                        # VERIFIED到UNSPENT的转换由后台线程自动处理
+                        # 后台线程每隔VERIFIED_CONVERTER_CHECK_INTERVAL秒检查一次
+                        # 这样可以避免阻塞接收流程，同时保证及时转换
                     else:
                         print(f"Warning: Failed to update value state to VERIFIED for {received_value.begin_index}")
 
@@ -602,6 +607,10 @@ class Account:
     def cleanup(self):
         """清理资源"""
         try:
+            # 停止后台转换线程
+            self._stop_verified_converter_thread()
+
+            # 清理其他资源
             self.clear_all_data()
             self.signature_handler.clear_key()
             if hasattr(self, 'checkpoint_manager'):
@@ -611,6 +620,67 @@ class Account:
             print(f"清理资源失败: {e}")
 
     # ========== 私有辅助方法 ==========
+
+    def _start_verified_converter_thread(self):
+        """启动后台线程，定时检查并转换VERIFIED到UNSPENT"""
+        def converter_worker():
+            """
+            后台线程worker：定时检查VERIFIED状态的values并转换超时的values到UNSPENT
+
+            工作机制：
+            1. 每隔VERIFIED_CONVERTER_CHECK_INTERVAL秒检查一次
+            2. 检查所有VERIFIED状态的values
+            3. 将超时的values（elapsed >= VERIFIED_TO_UNSPENT_DELAY）转换为UNSPENT
+            4. 线程安全：使用_lock保护VPB操作
+            """
+            import time
+
+            while not self._verified_converter_stop_event.is_set():
+                try:
+                    # 等待指定的间隔时间，或直到收到停止信号
+                    self._verified_converter_stop_event.wait(self.VERIFIED_CONVERTER_CHECK_INTERVAL)
+
+                    # 如果收到停止信号，退出循环
+                    if self._verified_converter_stop_event.is_set():
+                        break
+
+                    # 执行检查和转换（使用锁确保线程安全）
+                    with self._lock:
+                        converted_count = self._check_and_convert_verified_to_unspent()
+
+                    # 可选：记录转换结果（调试用）
+                    # if converted_count > 0:
+                    #     print(f"[{self.name}] Background converter: {converted_count} VERIFIED value(s) converted to UNSPENT")
+
+                except Exception as e:
+                    # 捕获异常避免线程崩溃
+                    print(f"Error in verified converter thread for {self.name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # 启动后台线程
+        self._verified_converter_thread = threading.Thread(
+            target=converter_worker,
+            name=f"VerifiedConverter-{self.name}",
+            daemon=True  # 设置为daemon线程，主程序退出时自动结束
+        )
+        self._verified_converter_thread.start()
+        # 精简输出: print(f"[{self.name}] Verified converter thread started")
+
+    def _stop_verified_converter_thread(self):
+        """停止后台转换线程"""
+        if self._verified_converter_thread and self._verified_converter_thread.is_alive():
+            # 发送停止信号
+            self._verified_converter_stop_event.set()
+
+            # 等待线程结束（最多等待2秒）
+            self._verified_converter_thread.join(timeout=2.0)
+
+            if self._verified_converter_thread.is_alive():
+                print(f"Warning: Verified converter thread for {self.name} did not stop gracefully")
+            else:
+                # 精简输出: print(f"[{self.name}] Verified converter thread stopped")
+                pass
 
     def _check_and_convert_verified_to_unspent(self) -> int:
         """
@@ -649,7 +719,7 @@ class Account:
                     updated = self.vpb_manager.update_value_state(value, ValueState.UNSPENT)
                     if updated:
                         converted_count += 1
-                        # 精简输出: print(f"Auto-converted VERIFIED value {value.begin_index} to UNSPENT (elapsed: {time_elapsed:.2f}s)")
+                        print(f"Auto-converted VERIFIED value {value.begin_index} to UNSPENT (elapsed: {time_elapsed:.2f}s)")
                     else:
                         print(f"Warning: Failed to convert value {value.begin_index} from VERIFIED to UNSPENT")
 

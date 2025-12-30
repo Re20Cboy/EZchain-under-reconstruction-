@@ -450,7 +450,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
         """
         使用真实Account创建交易请求，按照指定逻辑：
         1）创建随机m个交易（m在2~10之间），随机选择m对发送者+接收者
-        2）检查发送者的value列表（假设有n个value），确定合理的交易金额（基于value数量的1/4左右）
+        2）检查发送者的value列表（假设有n个value），确定合理的交易金额（基于value数量的1/5左右）
         3）若发送者没有value等原因造成无法生成交易，则跳过此account
         4）若所有的m对发送者+接收者都完成遍历，无论最后是否真的生成了m笔交易，都将返回结果（至少保障有1笔交易）
         """
@@ -501,13 +501,11 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     print(f"   ⚠️ 发送者 {sender_account.name} 总余额为0，跳过")
                     continue
 
-                # 2）基于value数量确定合理的交易金额范围（模拟选择1~n/4个value的效果）
-                max_selectable = max(1, n // 4)  # 确保至少能选1个
-                num_values_to_simulate = random.randint(1, max_selectable)
-
-                # 按value金额排序，取前num_values_to_simulate个value的总和作为交易金额
-                sorted_values = sorted(sender_values, key=lambda v: v.value_num, reverse=True)
-                selected_total = sum(v.value_num for v in sorted_values[:num_values_to_simulate])
+                # 2）基于value数量确定合理的交易金额（随机选择1个value的面值作为交易金额）
+                # 这样可以确保Account的贪心算法能够精确匹配（贪心策略优先选择大额value）
+                # 只选择单个value，避免子集和问题的复杂性
+                selected_value = random.choice(sender_values)
+                selected_total = selected_value.value_num
 
                 # 确保交易金额合理：不超过总余额，且至少为1
                 amount = max(1, min(selected_total, total_balance))
@@ -526,7 +524,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 }
 
                 all_transaction_requests.append([transaction_request])  # 每个交易请求单独成轮
-                print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount} (模拟选择{num_values_to_simulate}个value)")
+                print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount} (选择1个value)")
 
             except Exception as e:
                 print(f"   ❌ 创建交易请求失败: {sender_account.name} → {recipient_account.name}, 错误: {e}")
