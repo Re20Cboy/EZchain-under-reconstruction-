@@ -289,3 +289,6 @@ EZ_Test/**/*.db
 EZ_VPB_Updater/**/*.db
 EZ_VPB/**/*.db
 EZ_Account/**/*.db
+
+# Persistent multi-round test data
+EZ_Test/persistent_test_data/
