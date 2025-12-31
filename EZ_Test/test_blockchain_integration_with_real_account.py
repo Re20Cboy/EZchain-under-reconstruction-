@@ -449,15 +449,16 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
     def create_real_transaction_requests(self, num_transactions: int = None) -> List[List[Dict]]:
         """
         使用真实Account创建交易请求，按照指定逻辑：
-        1）创建随机m个交易（m在2~10之间），随机选择m对发送者+接收者
+        1）创建随机m个交易（m在4~10之间），随机选择m对发送者+接收者
         2）检查发送者的value列表（假设有n个value），确定合理的交易金额（基于value数量的1/5左右）
         3）若发送者没有value等原因造成无法生成交易，则跳过此account
-        4）若所有的m对发送者+接收者都完成遍历，无论最后是否真的生成了m笔交易，都将返回结果（至少保障有1笔交易）
+        4）【修复】按sender分组，同一sender的多个交易打包到一个MultiTransactions中
         """
-        all_transaction_requests = []
+        # 使用字典按sender地址分组存储交易请求
+        sender_transaction_groups = {}
 
-        # 1）创建随机m个交易（m在2~10之间）
-        m = random.randint(2, 10) if num_transactions is None else num_transactions
+        # 1）创建随机m个交易（m在4~10之间）
+        m = random.randint(4, 10) if num_transactions is None else num_transactions
 
         # 随机选择m对发送者+接收者（确保发送者和接收者不同）
         sender_receiver_pairs = []
@@ -483,7 +484,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             account_values_cache[account.address] = unspent_values
             account_balance_cache[account.address] = sum(value.value_num for value in unspent_values)
 
-        # 为每一对创建交易请求
+        # 为每一对创建交易请求，按sender分组
         for i, (sender_account, recipient_account) in enumerate(sender_receiver_pairs):
             try:
                 # 2）检查发送者的value列表（使用缓存）
@@ -523,7 +524,12 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     "reference": reference
                 }
 
-                all_transaction_requests.append([transaction_request])  # 每个交易请求单独成轮
+                # 【关键修改】按sender地址分组，同一sender的交易放在同一个列表中
+                sender_address = sender_account.address
+                if sender_address not in sender_transaction_groups:
+                    sender_transaction_groups[sender_address] = []
+                sender_transaction_groups[sender_address].append(transaction_request)
+
                 print(f"   💰 创建交易请求: {sender_account.name} → {recipient_account.name}, 金额: {amount} (选择1个value)")
 
             except Exception as e:
@@ -531,7 +537,7 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 continue  # 3）若无法生成交易，跳过此account
 
         # 4）无论最后是否真的生成了m笔交易，都将返回结果（注意，这里至少应该保障有1笔交易）
-        if not all_transaction_requests:
+        if not sender_transaction_groups:
             print("   ⚠️ 没有成功创建任何交易，尝试强制创建一笔最小交易")
             # 强制尝试创建一笔最小交易（使用缓存）
             for sender in self.accounts:
@@ -546,18 +552,31 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                                 "nonce": random.randint(10000, 99999),
                                 "reference": f"emergency_tx_{sender.name[:3]}_{recipient.name[:3]}"
                             }
-                            all_transaction_requests.append([transaction_request])
+                            # 添加到分组中
+                            sender_transaction_groups[sender.address] = [transaction_request]
                             print(f"   🆘 强制创建紧急交易: {sender.name} → {recipient.name}, 金额: {amount}")
                             break
-                    if all_transaction_requests:
+                    if sender_transaction_groups:
                         break
+
+        # 【关键修改】将分组后的交易转换为列表格式，每个sender的所有交易为一轮
+        all_transaction_requests = list(sender_transaction_groups.values())
+
+        # 打印分组统计信息
+        print(f"   📊 交易分组统计: {len(all_transaction_requests)}个sender, 总计{sum(len(group) for group in all_transaction_requests)}笔交易")
+        for i, group in enumerate(all_transaction_requests):
+            if group:
+                sender_addr = group[0].get("sender", "unknown")
+                sender_account = self.get_account_by_address(sender_addr)
+                sender_name = sender_account.name if sender_account else "unknown"
+                print(f"      组{i+1}: {sender_name} -> {len(group)}笔交易")
 
         return all_transaction_requests
 
     def create_transactions_from_accounts(self, transaction_requests_list: List[List[Dict]]) -> List[Tuple[SubmitTxInfo, Dict, Account]]:
         """
         使用真实Account创建交易，返回SubmitTxInfo、multi_txn_result和Account的元组列表
-        更新：适配新的交易请求结构，每个交易请求都是独立的轮次，并明确指定发送者
+        更新：适配新的交易请求结构，每轮包含同一sender的多个交易请求，打包到一个MultiTransactions中
         """
         submit_tx_data = []
 
@@ -572,9 +591,9 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
             if not round_requests:
                 continue
 
-            # 每轮只有一个交易请求，且已经包含了发送者信息
-            transaction_request = round_requests[0]
-            sender_address = transaction_request.get("sender")
+            # 【修改】每轮现在包含同一sender的多个交易请求
+            # 获取sender地址（从第一个交易请求中获取）
+            sender_address = round_requests[0].get("sender")
 
             if not sender_address:
                 print(f"   ⚠️ 第{round_num}轮交易请求缺少sender信息，跳过")
@@ -587,17 +606,17 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                 continue
 
             try:
-                # 验证发送者是否有足够的余额
-                required_amount = transaction_request.get("amount", 0)
+                # 计算本轮所有交易的总金额
+                total_required_amount = sum(tx.get("amount", 0) for tx in round_requests)
                 available_balance = sender_account.get_available_balance()
 
-                if available_balance < required_amount:
-                    print(f"   ⚠️ 发送者 {sender_account.name} 余额不足 ({available_balance} < {required_amount})，跳过")
+                if available_balance < total_required_amount:
+                    print(f"   ⚠️ 发送者 {sender_account.name} 余额不足 ({available_balance} < {total_required_amount})，跳过本轮{len(round_requests)}笔交易")
                     continue
 
-                # 使用Account的批量交易创建功能
+                # 【关键修改】使用Account的批量交易创建功能，一次性处理同一sender的多个交易
                 multi_txn_result = sender_account.create_batch_transactions(
-                    transaction_requests=[transaction_request],
+                    transaction_requests=round_requests,  # 传入整个交易请求列表
                     reference=f"round_{round_num}_account_{sender_account.name}"
                 )
 
@@ -608,17 +627,23 @@ class TestBlockchainIntegrationWithRealAccount(unittest.TestCase):
                     if submit_tx_info:
                         # 存储元组：(SubmitTxInfo, multi_txn_result, Account)
                         submit_tx_data.append((submit_tx_info, multi_txn_result, sender_account))
-                        # 优化：减少重复的账户查找
-                        recipient_account = get_cached_account(transaction_request.get("recipient"))
-                        recipient_name = recipient_account.name if recipient_account else "未知"
-                        print(f"   ✅ Account {sender_account.name} 创建交易 → {recipient_name}, 金额: {required_amount}")
+
+                        # 打印摘要信息
+                        recipient_names = []
+                        for tx in round_requests:
+                            recipient_account = get_cached_account(tx.get("recipient"))
+                            if recipient_account:
+                                recipient_names.append(recipient_account.name)
+                        print(f"   ✅ Account {sender_account.name} 创建批量交易 → {', '.join(recipient_names)}, 共{len(round_requests)}笔, 总金额:{total_required_amount}")
                     else:
                         print(f"   ❌ Account {sender_account.name} 创建SubmitTxInfo失败")
                 else:
                     print(f"   ❌ Account {sender_account.name} 批量创建交易失败")
 
             except Exception as e:
-                print(f"   ❌ Account {sender_account.name} 创建交易异常: {e}")
+                print(f"   ❌ Account {sender_account.name} 创建批量交易异常: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
 
         return submit_tx_data

@@ -92,20 +92,18 @@ class AccountPickValues:
 
         # 第二阶段：选择values
         if checkpoint_matching_values:
-            # 优先使用匹配检查点的values
-            # 尝试使用检查点匹配的values来凑出目标金额
+            # 优先使用匹配检查点的values来精确匹配目标金额
             selected_values, total_selected = self._select_values_without_change(
                 checkpoint_matching_values, required_amount
             )
 
-            # 如果检查点匹配的values不够，从其他values中补充
-            if total_selected < required_amount:
+            # 如果检查点匹配的values无法精确凑出目标金额，跳过它们，使用其他所有可用values
+            if total_selected != required_amount:
+                # 检查点值无法使用，改用所有非检查点的values
                 remaining_values = [v for v in available_values if v not in checkpoint_matching_values]
-                additional_values, additional_total = self._select_values_without_change(
-                    remaining_values, required_amount - total_selected
+                selected_values, total_selected = self._select_values_without_change(
+                    remaining_values, required_amount
                 )
-                selected_values.extend(additional_values)
-                total_selected += additional_total
         else:
             # 没有检查点或没有匹配的values，使用所有可用values
             selected_values, total_selected = self._select_values_without_change(
@@ -311,7 +309,13 @@ class AccountPickValues:
 
     def _select_values_without_change(self, available_values: List[Value], target_amount: int) -> Tuple[List[Value], int]:
         """
-        从可用的values中选择values来凑出目标金额（不支持找零，使用贪心策略）
+        从可用的values中选择values来凑出目标金额（不支持找零，使用动态规划的子集和算法）
+
+        使用动态规划算法寻找能够精确匹配目标金额的子集。
+        如果找不到精确匹配，返回空列表和总金额0。
+
+        时间复杂度: O(n * target)，其中 n 是values数量，target 是目标金额
+        空间复杂度: O(target)，使用滚动数组优化
 
         Args:
             available_values: 可用的value列表
@@ -320,16 +324,57 @@ class AccountPickValues:
         Returns:
             Tuple[List[Value], int]: (选中的values列表, 总金额)
         """
-        selected = []
-        total = 0
-
-        # 贪心策略：按值大小排序，优先使用较大的值
-        sorted_values = sorted(available_values, key=lambda v: v.value_num, reverse=True)
-
-        for value in sorted_values:
-            if total >= target_amount:
-                break
-            selected.append(value)
-            total += value.value_num
-
+        selected = self._subset_sum_dp(available_values, target_amount)
+        total = sum(v.value_num for v in selected)
         return selected, total
+
+    def _subset_sum_dp(self, values: List[Value], target: int) -> List[Value]:
+        """
+        使用动态规划算法寻找能够精确匹配目标和的子集
+
+        使用DP数组dp[i]表示金额i是否可达，并记录路径用于重建解。
+
+        Args:
+            values: 可用的value列表
+            target: 目标金额
+
+        Returns:
+            List[Value]: 能够精确匹配目标和的子集，如果找不到则返回空列表
+        """
+        if target == 0:
+            return []
+
+        if not values:
+            return []
+
+        # 提取value的金额
+        amounts = [v.value_num for v in values]
+
+        # 初始化：dp[i] 表示金额i是否可达
+        # 使用字典来节省空间，只记录可达的金额
+        dp = {0: []}  # {金额: 达到该金额使用的value索引列表}
+
+        for idx, amount in enumerate(amounts):
+            # 遍历当前已知的所有可达金额
+            # 需要复制keys以避免在迭代时修改字典
+            reachable_amounts = list(dp.keys())
+
+            for current_amount in reachable_amounts:
+                new_amount = current_amount + amount
+
+                # 如果新金额未超过目标且未被记录过
+                if new_amount <= target and new_amount not in dp:
+                    # 记录达到新金额的路径
+                    dp[new_amount] = dp[current_amount] + [idx]
+
+                    # 提前退出：如果已经找到目标金额
+                    if new_amount == target:
+                        # 根据索引重建value列表
+                        return [values[i] for i in dp[target]]
+
+        # 如果找到了目标金额，返回对应的子集
+        if target in dp:
+            return [values[i] for i in dp[target]]
+
+        # 未找到解
+        return []
