@@ -1,0 +1,11 @@
+{
+  "node_role": "consensus",
+  "listen_host": "127.0.0.1",
+  "listen_port": 19010,
+  "transport": "tcp",
+  "peer_seeds": [],
+  "network_id": "devnet",
+  "protocol_version": "0.1",
+  "max_neighbors": 8,
+  "node_id": "gateway-node"
+}

@@ -1,0 +1,11 @@
+{
+  "node_role": "account",
+  "listen_host": "127.0.0.1",
+  "listen_port": 19011,
+  "transport": "tcp",
+  "peer_seeds": ["127.0.0.1:19010"],
+  "network_id": "devnet",
+  "protocol_version": "0.1",
+  "max_neighbors": 8,
+  "node_id": "account-a"
+}
