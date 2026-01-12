@@ -292,3 +292,12 @@ EZ_Account/**/*.db
 
 # Persistent multi-round test data
 EZ_Test/persistent_test_data/
+
+# TX pool demo databases
+tx_pool*.db
+*tx_pool*.db
+
+# Test generated databases with account addresses
+ez_account_block_index_*.db
+*block_index_*.db
+*_0x*.db
