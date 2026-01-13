@@ -58,6 +58,7 @@ def main():
     ap.add_argument("--max-neighbors", type=int, default=16)
     ap.add_argument("--tx-burst", type=int, default=2, help="transactions per wave per selected sender")
     ap.add_argument("--interval", type=float, default=3.0, help="seconds between waves")
+    ap.add_argument("--waves", type=int, default=0, help="number of waves to run (0 = infinite)")
     args = ap.parse_args()
 
     # Prepare temp dirs
@@ -188,6 +189,7 @@ def main():
         await asyncio.sleep(0.8)
 
         async def waves():
+            wave_no = 0
             while True:
                 # pick 1-2 random senders per wave
                 k = min(2, len(accounts_meta))
@@ -198,11 +200,18 @@ def main():
                     target = next((f"{cfg['host']}:{cfg['port']}" for cfg in acc_cfgs if cfg["address"] == sender["address"]), None)
                     if target:
                         await _send(router, target, {"requests": reqs}, "CREATE_AND_SUBMIT")
+                wave_no += 1
+                # If a finite number of waves is requested, stop after reaching it
+                if args.waves and wave_no >= args.waves:
+                    # signal controller to stop
+                    if not stop.done():
+                        stop.set_result(True)
+                    break
                 await asyncio.sleep(args.interval)
 
-        wave_task = asyncio.create_task(waves())
-        # run until SIGINT
+        # run until SIGINT or waves limit
         stop = asyncio.Future()
+        wave_task = asyncio.create_task(waves())
         def _sig():
             if not stop.done():
                 stop.set_result(True)
@@ -213,10 +222,12 @@ def main():
             except NotImplementedError:
                 pass
         await stop
-        wave_task.cancel()
+        # Gracefully cancel the wave task and suppress cancellation noise
+        if not wave_task.done():
+            wave_task.cancel()
         try:
             await wave_task
-        except Exception:
+        except asyncio.CancelledError:
             pass
 
     loop = asyncio.new_event_loop()
@@ -235,4 +246,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # Show the private-key-in-memory warning only once per process
+    import warnings
+    warnings.filterwarnings(
+        "once",
+        message=r"^Private key is being loaded into memory\.",
+        category=UserWarning,
+    )
     main()

@@ -195,13 +195,21 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
     miner_task.cancel()
     try:
         await miner_task
-    except Exception:
+    except asyncio.CancelledError:
+        # Suppress cancellation noise on shutdown
         pass
 
 
 def consensus_node_main(cfg: Dict[str, Any]):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    # Reduce repeated secure-key warnings in child process
+    import warnings as _warnings
+    _warnings.filterwarnings(
+        "once",
+        message=r"^Private key is being loaded into memory\.",
+        category=UserWarning,
+    )
     stop_evt = asyncio.Event()
 
     def _sig(*_):
@@ -371,6 +379,13 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
 def account_node_main(cfg: Dict[str, Any]):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    # Reduce repeated secure-key warnings in child process
+    import warnings as _warnings
+    _warnings.filterwarnings(
+        "once",
+        message=r"^Private key is being loaded into memory\.",
+        category=UserWarning,
+    )
     stop_evt = asyncio.Event()
 
     def _sig(*_):

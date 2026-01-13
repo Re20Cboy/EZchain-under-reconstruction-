@@ -222,7 +222,8 @@ class SecureTransactionSignature:
             warnings.warn(
                 "Private key is being loaded into memory. "
                 "Ensure this is called in a secure environment.",
-                UserWarning
+                category=UserWarning,
+                stacklevel=2,
             )
         
         # Create deterministic transaction data for signing
@@ -338,7 +339,8 @@ class SecureTransactionSignature:
             warnings.warn(
                 "Private key is being loaded into memory. "
                 "Ensure this is called in a secure environment.",
-                UserWarning
+                category=UserWarning,
+                stacklevel=2,
             )
         
         # Create deterministic multi-transaction data for signing
