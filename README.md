@@ -45,6 +45,19 @@ We are now **rebuilding and optimizing the codebase** for an official open-sourc
 - Enhancing edge-device compatibility (mobile/IoT).  
 - Integrating flexible consensus plugins (PoW, BFT, PoS, DPoS).  
 
+## 🧪 P2P One-Click Smoke Test
+Run a quick end-to-end P2P smoke test locally:
+
+```bash
+python run_ez_p2p_smoke_test.py
+```
+
+Common options:
+
+```bash
+python run_ez_p2p_smoke_test.py --waves 5 --interval 1.0 --accounts 6 --consensus 2
+```
+
 
 ## 🤝 How to Support  
 EZchain is a community-driven project—your help accelerates our mission:  

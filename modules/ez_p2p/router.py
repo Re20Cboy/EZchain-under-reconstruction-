@@ -82,6 +82,10 @@ class Router:
         for p in self.peer_manager.select_by_role("consensus"):
             await self._send_to_addr(p.address, payload, msg_type, network="consensus")
 
+    async def broadcastToAccounts(self, payload: Dict[str, Any], msg_type: str):
+        for p in self.peer_manager.select_by_role("account"):
+            await self._send_to_addr(p.address, payload, msg_type, network="account")
+
     async def sendToAccount(self, account_addr: str, payload: Dict[str, Any], msg_type: str):
         # account_addr is opaque here (user-defined). In MVP, treat as address string host:port
         await self._send_to_addr(account_addr, payload, msg_type, network="account")

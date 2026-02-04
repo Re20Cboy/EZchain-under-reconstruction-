@@ -31,15 +31,9 @@ from typing import Any, Dict, List, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from EZ_Test.test_p2p_blockchain_integration_distributed import (
-    _free_port,
-    _account_generate_keypair,
-    _create_eth_address,
-    _block_to_payload,
-    _send,
-    account_node_main,
-    consensus_node_main,
-)
+from modules.ez_p2p.nodes.account_node import account_node_main
+from modules.ez_p2p.nodes.consensus_node import consensus_node_main
+from modules.ez_p2p.nodes.utils import block_to_payload as _block_to_payload
 
 from EZ_Account.Account import Account
 from EZ_Test.temp_data_manager import create_test_environment
@@ -47,6 +41,32 @@ from EZ_GENESIS.genesis import create_genesis_block, create_genesis_vpb_for_acco
 
 from modules.ez_p2p.config import P2PConfig
 from modules.ez_p2p.router import Router
+
+
+def _free_port() -> int:
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    _, port = s.getsockname()
+    s.close()
+    return port
+
+
+def _account_generate_keypair() -> tuple[bytes, bytes]:
+    return _generate_kp()
+
+
+def _generate_kp():
+    from EZ_Tool_Box.SecureSignature import secure_signature_handler
+    return secure_signature_handler.signer.generate_key_pair()
+
+
+def _create_eth_address(tag: str) -> str:
+    import hashlib
+    return f"0x{hashlib.sha256(tag.encode()).digest()[:20].hex()}"
+
+
+async def _send(router: Router, addr: str, payload: dict, msg_type: str):
+    return await router._send_to_addr(addr, payload, msg_type, network="account")
 
 
 def main():
@@ -124,14 +144,20 @@ def main():
     all_cons_addrs = [f"{c['host']}:{c['port']}" for c in cons_cfgs]
     for c in cons_cfgs:
         c["peer_seeds"] = [a for a in all_cons_addrs if a != f"{c['host']}:{c['port']}"]
+    # Start accounts
+    acc_cfgs: List[Dict[str, Any]] = []
+    acc_procs: List[mp.Process] = []
+    account_endpoints: Dict[str, str] = {}
+    for i, meta in enumerate(accounts_meta):
+        p = base_port + args.consensus + i
+        account_endpoints[meta["address"]] = f"{args.host}:{p}"
+
     for c in cons_cfgs:
+        c["address_book"] = account_endpoints
         p = mp.Process(target=consensus_node_main, args=(c,), daemon=True)
         p.start()
         cons_procs.append(p)
 
-    # Start accounts
-    acc_cfgs: List[Dict[str, Any]] = []
-    acc_procs: List[mp.Process] = []
     for i, meta in enumerate(accounts_meta):
         port = base_port + args.consensus + i
         cfg = {
@@ -145,6 +171,9 @@ def main():
             "pub": meta["pub"],
             "data_directory": os.path.join(acc_store_dir, meta["address"]),
             "node_id": meta["address"],
+            "address_book": account_endpoints,
+            "advertise_host": args.host,
+            "advertise_port": port,
         }
         acc_cfgs.append(cfg)
         # ensure directory exists
