@@ -37,9 +37,10 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         max_fork_height=cfg.get("max_fork_height", 3),
         debug_mode=False,
         data_directory=cfg.get("data_directory", f"blockchain_data/{acc.address}"),
-        auto_save=False,
+        auto_save=True,
     )
     blockchain = Blockchain(config=chain_cfg)
+    pending_blocks: Dict[int, Any] = {}
     address_book: Dict[str, str] = cfg.get("address_book", {}) or {}
     advertise_host = cfg.get("advertise_host", cfg.get("host"))
     advertise_port = cfg.get("advertise_port", cfg.get("port"))
@@ -57,12 +58,12 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
                 gblock = payload_to_block(genesis_payload)
                 if blockchain.get_chain_length() == 0:
                     blockchain.add_block(gblock)
-                values = [Value.from_dict(v) for v in account_data.get("values", [])]
-                proof_units = [ProofUnit.from_dict(u) for u in account_data.get("proof_units", [])]
-                block_index = BlockIndexList.from_dict(
-                    account_data.get("block_index", {"index_lst": [0], "owner": acc.address})
-                )
-                acc.vpb_manager.initialize_from_genesis_batch(values, proof_units, block_index)
+                    values = [Value.from_dict(v) for v in account_data.get("values", [])]
+                    proof_units = [ProofUnit.from_dict(u) for u in account_data.get("proof_units", [])]
+                    block_index = BlockIndexList.from_dict(
+                        account_data.get("block_index", {"index_lst": [0], "owner": acc.address})
+                    )
+                    acc.vpb_manager.initialize_from_genesis_batch(values, proof_units, block_index)
         except Exception:
             pass
 
@@ -75,6 +76,10 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         network_id="devnet",
         protocol_version="0.1",
         max_neighbors=cfg.get("max_neighbors", 8),
+        send_timeout_ms=cfg.get("send_timeout_ms", 3000),
+        retry_count=cfg.get("retry_count", 2),
+        retry_backoff_ms=cfg.get("retry_backoff_ms", 300),
+        dedup_window_ms=cfg.get("dedup_window_ms", 5 * 60 * 1000),
         node_id=cfg.get("node_id", acc.address),
     ))
 
@@ -90,6 +95,18 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
     def _resolve_account_endpoint(account_addr: str) -> str:
         return address_book.get(account_addr, account_addr)
 
+    def _apply_pending_blocks():
+        while True:
+            expected = blockchain.get_latest_block_index() + 1
+            block = pending_blocks.pop(expected, None)
+            if block is None:
+                break
+            try:
+                blockchain.add_block(block)
+            except Exception:
+                # Keep going; malformed fork blocks are safely ignored for this node.
+                continue
+
     def _find_recipient_values(multi_txns) -> List[Tuple[str, List[Value]]]:
         res: Dict[str, List[Value]] = {}
         for txn in getattr(multi_txns, "multi_txns", []) or []:
@@ -103,18 +120,26 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
     async def on_genesis_init(msg, remote_addr, writer):
         p = msg.get("payload", {})
         gblock = payload_to_block(p["genesis_block"]) if p.get("genesis_block") else None
-        if gblock:
+        if gblock and blockchain.get_chain_length() == 0:
             blockchain.add_block(gblock)
-        values = [Value.from_dict(v) for v in p.get("values", [])]
-        proof_units = [ProofUnit.from_dict(u) for u in p.get("proof_units", [])]
-        block_index = BlockIndexList.from_dict(p.get("block_index", {"index_lst": [0], "owner": acc.address}))
-        acc.vpb_manager.initialize_from_genesis_batch(values, proof_units, block_index)
+            values = [Value.from_dict(v) for v in p.get("values", [])]
+            proof_units = [ProofUnit.from_dict(u) for u in p.get("proof_units", [])]
+            block_index = BlockIndexList.from_dict(p.get("block_index", {"index_lst": [0], "owner": acc.address}))
+            acc.vpb_manager.initialize_from_genesis_batch(values, proof_units, block_index)
 
     async def on_new_block(msg, remote_addr, writer):
         p = msg.get("payload", {})
         block = payload_to_block(p.get("block", {}))
         if block:
-            blockchain.add_block(block)
+            expected_index = blockchain.get_latest_block_index() + 1
+            if block.index > expected_index:
+                pending_blocks[block.index] = block
+                return
+            try:
+                blockchain.add_block(block)
+                _apply_pending_blocks()
+            except Exception:
+                pending_blocks[block.index] = block
 
     async def on_proof_to_sender(msg, remote_addr, writer):
         p = msg.get("payload", {})
@@ -217,6 +242,7 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
             await auto_task
         except asyncio.CancelledError:
             pass
+    await router.stop()
 
 
 def account_node_main(cfg: Dict[str, Any]):

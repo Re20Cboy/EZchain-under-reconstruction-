@@ -102,10 +102,26 @@ class TcpTransport(AbstractTransport):
         self._clients[addr] = client
         return client
 
+    async def _drop_client(self, addr: str) -> None:
+        client = self._clients.pop(addr, None)
+        if client:
+            try:
+                await client.close()
+            except Exception:
+                pass
+
     async def send(self, addr: str, data: bytes) -> None:
         host, port_s = addr.split(":")
-        client = await self._ensure_client(host, int(port_s))
-        await client.send(data)
+        # Retry once with a fresh TCP connection to survive stale sockets.
+        for attempt in range(2):
+            client = await self._ensure_client(host, int(port_s))
+            try:
+                await client.send(data)
+                return
+            except Exception:
+                await self._drop_client(addr)
+                if attempt == 1:
+                    raise
 
     async def send_via_context(self, ctx: Any, data: bytes) -> None:
         if not isinstance(ctx, asyncio.StreamWriter):

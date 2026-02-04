@@ -79,6 +79,10 @@ def main():
     ap.add_argument("--tx-burst", type=int, default=2, help="transactions per wave per selected sender")
     ap.add_argument("--interval", type=float, default=3.0, help="seconds between waves")
     ap.add_argument("--waves", type=int, default=0, help="number of waves to run (0 = infinite)")
+    ap.add_argument("--send-timeout-ms", type=int, default=3000)
+    ap.add_argument("--retry-count", type=int, default=2)
+    ap.add_argument("--retry-backoff-ms", type=int, default=300)
+    ap.add_argument("--dedup-window-ms", type=int, default=5 * 60 * 1000)
     args = ap.parse_args()
 
     # Prepare temp dirs
@@ -135,6 +139,10 @@ def main():
             "pool_db_path": os.path.join(session_dir, "pool_db", f"p2p_pool_{i}.db"),
             "miner_address": f"miner_{i}",
             "node_id": f"consensus_{i}",
+            "send_timeout_ms": args.send_timeout_ms,
+            "retry_count": args.retry_count,
+            "retry_backoff_ms": args.retry_backoff_ms,
+            "dedup_window_ms": args.dedup_window_ms,
         }
         # ensure directories exist
         os.makedirs(cfg["data_directory"], exist_ok=True)
@@ -174,6 +182,10 @@ def main():
             "address_book": account_endpoints,
             "advertise_host": args.host,
             "advertise_port": port,
+            "send_timeout_ms": args.send_timeout_ms,
+            "retry_count": args.retry_count,
+            "retry_backoff_ms": args.retry_backoff_ms,
+            "dedup_window_ms": args.dedup_window_ms,
         }
         acc_cfgs.append(cfg)
         # ensure directory exists

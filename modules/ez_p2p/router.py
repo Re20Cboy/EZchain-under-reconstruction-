@@ -1,7 +1,7 @@
 import asyncio
-import socket
+import contextlib
+import time
 import uuid
-import struct
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from .codec import encode_message, decode_message
@@ -26,6 +26,9 @@ class Router:
         self.logger = setup_logger("ez_p2p")
         self.peer_manager = PeerManager(max_neighbors=config.max_neighbors)
         self.handlers: Dict[str, Handler] = {}
+        self._seen_msg_ids: Dict[str, int] = {}
+        self._maintenance_task: Optional[asyncio.Task] = None
+        self._clock_future_skew_ms = 30_000
 
         # Transport selection
         self.transport: AbstractTransport
@@ -60,12 +63,31 @@ class Router:
                 await self._send_hello(seed)
             except Exception as e:
                 self.logger.warning("seed_connect_failed", extra={"extra": {"seed": seed, "err": str(e)}})
+        if not self._maintenance_task:
+            self._maintenance_task = asyncio.create_task(self._maintenance_loop())
+
+    async def stop(self):
+        if self._maintenance_task:
+            self._maintenance_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._maintenance_task
+            self._maintenance_task = None
+        await self.transport.stop()
 
     async def _on_frame(self, data: bytes, remote_id: str, ctx: Any):
+        if len(data) > self.cfg.msg_size_limit_bytes:
+            self.logger.info("drop_oversize_message", extra={"extra": {"size": len(data)}})
+            return
         try:
             msg = decode_message(data)
         except Exception as e:
             self.logger.warning("decode_failed", extra={"extra": {"err": str(e)}})
+            return
+
+        if not self._validate_envelope(msg):
+            return
+
+        if self._is_replay_or_duplicate(msg):
             return
 
         msg_type = msg.get("type")
@@ -99,7 +121,20 @@ class Router:
 
     async def _send_to_addr(self, addr: str, payload: Dict[str, Any], msg_type: str, network: str):
         data = encode_message(network=network, msg_type=msg_type, payload=payload, protocol_version=self.cfg.protocol_version)
-        await self.transport.send(addr, data)
+        retry_count = max(0, int(self.cfg.retry_count))
+        backoff_ms = max(0, int(self.cfg.retry_backoff_ms))
+        timeout_sec = max(0.1, self.cfg.send_timeout_ms / 1000.0)
+        last_err: Optional[Exception] = None
+        for attempt in range(retry_count + 1):
+            try:
+                await asyncio.wait_for(self.transport.send(addr, data), timeout=timeout_sec)
+                return
+            except Exception as e:
+                last_err = e
+                if attempt >= retry_count:
+                    break
+                await asyncio.sleep((backoff_ms * (2 ** attempt)) / 1000.0)
+        raise RuntimeError(f"send_failed:{addr}:{msg_type}:{last_err}")
 
     async def _send_hello(self, addr: str):
         await self._send_to_addr(
@@ -124,6 +159,7 @@ class Router:
             network_id=p.get("network_id", ""),
             latest_index=int(p.get("latest_index", 0)),
             address=remote_addr,
+            last_seen_ms=int(time.time() * 1000),
         )
         self.peer_manager.add_peer(info)
         # reply welcome
@@ -152,6 +188,7 @@ class Router:
             network_id=p.get("network_id", ""),
             latest_index=int(p.get("latest_index", 0)),
             address=remote_addr,
+            last_seen_ms=int(time.time() * 1000),
         )
         self.peer_manager.add_peer(info)
         self.logger.info("welcome_recv", extra={"extra": {"from": remote_addr, "role": info.role}})
@@ -171,3 +208,55 @@ class Router:
         await self._send_to_addr(addr, {"ts": int(asyncio.get_event_loop().time() * 1000)}, "PING", network="account")
 
     # removed writer-specific helper; handled by transport
+
+    def _validate_envelope(self, msg: Dict[str, Any]) -> bool:
+        remote_version = str(msg.get("version", ""))
+        if not remote_version:
+            return False
+        if not self._is_version_compatible(self.cfg.protocol_version, remote_version):
+            self.logger.info(
+                "drop_incompatible_version",
+                extra={"extra": {"local": self.cfg.protocol_version, "remote": remote_version}},
+            )
+            return False
+        if "msg_id" not in msg or "timestamp" not in msg or "type" not in msg:
+            return False
+        return True
+
+    def _is_replay_or_duplicate(self, msg: Dict[str, Any]) -> bool:
+        now_ms = int(time.time() * 1000)
+        msg_id = str(msg.get("msg_id", ""))
+        msg_ts = int(msg.get("timestamp", 0))
+        self._evict_old_msg_ids(now_ms)
+        if msg_id in self._seen_msg_ids:
+            return True
+        # Basic replay guard: too old or too far in the future are both suspicious.
+        if msg_ts < now_ms - self.cfg.dedup_window_ms:
+            return True
+        if msg_ts > now_ms + self._clock_future_skew_ms:
+            return True
+        self._seen_msg_ids[msg_id] = msg_ts
+        return False
+
+    def _evict_old_msg_ids(self, now_ms: Optional[int] = None):
+        current_ms = now_ms or int(time.time() * 1000)
+        threshold = current_ms - self.cfg.dedup_window_ms
+        old_ids = [mid for mid, ts in self._seen_msg_ids.items() if ts < threshold]
+        for mid in old_ids:
+            self._seen_msg_ids.pop(mid, None)
+
+    @staticmethod
+    def _is_version_compatible(local_version: str, remote_version: str) -> bool:
+        def _major(v: str) -> str:
+            return v.split(".", 1)[0] if v else ""
+        return _major(local_version) == _major(remote_version)
+
+    async def _maintenance_loop(self):
+        while True:
+            await asyncio.sleep(5.0)
+            self._evict_old_msg_ids()
+            # Keep trying to establish seed links so disconnected nodes can recover.
+            if not self.peer_manager.list_peers():
+                for seed in self.cfg.peer_seeds:
+                    with contextlib.suppress(Exception):
+                        await self._send_hello(seed)

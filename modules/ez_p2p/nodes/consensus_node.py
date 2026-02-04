@@ -21,12 +21,13 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         max_fork_height=cfg.get("max_fork_height", 3),
         debug_mode=False,
         data_directory=cfg.get("data_directory", "blockchain_data/consensus"),
-        auto_save=False,
+        auto_save=True,
     )
     blockchain = Blockchain(config=chain_cfg)
     txpool = TxPool(db_path=cfg.get("pool_db_path", os.path.join(cfg.get("data_directory", "."), "tx_pool.db")))
     submitter_endpoints: Dict[str, str] = {}
     address_book: Dict[str, str] = cfg.get("address_book", {}) or {}
+    pending_blocks: Dict[int, Any] = {}
 
     # Optional local genesis bootstrap for distributed runs
     bundle_path = cfg.get("genesis_bundle_path")
@@ -51,6 +52,10 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         network_id="devnet",
         protocol_version="0.1",
         max_neighbors=cfg.get("max_neighbors", 8),
+        send_timeout_ms=cfg.get("send_timeout_ms", 3000),
+        retry_count=cfg.get("retry_count", 2),
+        retry_backoff_ms=cfg.get("retry_backoff_ms", 300),
+        dedup_window_ms=cfg.get("dedup_window_ms", 5 * 60 * 1000),
         node_id=cfg.get("node_id", None),
     ))
 
@@ -65,16 +70,43 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
             submitter_endpoints[sti.submitter_address] = account_endpoint
         txpool.add_submit_tx_info(sti, multi_transactions=None)
 
+    def _apply_pending_blocks():
+        while True:
+            expected = blockchain.get_latest_block_index() + 1
+            block = pending_blocks.pop(expected, None)
+            if block is None:
+                break
+            try:
+                blockchain.add_block(block)
+            except Exception:
+                continue
+
+    async def on_new_block(msg, remote_addr, writer):
+        p = msg.get("payload", {})
+        block = payload_to_block(p.get("block", {}))
+        if not block:
+            return
+        expected_index = blockchain.get_latest_block_index() + 1
+        if block.index > expected_index:
+            pending_blocks[block.index] = block
+            return
+        try:
+            blockchain.add_block(block)
+            _apply_pending_blocks()
+        except Exception:
+            pending_blocks[block.index] = block
+
     router.register_handler("ACCTXN_SUBMIT", on_submit)
+    router.register_handler("NEW_BLOCK", on_new_block)
 
     await router.start()
 
     async def miner_loop():
         miner_addr = cfg.get("miner_address", "miner_p2p")
-        index = blockchain.get_chain_length()
-        prev_hash = blockchain.main_chain[-1].get_hash() if blockchain.main_chain else "0"
         while not stop_evt.is_set():
             try:
+                index = blockchain.get_chain_length()
+                prev_hash = blockchain.main_chain[-1].get_hash() if blockchain.main_chain else "0"
                 package_data, block, picked_txs_mt_proofs, blk_idx, sender_addrs = (
                     pick_transactions_from_pool_with_proofs(
                         tx_pool=txpool,
@@ -87,8 +119,6 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
                 )
                 if package_data.selected_submit_tx_infos:
                     blockchain.add_block(block)
-                    index += 1
-                    prev_hash = block.get_hash()
                     await router.broadcastToConsensus({"block": block_to_payload(block)}, "NEW_BLOCK")
                     await router.broadcastToAccounts({"block": block_to_payload(block)}, "NEW_BLOCK")
                     await router.broadcastToConsensus({"block_index": block.index, "merkle_root": block.m_tree_root}, "BLOCK_COMMITTED")
@@ -122,6 +152,7 @@ async def consensus_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         await miner_task
     except asyncio.CancelledError:
         pass
+    await router.stop()
 
 
 def consensus_node_main(cfg: Dict[str, Any]):

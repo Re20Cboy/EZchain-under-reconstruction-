@@ -9,6 +9,7 @@ class PeerInfo:
     network_id: str
     latest_index: int
     address: str  # host:port
+    last_seen_ms: int = 0
 
 
 class PeerManager:
@@ -17,6 +18,10 @@ class PeerManager:
         self._peers: Dict[str, PeerInfo] = {}
 
     def add_peer(self, peer: PeerInfo):
+        # Refresh existing peers in-place to keep liveness info up to date.
+        if peer.node_id in self._peers:
+            self._peers[peer.node_id] = peer
+            return True
         if len(self._peers) >= self.max_neighbors:
             return False
         self._peers[peer.node_id] = peer
@@ -33,4 +38,3 @@ class PeerManager:
 
     def get(self, node_id: str) -> Optional[PeerInfo]:
         return self._peers.get(node_id)
-
