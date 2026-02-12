@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import subprocess
 import sys
 import time
@@ -11,10 +12,20 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
-def get_json(url: str, headers: dict[str, str] | None = None) -> dict:
+def get_json(url: str, headers: dict[str, str] | None = None, timeout_sec: float = 5.0) -> dict:
     req = Request(url, headers=headers or {}, method="GET")
-    with urlopen(req, timeout=5) as resp:
+    with urlopen(req, timeout=timeout_sec) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def compute_probe_sleep(interval_sec: float, jitter_ratio: float) -> float:
+    if interval_sec <= 0:
+        return 0.0
+    if jitter_ratio <= 0:
+        return interval_sec
+    low = max(0.0, interval_sec * (1.0 - jitter_ratio))
+    high = max(low, interval_sec * (1.0 + jitter_ratio))
+    return random.uniform(low, high)
 
 
 def main() -> int:
@@ -27,9 +38,16 @@ def main() -> int:
     parser.add_argument("--max-failure-rate", type=float, default=0.0)
     parser.add_argument("--startup-wait", type=float, default=1.5)
     parser.add_argument("--restart-cooldown", type=float, default=1.2)
+    parser.add_argument("--request-timeout", type=float, default=5.0)
+    parser.add_argument("--jitter", type=float, default=0.0, help="Probe interval jitter ratio, e.g. 0.2 => +/-20%")
+    parser.add_argument("--burst-every", type=int, default=0, help="Run burst probes every N cycles; 0 disables")
+    parser.add_argument("--burst-size", type=int, default=1, help="Probe count during burst cycle")
     parser.add_argument("--json-out", default="")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     args = parser.parse_args()
+    jitter_ratio = max(0.0, min(1.0, float(args.jitter)))
+    burst_every = max(0, int(args.burst_every))
+    burst_size = max(1, int(args.burst_size))
 
     root = Path(__file__).resolve().parent.parent
     serve_cmd = [sys.executable, "ezchain_cli.py", "--config", args.config, "serve"]
@@ -63,6 +81,8 @@ def main() -> int:
     proc = start_proc()
 
     failures = 0
+    checks = 0
+    burst_checks = 0
     restarts = 0
     started_at = time.time()
     try:
@@ -74,10 +94,15 @@ def main() -> int:
                 "ok": bool(args.allow_bind_restricted_skip and bind_restricted),
                 "skipped_bind_restricted": bool(args.allow_bind_restricted_skip and bind_restricted),
                 "cycles": int(args.cycles),
+                "checks": int(args.cycles),
                 "failures": int(args.cycles),
                 "failure_rate": 1.0,
                 "max_failures": int(args.max_failures),
                 "max_failure_rate": float(args.max_failure_rate),
+                "burst_every": burst_every,
+                "burst_size": burst_size,
+                "burst_checks": 0,
+                "jitter": jitter_ratio,
                 "restarts": 0,
                 "duration_seconds": round(time.time() - started_at, 3),
             }
@@ -91,13 +116,26 @@ def main() -> int:
             return 1
 
         for i in range(args.cycles):
-            try:
-                health = get_json("http://127.0.0.1:8787/health")
-                if not health.get("ok"):
+            cycle_is_burst = burst_every > 0 and (i + 1) % burst_every == 0
+            cycle_probe_count = burst_size if cycle_is_burst else 1
+            if cycle_is_burst:
+                burst_checks += cycle_probe_count
+
+            cycle_failures = 0
+            for _ in range(cycle_probe_count):
+                checks += 1
+                try:
+                    health = get_json("http://127.0.0.1:8787/health", timeout_sec=float(args.request_timeout))
+                    if not health.get("ok"):
+                        failures += 1
+                        cycle_failures += 1
+                except (URLError, TimeoutError, json.JSONDecodeError):
                     failures += 1
-            except (URLError, TimeoutError, json.JSONDecodeError):
-                failures += 1
-            print(f"cycle={i + 1}/{args.cycles} failures={failures}")
+                    cycle_failures += 1
+            print(
+                f"cycle={i + 1}/{args.cycles} probes={cycle_probe_count} "
+                f"cycle_failures={cycle_failures} total_failures={failures}"
+            )
 
             if args.restart_every > 0 and (i + 1) % args.restart_every == 0 and (i + 1) < args.cycles:
                 stop_proc(proc)
@@ -105,19 +143,24 @@ def main() -> int:
                 restarts += 1
                 time.sleep(max(0.1, args.restart_cooldown))
 
-            time.sleep(args.interval)
+            time.sleep(compute_probe_sleep(float(args.interval), jitter_ratio))
     finally:
         stop_proc(proc)
 
-    total = max(1, int(args.cycles))
+    total = max(1, checks)
     failure_rate = failures / total
     summary = {
         "ok": failures <= int(args.max_failures) and failure_rate <= float(args.max_failure_rate),
-        "cycles": total,
+        "cycles": int(args.cycles),
+        "checks": total,
         "failures": failures,
         "failure_rate": round(failure_rate, 6),
         "max_failures": int(args.max_failures),
         "max_failure_rate": float(args.max_failure_rate),
+        "burst_every": burst_every,
+        "burst_size": burst_size,
+        "burst_checks": int(burst_checks),
+        "jitter": jitter_ratio,
         "restarts": restarts,
         "duration_seconds": round(time.time() - started_at, 3),
     }

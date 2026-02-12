@@ -44,7 +44,21 @@ python scripts/release_gate.py --skip-slow
 python scripts/release_gate.py --skip-slow --with-stability --allow-bind-restricted-skip
 ```
 
-3. 生成发布报告：
+3. 触发网络抖动 + 重复请求压力路径（建议 nightly）：
+```bash
+python scripts/stability_gate.py \
+  --cycles 30 \
+  --interval 1 \
+  --restart-every 10 \
+  --jitter 0.2 \
+  --burst-every 5 \
+  --burst-size 3 \
+  --max-failures 0 \
+  --max-failure-rate 0.0 \
+  --allow-bind-restricted-skip
+```
+
+4. 生成发布报告：
 ```bash
 python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip
 ```

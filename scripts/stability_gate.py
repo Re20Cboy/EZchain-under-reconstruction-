@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 
 
@@ -16,6 +17,38 @@ def run(cmd: list[str], cwd: Path) -> None:
         raise RuntimeError(f"command failed: {' '.join(cmd)}")
 
 
+def build_smoke_command(args: Namespace, out_path: Path) -> list[str]:
+    cmd = [
+        sys.executable,
+        "scripts/stability_smoke.py",
+        "--config",
+        args.config,
+        "--cycles",
+        str(args.cycles),
+        "--interval",
+        str(args.interval),
+        "--restart-every",
+        str(args.restart_every),
+        "--max-failures",
+        str(args.max_failures),
+        "--max-failure-rate",
+        str(args.max_failure_rate),
+        "--request-timeout",
+        str(args.request_timeout),
+        "--jitter",
+        str(args.jitter),
+        "--burst-every",
+        str(args.burst_every),
+        "--burst-size",
+        str(args.burst_size),
+        "--json-out",
+        str(out_path),
+    ]
+    if args.allow_bind_restricted_skip:
+        cmd.append("--allow-bind-restricted-skip")
+    return cmd
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain stability gate")
     parser.add_argument("--config", default="ezchain.yaml")
@@ -24,6 +57,10 @@ def main() -> int:
     parser.add_argument("--restart-every", type=int, default=10)
     parser.add_argument("--max-failures", type=int, default=0)
     parser.add_argument("--max-failure-rate", type=float, default=0.0)
+    parser.add_argument("--request-timeout", type=float, default=5.0)
+    parser.add_argument("--jitter", type=float, default=0.0)
+    parser.add_argument("--burst-every", type=int, default=0)
+    parser.add_argument("--burst-size", type=int, default=1)
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     args = parser.parse_args()
 
@@ -31,26 +68,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "stability.json"
         try:
-            cmd = [
-                sys.executable,
-                "scripts/stability_smoke.py",
-                "--config",
-                args.config,
-                "--cycles",
-                str(args.cycles),
-                "--interval",
-                str(args.interval),
-                "--restart-every",
-                str(args.restart_every),
-                "--max-failures",
-                str(args.max_failures),
-                "--max-failure-rate",
-                str(args.max_failure_rate),
-                "--json-out",
-                str(out),
-            ]
-            if args.allow_bind_restricted_skip:
-                cmd.append("--allow-bind-restricted-skip")
+            cmd = build_smoke_command(args, out)
             run(cmd, cwd=root)
         except RuntimeError as exc:
             print(f"[stability-gate] FAILED: {exc}")
@@ -59,6 +77,10 @@ def main() -> int:
         summary = json.loads(out.read_text(encoding="utf-8"))
         if args.restart_every > 0 and summary.get("restarts", 0) <= 0 and not summary.get("skipped_bind_restricted", False):
             print("[stability-gate] FAILED: restart path was not exercised")
+            print(json.dumps(summary, indent=2))
+            return 1
+        if args.burst_every > 0 and summary.get("burst_checks", 0) <= 0 and not summary.get("skipped_bind_restricted", False):
+            print("[stability-gate] FAILED: burst probe path was not exercised")
             print(json.dumps(summary, indent=2))
             return 1
 
