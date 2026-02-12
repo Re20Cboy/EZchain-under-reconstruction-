@@ -130,6 +130,7 @@ def main():
     cons_procs: List[mp.Process] = []
     for i in range(args.consensus):
         port = base_port + i
+        cons_priv, cons_pub = _account_generate_keypair()
         cfg = {
             "host": args.host,
             "port": port,
@@ -143,6 +144,9 @@ def main():
             "retry_count": args.retry_count,
             "retry_backoff_ms": args.retry_backoff_ms,
             "dedup_window_ms": args.dedup_window_ms,
+            "identity_private_key_pem": cons_priv.decode("utf-8") if isinstance(cons_priv, (bytes, bytearray)) else cons_priv,
+            "identity_public_key_pem": cons_pub.decode("utf-8") if isinstance(cons_pub, (bytes, bytearray)) else cons_pub,
+            "enforce_identity_verification": True,
         }
         # ensure directories exist
         os.makedirs(cfg["data_directory"], exist_ok=True)
@@ -186,6 +190,9 @@ def main():
             "retry_count": args.retry_count,
             "retry_backoff_ms": args.retry_backoff_ms,
             "dedup_window_ms": args.dedup_window_ms,
+            "identity_private_key_pem": meta["priv"],
+            "identity_public_key_pem": meta["pub"],
+            "enforce_identity_verification": True,
         }
         acc_cfgs.append(cfg)
         # ensure directory exists

@@ -5,6 +5,7 @@ This package provides a minimal, standalone P2P implementation with:
 - Simple Router with handler registry
 - PeerManager for connections and metadata
 - Basic messages: HELLO/WELCOME, PING/PONG, ACCTXN_SUBMIT (stub)
+- Optional identity envelope signing and verification
 
 It is intentionally small and dependency-free to satisfy the
 "最基础，最简单的实现" requirement.
@@ -17,5 +18,5 @@ __all__ = [
     "router",
     "transport",
     "codec",
+    "security",
 ]
-

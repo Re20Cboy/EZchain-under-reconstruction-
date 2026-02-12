@@ -81,6 +81,10 @@ async def account_node_async(cfg: Dict[str, Any], stop_evt: asyncio.Event):
         retry_backoff_ms=cfg.get("retry_backoff_ms", 300),
         dedup_window_ms=cfg.get("dedup_window_ms", 5 * 60 * 1000),
         node_id=cfg.get("node_id", acc.address),
+        identity_private_key_pem=cfg.get("identity_private_key_pem", cfg.get("priv")),
+        identity_public_key_pem=cfg.get("identity_public_key_pem", cfg.get("pub")),
+        enforce_identity_verification=cfg.get("enforce_identity_verification", False),
+        signed_message_types=cfg.get("signed_message_types", []),
     ))
 
     async def send_submit(multi_txn_result: Dict):

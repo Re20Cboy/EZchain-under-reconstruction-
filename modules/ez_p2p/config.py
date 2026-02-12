@@ -19,6 +19,10 @@ class P2PConfig:
     msg_size_limit_bytes: int = 2 * 1024 * 1024
     dedup_window_ms: int = 5 * 60 * 1000
     node_id: Optional[str] = None  # can be public key fingerprint or uuid
+    identity_private_key_pem: Optional[str] = None
+    identity_public_key_pem: Optional[str] = None
+    enforce_identity_verification: bool = False
+    signed_message_types: List[str] = field(default_factory=list)
     # libp2p specific
     libp2p_control_path: Optional[str] = None  # e.g., "/tmp/p2pd.sock" or ":/ip4/127.0.0.1/tcp/9999"
     libp2p_protocol: str = "/ez/1.0.0"

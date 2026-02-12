@@ -2,12 +2,19 @@ import asyncio
 import contextlib
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, Set
 
 from .codec import encode_message, decode_message
 from .config import P2PConfig
 from .logger import setup_logger
 from .peer_manager import PeerManager, PeerInfo
+from .security import (
+    SUPPORTED_ALGORITHM,
+    derive_public_key_pem,
+    fingerprint_public_key,
+    sign_envelope,
+    verify_envelope_signature,
+)
 from .transport.tcp import TcpTransport
 from .transport.base import AbstractTransport
 try:
@@ -20,6 +27,16 @@ Handler = Callable[[Dict[str, Any], str, asyncio.StreamWriter], Awaitable[None]]
 
 
 class Router:
+    DEFAULT_SIGNED_TYPES = {
+        "HELLO",
+        "WELCOME",
+        "PING",
+        "PONG",
+        "ACCTXN_SUBMIT",
+        "PROOF_TO_SENDER",
+        "NEW_BLOCK",
+    }
+
     def __init__(self, config: P2PConfig):
         self.cfg = config
         self.node_id = config.node_id or uuid.uuid4().hex
@@ -29,6 +46,13 @@ class Router:
         self._seen_msg_ids: Dict[str, int] = {}
         self._maintenance_task: Optional[asyncio.Task] = None
         self._clock_future_skew_ms = 30_000
+        self._enforce_identity = bool(config.enforce_identity_verification)
+        signed_types = set(config.signed_message_types or [])
+        self._signed_message_types: Set[str] = signed_types if signed_types else set(self.DEFAULT_SIGNED_TYPES)
+        self._identity_private_key_pem = config.identity_private_key_pem
+        self._identity_public_key_pem = config.identity_public_key_pem
+        if self._identity_private_key_pem and not self._identity_public_key_pem:
+            self._identity_public_key_pem = derive_public_key_pem(self._identity_private_key_pem)
 
         # Transport selection
         self.transport: AbstractTransport
@@ -120,7 +144,7 @@ class Router:
         await self._send_to_addr(account_addr, payload, msg_type, network="account")
 
     async def _send_to_addr(self, addr: str, payload: Dict[str, Any], msg_type: str, network: str):
-        data = encode_message(network=network, msg_type=msg_type, payload=payload, protocol_version=self.cfg.protocol_version)
+        data = self._encode_outbound_message(network=network, msg_type=msg_type, payload=payload)
         retry_count = max(0, int(self.cfg.retry_count))
         backoff_ms = max(0, int(self.cfg.retry_backoff_ms))
         timeout_sec = max(0.1, self.cfg.send_timeout_ms / 1000.0)
@@ -154,12 +178,13 @@ class Router:
     async def _h_hello(self, msg: Dict[str, Any], remote_addr: str, writer: asyncio.StreamWriter):
         p = msg["payload"]
         info = PeerInfo(
-            node_id=p.get("node_id", ""),
+            node_id=msg.get("sender_id") or p.get("node_id", ""),
             role=p.get("role", "account"),
             network_id=p.get("network_id", ""),
             latest_index=int(p.get("latest_index", 0)),
             address=remote_addr,
             last_seen_ms=int(time.time() * 1000),
+            identity_fingerprint=self._extract_identity_fingerprint(msg),
         )
         self.peer_manager.add_peer(info)
         # reply welcome
@@ -171,11 +196,10 @@ class Router:
             "network_id": self.cfg.network_id,
             "latest_index": 0,
         }
-        data = encode_message(
+        data = self._encode_outbound_message(
             network=msg.get("network", "consensus"),
             msg_type="WELCOME",
             payload=payload,
-            protocol_version=self.cfg.protocol_version,
         )
         await self.transport.send_via_context(ctx=writer, data=data)
         self.logger.info("hello_recv", extra={"extra": {"from": remote_addr, "role": info.role}})
@@ -183,12 +207,13 @@ class Router:
     async def _h_welcome(self, msg: Dict[str, Any], remote_addr: str, writer: Any):
         p = msg["payload"]
         info = PeerInfo(
-            node_id=p.get("node_id", ""),
+            node_id=msg.get("sender_id") or p.get("node_id", ""),
             role=p.get("role", "account"),
             network_id=p.get("network_id", ""),
             latest_index=int(p.get("latest_index", 0)),
             address=remote_addr,
             last_seen_ms=int(time.time() * 1000),
+            identity_fingerprint=self._extract_identity_fingerprint(msg),
         )
         self.peer_manager.add_peer(info)
         self.logger.info("welcome_recv", extra={"extra": {"from": remote_addr, "role": info.role}})
@@ -196,7 +221,7 @@ class Router:
     async def _h_ping(self, msg: Dict[str, Any], remote_addr: str, writer: Any):
         # reply PONG on the same connection
         payload = {"ts": msg["payload"].get("ts")}
-        data = encode_message(network=msg.get("network", "account"), msg_type="PONG", payload=payload, protocol_version=self.cfg.protocol_version)
+        data = self._encode_outbound_message(network=msg.get("network", "account"), msg_type="PONG", payload=payload)
         await self.transport.send_via_context(writer, data)
         self.logger.info("ping_recv", extra={"extra": {"from": remote_addr}})
 
@@ -221,6 +246,100 @@ class Router:
             return False
         if "msg_id" not in msg or "timestamp" not in msg or "type" not in msg:
             return False
+        if not self._validate_identity(msg):
+            return False
+        return True
+
+    def _encode_outbound_message(self, *, network: str, msg_type: str, payload: Dict[str, Any]) -> bytes:
+        msg_id = uuid.uuid4().hex
+        timestamp_ms = int(time.time() * 1000)
+        sender_id = self.node_id
+        auth = self._build_auth_fields(
+            msg_type=msg_type,
+            network=network,
+            payload=payload,
+            msg_id=msg_id,
+            timestamp_ms=timestamp_ms,
+            sender_id=sender_id,
+        )
+        return encode_message(
+            network=network,
+            msg_type=msg_type,
+            payload=payload,
+            protocol_version=self.cfg.protocol_version,
+            msg_id=msg_id,
+            timestamp_ms=timestamp_ms,
+            sender_id=sender_id,
+            auth=auth,
+        )
+
+    def _build_auth_fields(
+        self,
+        *,
+        msg_type: str,
+        network: str,
+        payload: Dict[str, Any],
+        msg_id: str,
+        timestamp_ms: int,
+        sender_id: str,
+    ) -> Dict[str, Any] | None:
+        if msg_type not in self._signed_message_types:
+            return None
+        if not self._identity_private_key_pem or not self._identity_public_key_pem:
+            return None
+        to_sign = {
+            "version": self.cfg.protocol_version,
+            "network": network,
+            "type": msg_type,
+            "msg_id": msg_id,
+            "timestamp": timestamp_ms,
+            "sender_id": sender_id,
+            "payload": payload,
+        }
+        signature_hex = sign_envelope(to_sign, self._identity_private_key_pem)
+        return {
+            "algorithm": SUPPORTED_ALGORITHM,
+            "public_key": self._identity_public_key_pem,
+            "signature": signature_hex,
+        }
+
+    def _extract_identity_fingerprint(self, msg: Dict[str, Any]) -> str | None:
+        auth = msg.get("auth")
+        if not isinstance(auth, dict):
+            return None
+        pub = auth.get("public_key")
+        if not isinstance(pub, str) or not pub:
+            return None
+        return fingerprint_public_key(pub)
+
+    def _validate_identity(self, msg: Dict[str, Any]) -> bool:
+        msg_type = str(msg.get("type", ""))
+        if msg_type not in self._signed_message_types:
+            return True
+
+        sender_id = str(msg.get("sender_id", ""))
+        auth = msg.get("auth")
+        if not sender_id or not isinstance(auth, dict):
+            self.logger.info("drop_missing_identity_fields", extra={"extra": {"type": msg_type}})
+            return not self._enforce_identity
+
+        algorithm = auth.get("algorithm")
+        pub = auth.get("public_key")
+        sig = auth.get("signature")
+        if algorithm != SUPPORTED_ALGORITHM or not isinstance(pub, str) or not isinstance(sig, str):
+            self.logger.info("drop_invalid_identity_metadata", extra={"extra": {"type": msg_type}})
+            return not self._enforce_identity
+
+        if not verify_envelope_signature(msg, signature_hex=sig, public_key_pem=pub):
+            self.logger.info("drop_invalid_identity_signature", extra={"extra": {"type": msg_type, "sender_id": sender_id}})
+            return not self._enforce_identity
+
+        if msg_type in {"HELLO", "WELCOME"}:
+            payload_node_id = str((msg.get("payload") or {}).get("node_id", ""))
+            if payload_node_id and payload_node_id != sender_id:
+                self.logger.info("drop_identity_payload_mismatch", extra={"extra": {"type": msg_type, "sender_id": sender_id}})
+                return not self._enforce_identity
+
         return True
 
     def _is_replay_or_duplicate(self, msg: Dict[str, Any]) -> bool:

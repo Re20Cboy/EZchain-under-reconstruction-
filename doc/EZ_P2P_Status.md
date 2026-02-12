@@ -87,7 +87,8 @@ modules/ez_p2p/
 - 已接入 `TXPool`，但尚未接入 `Blockchain`、`VPB` 适配器。
 - 未实现 `BLOCK_BROADCAST`、`VW_TRANSFER`、`MTPROOF_REQ/RESP`、`CHAIN_STATE_REQ/RESP`、`PEX` 等业务消息与流程。
 - 无去重、限流、健康重连等稳健性策略（文档已有规划）。
-- 节点身份与签名校验未实现，仅 demo 级别。
+- 已支持消息信封身份字段（`sender_id/public_key/signature`）与签名验真；
+  可通过配置 `enforce_identity_verification=true` 强制校验（握手与关键交易消息）。
 
 ## 下一步计划（按优先级）
 1) 区块广播路径（M3）

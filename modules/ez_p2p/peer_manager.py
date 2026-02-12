@@ -10,6 +10,7 @@ class PeerInfo:
     latest_index: int
     address: str  # host:port
     last_seen_ms: int = 0
+    identity_fingerprint: Optional[str] = None
 
 
 class PeerManager:
