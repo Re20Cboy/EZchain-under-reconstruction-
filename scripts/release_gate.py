@@ -17,6 +17,7 @@ def run(cmd: list[str], cwd: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain release gate")
     parser.add_argument("--skip-slow", action="store_true")
+    parser.add_argument("--with-stability", action="store_true")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -43,6 +44,24 @@ def main() -> int:
             cwd=root,
         )
         run([sys.executable, "scripts/security_gate.py"], cwd=root)
+        if args.with_stability:
+            run(
+                [
+                    sys.executable,
+                    "scripts/stability_gate.py",
+                    "--cycles",
+                    "30",
+                    "--interval",
+                    "1",
+                    "--restart-every",
+                    "10",
+                    "--max-failures",
+                    "0",
+                    "--max-failure-rate",
+                    "0.0",
+                ],
+                cwd=root,
+            )
     except RuntimeError as exc:
         print(f"[release-gate] FAILED: {exc}")
         return 1

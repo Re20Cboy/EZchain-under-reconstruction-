@@ -3,7 +3,7 @@
 ## Required checks
 1. `python scripts/release_gate.py --skip-slow`
 2. `python scripts/security_gate.py`
-3. `python scripts/stability_smoke.py --cycles 30 --interval 1`
+3. `python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0`
 4. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
 
 ## Functional acceptance

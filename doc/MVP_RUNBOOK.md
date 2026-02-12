@@ -12,6 +12,7 @@ This runbook covers EZchain MVP operations on the hosted public testnet topology
    - `python scripts/ops_backup.py --config ezchain.yaml --out-dir backups --label pre-rc`
 3. Run release gate:
    - `python scripts/release_gate.py --skip-slow`
+   - `python scripts/release_gate.py --skip-slow --with-stability`
 4. Verify security gate:
    - `python scripts/security_gate.py`
 
