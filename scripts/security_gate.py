@@ -7,6 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from EZ_App.config import load_config
 
 
@@ -44,7 +49,7 @@ def main() -> int:
     parser.add_argument("--skip-tests", action="store_true")
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parent.parent
+    root = ROOT
     cfg = load_config(root / args.config)
 
     failures: list[str] = []
