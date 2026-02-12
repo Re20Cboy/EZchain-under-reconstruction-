@@ -30,11 +30,14 @@ def main() -> int:
 
     pyinstaller = shutil.which("pyinstaller")
     if pyinstaller:
+        add_data_sep = ";" if args.target == "windows" else ":"
         cmd = [
             pyinstaller,
             "--name",
             "ezchain-cli",
             "--onefile",
+            "--add-data",
+            f"configs{add_data_sep}configs",
             "ezchain_cli.py",
         ]
         if args.target == "windows":
@@ -52,6 +55,8 @@ def main() -> int:
         ]
         for rel in files:
             shutil.copy2(root / rel, fallback / rel)
+        shutil.copytree(root / "configs", fallback / "configs", dirs_exist_ok=True)
+        shutil.copy2(root / "scripts" / "profile_config.py", fallback / "profile_config.py")
         shutil.copytree(root / "EZ_App", fallback / "EZ_App", dirs_exist_ok=True)
         print("[package] pyinstaller not found, generated python-runner package")
 

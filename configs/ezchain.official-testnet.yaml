@@ -1,0 +1,21 @@
+meta:
+  config_version: 1
+
+network:
+  name: "testnet"
+  bootstrap_nodes: ["bootstrap.ezchain.test:19500"]
+  consensus_nodes: 3
+  account_nodes: 1
+  start_port: 19500
+
+app:
+  data_dir: ".ezchain"
+  log_dir: ".ezchain/logs"
+  api_host: "127.0.0.1"
+  api_port: 8787
+  api_token_file: ".ezchain/api.token"
+
+security:
+  max_payload_bytes: 65536
+  max_tx_amount: 100000000
+  nonce_ttl_seconds: 600

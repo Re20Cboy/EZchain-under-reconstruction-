@@ -4,7 +4,12 @@ from pathlib import Path
 
 from EZ_App.cli import main
 from EZ_App.config import load_config
-from EZ_App.profiles import apply_network_profile, list_profiles
+from EZ_App.profiles import (
+    apply_network_profile,
+    get_profile_template_path,
+    list_profiles,
+    write_profile_template,
+)
 
 
 def test_list_profiles_contains_expected():
@@ -51,3 +56,35 @@ def test_cli_network_profile_flow(capsys):
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["bootstrap_nodes"] == ["bootstrap.ezchain.test:19500"]
+
+
+def test_profile_templates_exist():
+    local_template = get_profile_template_path("local-dev")
+    official_template = get_profile_template_path("official-testnet")
+    assert local_template.name == "ezchain.local-dev.yaml"
+    assert official_template.name == "ezchain.official-testnet.yaml"
+    assert local_template.exists()
+    assert official_template.exists()
+
+
+def test_write_profile_template_generates_official_config():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "official.yaml"
+        write_profile_template(cfg_path, "official-testnet")
+
+        loaded = load_config(cfg_path)
+        assert loaded.network.name == "testnet"
+        assert loaded.network.consensus_nodes == 3
+        assert loaded.network.bootstrap_nodes == ["bootstrap.ezchain.test:19500"]
+
+
+def test_write_profile_template_refuses_overwrite_without_force():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        cfg_path.write_text("network:\n  name: keep-me\n", encoding="utf-8")
+
+        try:
+            write_profile_template(cfg_path, "local-dev")
+            assert False, "expected FileExistsError"
+        except FileExistsError:
+            pass

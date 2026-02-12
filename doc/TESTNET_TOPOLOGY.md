@@ -5,6 +5,8 @@
 - `bootstrap_nodes: 1`
 - fixed network profile for beta users
 
+Canonical profile file: `configs/ezchain.official-testnet.yaml`
+
 ## Config template (`ezchain.yaml`)
 
 ```yaml
@@ -37,3 +39,5 @@ security:
 - Use CLI profile switch:
   - `python ezchain_cli.py network set-profile --name local-dev`
   - `python ezchain_cli.py network set-profile --name official-testnet`
+- Or generate a fresh config directly from template:
+  - `python scripts/profile_config.py --profile official-testnet --out ezchain.yaml`

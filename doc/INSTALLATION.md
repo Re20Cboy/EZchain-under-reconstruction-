@@ -50,6 +50,16 @@ python ezchain_cli.py network set-profile --name official-testnet
 python ezchain_cli.py network info
 ```
 
+Profile templates are versioned under `configs/`:
+- `configs/ezchain.local-dev.yaml`
+- `configs/ezchain.official-testnet.yaml`
+
+Generate a fresh config from template on a clean machine:
+
+```bash
+python scripts/profile_config.py --profile official-testnet --out ezchain.yaml
+```
+
 ## 6. Backup and Restore
 Backup current config and local state:
 
