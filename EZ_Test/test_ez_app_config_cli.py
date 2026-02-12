@@ -1,9 +1,8 @@
-import json
 import tempfile
 from pathlib import Path
 
 from EZ_App.cli import main
-from EZ_App.config import load_config
+from EZ_App.config import load_api_token, load_config
 
 
 def test_load_config_yaml_subset():
@@ -23,11 +22,13 @@ def test_cli_wallet_create_show():
         cfg_path = Path(td) / "ezchain.yaml"
         data_dir = Path(td) / ".ezcli"
         log_dir = data_dir / "logs"
+        token_file = data_dir / "api.token"
         cfg_path.write_text(
             (
                 "network:\n  name: testnet\napp:\n"
                 f"  data_dir: {data_dir}\n"
                 f"  log_dir: {log_dir}\n"
+                f"  api_token_file: {token_file}\n"
                 "  api_port: 8787\n"
             ),
             encoding="utf-8",
@@ -37,3 +38,7 @@ def test_cli_wallet_create_show():
         assert code == 0
         code = main(["--config", str(cfg_path), "wallet", "show"])
         assert code == 0
+
+        cfg = load_config(cfg_path)
+        token = load_api_token(cfg)
+        assert len(token) > 10

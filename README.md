@@ -68,6 +68,9 @@ Quick start:
 
 ```bash
 python ezchain_cli.py wallet create --password your_password --name default
+python ezchain_cli.py tx faucet --amount 1000 --password your_password
+python ezchain_cli.py wallet balance --password your_password
+python ezchain_cli.py tx send --recipient 0xabc123 --amount 100 --password your_password
 python ezchain_cli.py wallet show
 python ezchain_cli.py node start --consensus 1 --accounts 1 --start-port 19500
 python ezchain_cli.py network info
@@ -77,6 +80,21 @@ Start local API server:
 
 ```bash
 python ezchain_cli.py serve
+```
+
+Show local API token:
+
+```bash
+python ezchain_cli.py auth show-token
+```
+
+Use this token in API calls via header `X-EZ-Token`.
+For balance endpoint, also pass wallet password in header `X-EZ-Password`.
+
+Open simple local panel:
+
+```bash
+open http://127.0.0.1:8787/ui
 ```
 
 Default config file: `ezchain.yaml`

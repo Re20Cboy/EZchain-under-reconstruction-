@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
@@ -19,6 +20,7 @@ DEFAULT_CONFIG = {
         "log_dir": ".ezchain/logs",
         "api_host": "127.0.0.1",
         "api_port": 8787,
+        "api_token_file": ".ezchain/api.token",
     },
 }
 
@@ -38,6 +40,7 @@ class AppConfig:
     log_dir: str = ".ezchain/logs"
     api_host: str = "127.0.0.1"
     api_port: int = 8787
+    api_token_file: str = ".ezchain/api.token"
 
 
 @dataclass
@@ -47,13 +50,6 @@ class EZAppConfig:
 
 
 def _parse_min_yaml(text: str) -> Dict[str, Any]:
-    """Parse a tiny YAML subset used by ezchain.yaml.
-
-    Supports only:
-    - root keys: "section:"
-    - 2-space indented key/value pairs under a section
-    - primitive scalar values and JSON-style arrays
-    """
     result: Dict[str, Any] = {}
     current_section: str | None = None
 
@@ -104,5 +100,20 @@ def load_config(path: str | Path = "ezchain.yaml") -> EZAppConfig:
 
 
 def ensure_directories(cfg: EZAppConfig) -> None:
-    Path(cfg.app.data_dir).mkdir(parents=True, exist_ok=True)
-    Path(cfg.app.log_dir).mkdir(parents=True, exist_ok=True)
+    data_dir = Path(cfg.app.data_dir)
+    log_dir = Path(cfg.app.log_dir)
+    token_file = Path(cfg.app.api_token_file)
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+
+    if not token_file.exists():
+        token_file.write_text(secrets.token_urlsafe(24), encoding="utf-8")
+
+
+def load_api_token(cfg: EZAppConfig) -> str:
+    token_file = Path(cfg.app.api_token_file)
+    if not token_file.exists():
+        ensure_directories(cfg)
+    return token_file.read_text(encoding="utf-8").strip()

@@ -4,8 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-from EZ_App.config import ensure_directories, load_config
+from EZ_App.config import ensure_directories, load_api_token, load_config
 from EZ_App.node_manager import NodeManager
+from EZ_App.runtime import TxEngine
 from EZ_App.service import LocalService
 from EZ_App.wallet_store import WalletStore
 
@@ -15,7 +16,8 @@ def _build_runtime(config_path: str):
     ensure_directories(cfg)
     wallet_store = WalletStore(cfg.app.data_dir)
     node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
-    return cfg, wallet_store, node_manager
+    tx_engine = TxEngine(cfg.app.data_dir)
+    return cfg, wallet_store, node_manager, tx_engine
 
 
 def main(argv=None) -> int:
@@ -36,14 +38,20 @@ def main(argv=None) -> int:
     w_import.add_argument("--password", required=True)
     w_import.add_argument("--mnemonic", required=True)
 
-    w_show = wallet_sub.add_parser("show")
+    wallet_sub.add_parser("show")
+    w_balance = wallet_sub.add_parser("balance")
+    w_balance.add_argument("--password", required=True)
 
     tx = sub.add_parser("tx")
     tx_sub = tx.add_subparsers(dest="tx_cmd", required=True)
     tx_send = tx_sub.add_parser("send")
-    tx_send.add_argument("--sender", required=True)
     tx_send.add_argument("--recipient", required=True)
     tx_send.add_argument("--amount", type=int, required=True)
+    tx_send.add_argument("--password", required=True)
+
+    tx_faucet = tx_sub.add_parser("faucet")
+    tx_faucet.add_argument("--amount", type=int, required=True)
+    tx_faucet.add_argument("--password", required=True)
 
     node = sub.add_parser("node")
     node_sub = node.add_subparsers(dest="node_cmd", required=True)
@@ -58,10 +66,14 @@ def main(argv=None) -> int:
     network_sub = network.add_subparsers(dest="network_cmd", required=True)
     network_sub.add_parser("info")
 
-    serve = sub.add_parser("serve")
+    auth = sub.add_parser("auth")
+    auth_sub = auth.add_subparsers(dest="auth_cmd", required=True)
+    auth_sub.add_parser("show-token")
+
+    sub.add_parser("serve")
 
     args = parser.parse_args(argv)
-    cfg, wallet_store, node_manager = _build_runtime(args.config)
+    cfg, wallet_store, node_manager, tx_engine = _build_runtime(args.config)
 
     if args.cmd == "wallet":
         if args.wallet_cmd == "create":
@@ -76,17 +88,35 @@ def main(argv=None) -> int:
             summary = wallet_store.summary()
             print(json.dumps(summary.__dict__, indent=2))
             return 0
+        if args.wallet_cmd == "balance":
+            data = tx_engine.balance(wallet_store, password=args.password)
+            print(json.dumps(data, indent=2))
+            return 0
 
-    if args.cmd == "tx" and args.tx_cmd == "send":
-        item = {
-            "sender": args.sender,
-            "recipient": args.recipient,
-            "amount": args.amount,
-            "status": "submitted",
-        }
-        wallet_store.append_history(item)
-        print(json.dumps(item, indent=2))
-        return 0
+    if args.cmd == "tx":
+        if args.tx_cmd == "faucet":
+            data = tx_engine.faucet(wallet_store, password=args.password, amount=args.amount)
+            print(json.dumps(data, indent=2))
+            return 0
+        if args.tx_cmd == "send":
+            result = tx_engine.send(
+                wallet_store=wallet_store,
+                password=args.password,
+                recipient=args.recipient,
+                amount=args.amount,
+            )
+            sender = wallet_store.summary().address
+            item = {
+                "tx_id": result.tx_hash,
+                "submit_hash": result.submit_hash,
+                "sender": sender,
+                "recipient": result.recipient,
+                "amount": result.amount,
+                "status": result.status,
+            }
+            wallet_store.append_history(item)
+            print(json.dumps(item, indent=2))
+            return 0
 
     if args.cmd == "node":
         if args.node_cmd == "start":
@@ -103,12 +133,18 @@ def main(argv=None) -> int:
         print(json.dumps({"network": cfg.network.name, "bootstrap_nodes": cfg.network.bootstrap_nodes}, indent=2))
         return 0
 
+    if args.cmd == "auth" and args.auth_cmd == "show-token":
+        print(load_api_token(cfg))
+        return 0
+
     if args.cmd == "serve":
         LocalService(
             host=cfg.app.api_host,
             port=cfg.app.api_port,
             wallet_store=wallet_store,
             node_manager=node_manager,
+            tx_engine=tx_engine,
+            api_token=load_api_token(cfg),
         ).run()
         return 0
 
