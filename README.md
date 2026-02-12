@@ -77,6 +77,7 @@ python ezchain_cli.py network info
 python ezchain_cli.py network check
 python ezchain_cli.py network list-profiles
 python ezchain_cli.py network set-profile --name official-testnet
+python ezchain_cli.py config migrate
 ```
 
 Start local API server:

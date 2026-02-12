@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 from typing import Dict
 
-from EZ_App.config import EZAppConfig, load_config
+from EZ_App.config import CONFIG_SCHEMA_VERSION, EZAppConfig, load_config
 
 
 NETWORK_PROFILES: Dict[str, Dict[str, object]] = {
@@ -27,28 +26,28 @@ NETWORK_PROFILES: Dict[str, Dict[str, object]] = {
 
 
 def _to_yaml(cfg: EZAppConfig) -> str:
-    network = asdict(cfg.network)
-    app = asdict(cfg.app)
-    security = asdict(cfg.security)
     lines = [
+        "meta:",
+        f"  config_version: {int(getattr(cfg, 'config_version', CONFIG_SCHEMA_VERSION))}",
+        "",
         "network:",
-        f'  name: "{network["name"]}"',
-        f'  bootstrap_nodes: {json.dumps(network["bootstrap_nodes"])}',
-        f'  consensus_nodes: {network["consensus_nodes"]}',
-        f'  account_nodes: {network["account_nodes"]}',
-        f'  start_port: {network["start_port"]}',
+        f'  name: "{cfg.network.name}"',
+        f"  bootstrap_nodes: {json.dumps(cfg.network.bootstrap_nodes)}",
+        f"  consensus_nodes: {int(cfg.network.consensus_nodes)}",
+        f"  account_nodes: {int(cfg.network.account_nodes)}",
+        f"  start_port: {int(cfg.network.start_port)}",
         "",
         "app:",
-        f'  data_dir: "{app["data_dir"]}"',
-        f'  log_dir: "{app["log_dir"]}"',
-        f'  api_host: "{app["api_host"]}"',
-        f'  api_port: {app["api_port"]}',
-        f'  api_token_file: "{app["api_token_file"]}"',
+        f'  data_dir: "{cfg.app.data_dir}"',
+        f'  log_dir: "{cfg.app.log_dir}"',
+        f'  api_host: "{cfg.app.api_host}"',
+        f"  api_port: {int(cfg.app.api_port)}",
+        f'  api_token_file: "{cfg.app.api_token_file}"',
         "",
         "security:",
-        f'  max_payload_bytes: {security["max_payload_bytes"]}',
-        f'  max_tx_amount: {security["max_tx_amount"]}',
-        f'  nonce_ttl_seconds: {security["nonce_ttl_seconds"]}',
+        f"  max_payload_bytes: {int(cfg.security.max_payload_bytes)}",
+        f"  max_tx_amount: {int(cfg.security.max_tx_amount)}",
+        f"  nonce_ttl_seconds: {int(cfg.security.nonce_ttl_seconds)}",
     ]
     return "\n".join(lines) + "\n"
 

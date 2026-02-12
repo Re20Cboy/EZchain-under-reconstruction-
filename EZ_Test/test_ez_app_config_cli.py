@@ -2,7 +2,7 @@ import tempfile
 from pathlib import Path
 
 from EZ_App.cli import main
-from EZ_App.config import load_api_token, load_config
+from EZ_App.config import CONFIG_SCHEMA_VERSION, load_api_token, load_config
 
 
 def test_load_config_yaml_subset():
@@ -47,3 +47,29 @@ def test_cli_wallet_create_show():
         cfg = load_config(cfg_path)
         token = load_api_token(cfg)
         assert len(token) > 10
+
+
+def test_cli_config_migrate_legacy_file():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                "  name: testnet\n"
+                "app:\n"
+                "  data_dir: .ezchain\n"
+            ),
+            encoding="utf-8",
+        )
+
+        code = main(["--config", str(cfg_path), "config", "migrate"])
+        assert code == 0
+
+        migrated = cfg_path.read_text(encoding="utf-8")
+        assert "meta:" in migrated
+        assert f"config_version: {CONFIG_SCHEMA_VERSION}" in migrated
+        assert "security:" in migrated
+        assert "api_token_file:" in migrated
+
+        backups = list(Path(td).glob("ezchain.yaml.bak.*"))
+        assert len(backups) == 1

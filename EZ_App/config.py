@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 import secrets
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
+CONFIG_SCHEMA_VERSION = 1
+
 
 DEFAULT_CONFIG = {
+    "meta": {
+        "config_version": CONFIG_SCHEMA_VERSION,
+    },
     "network": {
         "name": "testnet",
         "bootstrap_nodes": ["127.0.0.1:19500"],
@@ -50,6 +56,7 @@ class AppConfig:
 
 @dataclass
 class EZAppConfig:
+    config_version: int = CONFIG_SCHEMA_VERSION
     network: NetworkConfig = field(default_factory=NetworkConfig)
     app: AppConfig = field(default_factory=AppConfig)
     security: "SecurityConfig" = field(default_factory=lambda: SecurityConfig())
@@ -102,15 +109,79 @@ def load_config(path: str | Path = "ezchain.yaml") -> EZAppConfig:
         data = _parse_min_yaml(text)
 
     merged = json.loads(json.dumps(DEFAULT_CONFIG))
-    for section in ("network", "app", "security"):
+    for section in ("meta", "network", "app", "security"):
         if section in data and isinstance(data[section], dict):
             merged[section].update(data[section])
 
     return EZAppConfig(
+        config_version=int(merged["meta"].get("config_version", CONFIG_SCHEMA_VERSION)),
         network=NetworkConfig(**merged["network"]),
         app=AppConfig(**merged["app"]),
         security=SecurityConfig(**merged["security"]),
     )
+
+
+def _to_yaml(cfg: EZAppConfig) -> str:
+    lines = [
+        "meta:",
+        f"  config_version: {int(cfg.config_version)}",
+        "",
+        "network:",
+        f'  name: "{cfg.network.name}"',
+        f"  bootstrap_nodes: {json.dumps(cfg.network.bootstrap_nodes)}",
+        f"  consensus_nodes: {int(cfg.network.consensus_nodes)}",
+        f"  account_nodes: {int(cfg.network.account_nodes)}",
+        f"  start_port: {int(cfg.network.start_port)}",
+        "",
+        "app:",
+        f'  data_dir: "{cfg.app.data_dir}"',
+        f'  log_dir: "{cfg.app.log_dir}"',
+        f'  api_host: "{cfg.app.api_host}"',
+        f"  api_port: {int(cfg.app.api_port)}",
+        f'  api_token_file: "{cfg.app.api_token_file}"',
+        "",
+        "security:",
+        f"  max_payload_bytes: {int(cfg.security.max_payload_bytes)}",
+        f"  max_tx_amount: {int(cfg.security.max_tx_amount)}",
+        f"  nonce_ttl_seconds: {int(cfg.security.nonce_ttl_seconds)}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def migrate_config_file(path: str | Path = "ezchain.yaml") -> Dict[str, Any]:
+    config_path = Path(path)
+    if not config_path.exists():
+        return {"status": "missing", "path": str(config_path)}
+
+    text = config_path.read_text(encoding="utf-8")
+    try:
+        raw_data = json.loads(text)
+    except json.JSONDecodeError:
+        raw_data = _parse_min_yaml(text)
+
+    original_version = 0
+    if isinstance(raw_data, dict):
+        meta = raw_data.get("meta", {})
+        if isinstance(meta, dict):
+            try:
+                original_version = int(meta.get("config_version", 0))
+            except Exception:
+                original_version = 0
+
+    migrated_cfg = load_config(config_path)
+    migrated_cfg.config_version = CONFIG_SCHEMA_VERSION
+
+    backup_path = config_path.with_suffix(config_path.suffix + f".bak.{int(time.time())}")
+    backup_path.write_text(text, encoding="utf-8")
+    config_path.write_text(_to_yaml(migrated_cfg), encoding="utf-8")
+
+    return {
+        "status": "migrated",
+        "path": str(config_path),
+        "from_version": original_version,
+        "to_version": CONFIG_SCHEMA_VERSION,
+        "backup_path": str(backup_path),
+    }
 
 
 def ensure_directories(cfg: EZAppConfig) -> None:

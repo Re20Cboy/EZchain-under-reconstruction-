@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from EZ_App.config import ensure_directories, load_api_token, load_config
+from EZ_App.config import ensure_directories, load_api_token, load_config, migrate_config_file
 from EZ_App.node_manager import NodeManager
 from EZ_App.profiles import apply_network_profile, list_profiles
 from EZ_App.runtime import TxEngine
@@ -86,6 +86,10 @@ def main(argv=None) -> int:
     auth = sub.add_parser("auth")
     auth_sub = auth.add_subparsers(dest="auth_cmd", required=True)
     auth_sub.add_parser("show-token")
+
+    cfg_cmd = sub.add_parser("config")
+    cfg_sub = cfg_cmd.add_subparsers(dest="config_cmd", required=True)
+    cfg_sub.add_parser("migrate")
 
     sub.add_parser("serve")
 
@@ -220,6 +224,10 @@ def main(argv=None) -> int:
 
     if args.cmd == "auth" and args.auth_cmd == "show-token":
         print(load_api_token(cfg))
+        return 0
+
+    if args.cmd == "config" and args.config_cmd == "migrate":
+        print(json.dumps(migrate_config_file(args.config), indent=2))
         return 0
 
     if args.cmd == "serve":
