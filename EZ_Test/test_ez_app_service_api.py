@@ -141,7 +141,7 @@ def test_service_auth_and_tx_flow():
             assert status == 400
             assert body["error"]["code"] == "invalid_client_tx_id"
 
-            send_headers = {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-1"}
+            send_headers = {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-0001"}
             status, body = _request(
                 port,
                 "POST",
@@ -158,7 +158,7 @@ def test_service_auth_and_tx_flow():
                 "POST",
                 "/tx/send",
                 {"password": "pw123", "recipient": "0xabc123", "amount": 50, "client_tx_id": "cid-1"},
-                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-2"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-0002"},
             )
             assert status == 409
             assert body["error"]["code"] == "duplicate_transaction"
@@ -168,7 +168,7 @@ def test_service_auth_and_tx_flow():
                 "POST",
                 "/tx/send",
                 {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "cid-2"},
-                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-2"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-0002"},
             )
             assert status == 409
             assert body["error"]["code"] == "replay_detected"
