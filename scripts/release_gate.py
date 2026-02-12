@@ -38,6 +38,7 @@ def main() -> int:
                 "EZ_Test/test_ez_app_network_connectivity.py",
                 "EZ_Test/test_ez_app_tx_engine.py",
                 "EZ_Test/test_ez_app_service_api.py",
+                "EZ_Test/test_ops_backup_restore.py",
             ],
             cwd=root,
         )

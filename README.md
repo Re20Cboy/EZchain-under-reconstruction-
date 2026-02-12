@@ -111,6 +111,10 @@ python scripts/security_gate.py
 python scripts/release_gate.py --skip-slow
 python scripts/stability_smoke.py --cycles 20 --interval 1
 python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics
+bash scripts/install_macos.sh
+# Windows: powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1
+python scripts/ops_backup.py --config ezchain.yaml --out-dir backups --label pre-upgrade
+python scripts/ops_restore.py --backup-dir backups/<snapshot-dir> --config ezchain.yaml --force
 bash scripts/build_macos.sh
 # Windows: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```

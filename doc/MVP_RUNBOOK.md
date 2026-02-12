@@ -8,9 +8,11 @@ This runbook covers EZchain MVP operations on the hosted public testnet topology
 
 ## 2. Preflight
 1. Check current release candidate and changelog.
-2. Run release gate:
+2. Snapshot runtime state before any upgrade:
+   - `python scripts/ops_backup.py --config ezchain.yaml --out-dir backups --label pre-rc`
+3. Run release gate:
    - `python scripts/release_gate.py --skip-slow`
-3. Verify security gate:
+4. Verify security gate:
    - `python scripts/security_gate.py`
 
 ## 3. Service Start
@@ -42,7 +44,8 @@ This runbook covers EZchain MVP operations on the hosted public testnet topology
 ## 5. Rollback
 1. Stop running node/service.
 2. Restore previous tagged release.
-3. Restore backup of `.ezchain/` data directory if needed.
+3. Restore backup snapshot:
+   - `python scripts/ops_restore.py --backup-dir backups/<snapshot-dir> --config ezchain.yaml --force`
 4. Re-run health checks and one send/receive smoke transaction.
 
 ## 6. Backup

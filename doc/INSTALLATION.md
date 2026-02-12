@@ -10,12 +10,14 @@ macOS:
 
 ```bash
 bash scripts/build_macos.sh
+bash scripts/install_macos.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1
 ```
 
 ## 3. Artifact output
@@ -46,4 +48,17 @@ Switch to hosted testnet profile:
 ```bash
 python ezchain_cli.py network set-profile --name official-testnet
 python ezchain_cli.py network info
+```
+
+## 6. Backup and Restore
+Backup current config and local state:
+
+```bash
+python scripts/ops_backup.py --config ezchain.yaml --out-dir backups --label pre-upgrade
+```
+
+Restore from a backup snapshot:
+
+```bash
+python scripts/ops_restore.py --backup-dir backups/snapshot-YYYYMMDDTHHMMSSZ-pre-upgrade --config ezchain.yaml --force
 ```
