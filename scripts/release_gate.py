@@ -34,6 +34,7 @@ def main() -> int:
                 "-q",
                 "EZ_Test/test_ez_app_crypto_wallet.py",
                 "EZ_Test/test_ez_app_config_cli.py",
+                "EZ_Test/test_ez_app_profiles.py",
                 "EZ_Test/test_ez_app_tx_engine.py",
                 "EZ_Test/test_ez_app_service_api.py",
             ],

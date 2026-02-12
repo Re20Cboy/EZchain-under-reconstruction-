@@ -5,6 +5,7 @@ __all__ = [
     "crypto",
     "wallet_store",
     "node_manager",
+    "profiles",
     "service",
     "cli",
 ]

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from EZ_App.config import ensure_directories, load_api_token, load_config
 from EZ_App.node_manager import NodeManager
+from EZ_App.profiles import apply_network_profile, list_profiles
 from EZ_App.runtime import TxEngine
 from EZ_App.service import LocalService
 from EZ_App.wallet_store import WalletStore
@@ -57,15 +58,18 @@ def main(argv=None) -> int:
     node = sub.add_parser("node")
     node_sub = node.add_subparsers(dest="node_cmd", required=True)
     n_start = node_sub.add_parser("start")
-    n_start.add_argument("--consensus", type=int, default=1)
-    n_start.add_argument("--accounts", type=int, default=1)
-    n_start.add_argument("--start-port", type=int, default=19500)
+    n_start.add_argument("--consensus", type=int, default=None)
+    n_start.add_argument("--accounts", type=int, default=None)
+    n_start.add_argument("--start-port", type=int, default=None)
     node_sub.add_parser("stop")
     node_sub.add_parser("status")
 
     network = sub.add_parser("network")
     network_sub = network.add_subparsers(dest="network_cmd", required=True)
     network_sub.add_parser("info")
+    network_sub.add_parser("list-profiles")
+    n_profile = network_sub.add_parser("set-profile")
+    n_profile.add_argument("--name", required=True, choices=list_profiles())
 
     auth = sub.add_parser("auth")
     auth_sub = auth.add_subparsers(dest="auth_cmd", required=True)
@@ -123,7 +127,10 @@ def main(argv=None) -> int:
 
     if args.cmd == "node":
         if args.node_cmd == "start":
-            print(json.dumps(node_manager.start(consensus=args.consensus, accounts=args.accounts, start_port=args.start_port), indent=2))
+            consensus = args.consensus if args.consensus is not None else cfg.network.consensus_nodes
+            accounts = args.accounts if args.accounts is not None else cfg.network.account_nodes
+            start_port = args.start_port if args.start_port is not None else cfg.network.start_port
+            print(json.dumps(node_manager.start(consensus=consensus, accounts=accounts, start_port=start_port), indent=2))
             return 0
         if args.node_cmd == "stop":
             print(json.dumps(node_manager.stop(), indent=2))
@@ -133,7 +140,41 @@ def main(argv=None) -> int:
             return 0
 
     if args.cmd == "network" and args.network_cmd == "info":
-        print(json.dumps({"network": cfg.network.name, "bootstrap_nodes": cfg.network.bootstrap_nodes}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "network": cfg.network.name,
+                    "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                    "consensus_nodes": cfg.network.consensus_nodes,
+                    "account_nodes": cfg.network.account_nodes,
+                    "start_port": cfg.network.start_port,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.cmd == "network" and args.network_cmd == "list-profiles":
+        print(json.dumps({"profiles": list_profiles()}, indent=2))
+        return 0
+
+    if args.cmd == "network" and args.network_cmd == "set-profile":
+        updated_cfg = apply_network_profile(config_path=args.config, profile_name=args.name)
+        ensure_directories(updated_cfg)
+        print(
+            json.dumps(
+                {
+                    "status": "updated",
+                    "profile": args.name,
+                    "network": updated_cfg.network.name,
+                    "bootstrap_nodes": updated_cfg.network.bootstrap_nodes,
+                    "consensus_nodes": updated_cfg.network.consensus_nodes,
+                    "account_nodes": updated_cfg.network.account_nodes,
+                    "start_port": updated_cfg.network.start_port,
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.cmd == "auth" and args.auth_cmd == "show-token":

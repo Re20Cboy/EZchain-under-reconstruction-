@@ -74,6 +74,8 @@ python ezchain_cli.py tx send --recipient 0xabc123 --amount 100 --password your_
 python ezchain_cli.py wallet show
 python ezchain_cli.py node start --consensus 1 --accounts 1 --start-port 19500
 python ezchain_cli.py network info
+python ezchain_cli.py network list-profiles
+python ezchain_cli.py network set-profile --name official-testnet
 ```
 
 Start local API server:
@@ -106,7 +108,15 @@ Security and release gates:
 python scripts/security_gate.py
 python scripts/release_gate.py --skip-slow
 python scripts/stability_smoke.py --cycles 20 --interval 1
+bash scripts/build_macos.sh
+# Windows: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
+
+Additional docs:
+- Installation: `doc/INSTALLATION.md`
+- API errors: `doc/API_ERROR_CODES.md`
+- Runbook: `doc/MVP_RUNBOOK.md`
+- Release checklist: `doc/RELEASE_CHECKLIST.md`
 
 
 ## 🤝 How to Support  

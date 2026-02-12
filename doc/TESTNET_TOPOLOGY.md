@@ -32,3 +32,6 @@ security:
 - `api_host` must stay loopback for MVP local-only API surface.
 - Wallet password must never be logged.
 - Client must send unique `X-EZ-Nonce` and `client_tx_id` for `/tx/send`.
+- Use CLI profile switch:
+  - `python ezchain_cli.py network set-profile --name local-dev`
+  - `python ezchain_cli.py network set-profile --name official-testnet`
