@@ -211,7 +211,7 @@ def test_service_auth_and_tx_flow():
                 headers={
                     "X-EZ-Token": token,
                     "Content-Type": "application/json",
-                    "Content-Length": "11",
+                    "Content-Length": "5",
                 },
                 raw_body='{"x":',
             )
