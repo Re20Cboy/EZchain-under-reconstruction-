@@ -127,6 +127,10 @@ bash scripts/build_macos.sh
 ```
 
 Additional docs:
+- Docs hub: `doc/README.md`
+- Project checkpoint: `doc/PROJECT_CHECKPOINT_2026-02-12.md`
+- User quickstart: `doc/USER_QUICKSTART.md`
+- Developer testing: `doc/DEV_TESTING.md`
 - Installation: `doc/INSTALLATION.md`
 - API errors: `doc/API_ERROR_CODES.md`
 - Threat model: `doc/SECURITY_THREAT_MODEL.md`
