@@ -28,6 +28,17 @@ def _request(port: int, method: str, path: str, payload=None, headers=None, raw_
     return resp.status, json.loads(data)
 
 
+def _start_server_or_skip(service: LocalService):
+    try:
+        server = service.build_server()
+    except PermissionError:
+        pytest.skip("socket bind not permitted in current environment")
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, port, thread
+
+
 def test_service_auth_and_tx_flow():
     with tempfile.TemporaryDirectory() as td:
         cfg_path = Path(td) / "ezchain.yaml"
@@ -60,13 +71,7 @@ def test_service_auth_and_tx_flow():
             api_token=token,
         )
 
-        try:
-            server = service.build_server()
-        except PermissionError:
-            pytest.skip("socket bind not permitted in current environment")
-        port = server.server_address[1]
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
+        server, port, thread = _start_server_or_skip(service)
 
         try:
             status, body = _request(port, "GET", "/health")
@@ -172,3 +177,83 @@ def test_service_auth_and_tx_flow():
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+
+def test_service_restart_recovers_history_and_nonce_state():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        auth_headers = {"X-EZ-Token": token}
+
+        service1 = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir),
+            api_token=token,
+        )
+        server1, port1, thread1 = _start_server_or_skip(service1)
+
+        try:
+            status, _ = _request(port1, "POST", "/wallet/create", {"name": "demo", "password": "pw123"}, auth_headers)
+            assert status == 200
+            status, _ = _request(port1, "POST", "/tx/faucet", {"password": "pw123", "amount": 300}, auth_headers)
+            assert status == 200
+            status, body = _request(
+                port1,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 50, "client_tx_id": "cid-restart-1"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-restart-1"},
+            )
+            assert status == 200
+            assert body["ok"] is True
+        finally:
+            server1.shutdown()
+            server1.server_close()
+            thread1.join(timeout=2)
+
+        service2 = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir),
+            api_token=token,
+        )
+        server2, port2, thread2 = _start_server_or_skip(service2)
+        try:
+            status, body = _request(port2, "GET", "/tx/history")
+            assert status == 200
+            ids = [item.get("client_tx_id") for item in body["data"]["items"]]
+            assert "cid-restart-1" in ids
+
+            status, body = _request(
+                port2,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "cid-restart-2"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-restart-1"},
+            )
+            assert status == 409
+            assert body["error"]["code"] == "replay_detected"
+        finally:
+            server2.shutdown()
+            server2.server_close()
+            thread2.join(timeout=2)

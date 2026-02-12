@@ -110,6 +110,7 @@ Security and release gates:
 python scripts/security_gate.py
 python scripts/release_gate.py --skip-slow
 python scripts/stability_smoke.py --cycles 20 --interval 1
+python scripts/stability_smoke.py --cycles 30 --interval 1 --restart-every 10
 python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics
 bash scripts/install_macos.sh
 # Windows: powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1

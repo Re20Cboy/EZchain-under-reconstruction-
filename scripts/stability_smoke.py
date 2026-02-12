@@ -22,11 +22,23 @@ def main() -> int:
     parser.add_argument("--cycles", type=int, default=20)
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--config", default="ezchain.yaml")
+    parser.add_argument("--restart-every", type=int, default=0, help="Restart service every N cycles; 0 disables restart")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
     serve_cmd = [sys.executable, "ezchain_cli.py", "--config", args.config, "serve"]
-    proc = subprocess.Popen(serve_cmd, cwd=str(root))
+
+    def start_proc() -> subprocess.Popen:
+        return subprocess.Popen(serve_cmd, cwd=str(root))
+
+    def stop_proc(p: subprocess.Popen) -> None:
+        p.terminate()
+        try:
+            p.wait(timeout=8)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+    proc = start_proc()
 
     failures = 0
     try:
@@ -39,13 +51,15 @@ def main() -> int:
             except (URLError, TimeoutError, json.JSONDecodeError):
                 failures += 1
             print(f"cycle={i + 1}/{args.cycles} failures={failures}")
+
+            if args.restart_every > 0 and (i + 1) % args.restart_every == 0 and (i + 1) < args.cycles:
+                stop_proc(proc)
+                proc = start_proc()
+                time.sleep(1.2)
+
             time.sleep(args.interval)
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=8)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        stop_proc(proc)
 
     if failures > 0:
         print(f"[stability-smoke] FAILED with {failures} failed checks")
