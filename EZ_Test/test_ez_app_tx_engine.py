@@ -48,3 +48,33 @@ def test_tx_engine_faucet_and_send():
             raise AssertionError("expected amount_exceeds_limit error")
         except ValueError as exc:
             assert str(exc) == "amount_exceeds_limit"
+
+
+def test_faucet_supports_exact_small_send_after_large_topup():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezchain"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\n"
+                f"app:\n  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+
+        store = WalletStore(cfg.app.data_dir)
+        store.create_wallet(password="pw123", name="demo")
+        engine = TxEngine(cfg.app.data_dir, max_tx_amount=1000)
+
+        faucet = engine.faucet(store, password="pw123", amount=300)
+        assert faucet["available_balance"] >= 300
+
+        result = engine.send(store, password="pw123", recipient="0xabc123", amount=50, client_tx_id="client-c")
+        assert result.status == "submitted"
+        assert result.amount == 50

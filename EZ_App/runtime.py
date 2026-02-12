@@ -49,17 +49,17 @@ class TxEngine:
             raise ValueError("amount_must_be_positive")
 
         account = self._build_account(wallet_store, password)
-        # Mint in denomination chunks so transaction creation can assemble exact amounts.
-        denominations = [100, 50, 20, 10, 5, 1]
+        # Build chunks that guarantee full subset coverage for [1..amount].
+        # If the current cover is [0..cover], adding chunk <= cover+1 extends it
+        # to [0..cover+chunk], which avoids "cannot compose exact amount" failures.
         remainder = amount
+        cover = 0
         minted_chunks = []
-        for d in denominations:
-            while remainder >= d:
-                minted_chunks.append(d)
-                remainder -= d
-
-        if remainder != 0:
-            raise RuntimeError("faucet_split_failed")
+        while remainder > 0:
+            chunk = min(cover + 1, remainder)
+            minted_chunks.append(int(chunk))
+            remainder -= int(chunk)
+            cover += int(chunk)
 
         for chunk in minted_chunks:
             begin = "0x" + secrets.token_hex(16)
@@ -121,7 +121,9 @@ class TxEngine:
             }
         ])
         if not multi_txn_result:
-            raise RuntimeError("create_batch_transactions_failed")
+            if account.get_available_balance() < amount:
+                raise ValueError("insufficient_balance")
+            raise ValueError("insufficient_spendable_values")
 
         confirmed = account.confirm_multi_transaction(multi_txn_result)
         if not confirmed:
