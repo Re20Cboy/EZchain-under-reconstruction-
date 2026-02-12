@@ -6,6 +6,8 @@
 3. `python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0`
 4. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
 5. `python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip --run-metrics`
+6. `python scripts/prepare_rc.py --version v0.1.0-rc1`
+7. `python scripts/rc_gate.py`
 
 ## Functional acceptance
 1. Wallet create/import/show/balance pass.
