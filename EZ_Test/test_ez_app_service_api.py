@@ -378,12 +378,15 @@ def test_service_concurrent_replay_and_duplicate_protection():
             assert len(duplicate_reject) == 5
 
             # Case B: same nonce but unique client_tx_id => only one nonce claim should pass.
+            status, _ = _request(port, "POST", "/tx/faucet", {"password": "pw123", "amount": 64}, auth_headers)
+            assert status == 200
+
             def send_replay(i: int):
                 return _request(
                     port,
                     "POST",
                     "/tx/send",
-                    {"password": "pw123", "recipient": "0xabc123", "amount": 5, "client_tx_id": f"cid-concurrent-replay-{i}"},
+                    {"password": "pw123", "recipient": "0xabc123", "amount": 1, "client_tx_id": f"cid-concurrent-replay-{i}"},
                     {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-replay-shared"},
                 )
 
