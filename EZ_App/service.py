@@ -92,7 +92,7 @@ class LocalService:
         api_token: str,
         max_payload_bytes: int = 65536,
         nonce_ttl_seconds: int = 600,
-        log_dir: str = ".ezchain/logs",
+        log_dir: str | None = None,
     ):
         self.host = host
         self.port = port
@@ -103,7 +103,8 @@ class LocalService:
         self.max_payload_bytes = max(1024, max_payload_bytes)
         nonce_file = Path(wallet_store.base_dir) / "used_nonces.json"
         self.nonce_guard = NonceGuard(nonce_file=nonce_file, ttl_seconds=nonce_ttl_seconds)
-        self.audit_logger = AuditLogger(Path(log_dir) / "service_audit.log")
+        effective_log_dir = Path(log_dir) if log_dir else (Path(wallet_store.base_dir) / "logs")
+        self.audit_logger = AuditLogger(effective_log_dir / "service_audit.log")
 
     def _ui_html(self) -> str:
         return """<!doctype html>
