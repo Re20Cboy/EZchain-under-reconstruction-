@@ -23,6 +23,10 @@ class P2PConfig:
     identity_public_key_pem: Optional[str] = None
     enforce_identity_verification: bool = False
     signed_message_types: List[str] = field(default_factory=list)
+    maintenance_interval_sec: float = 5.0
+    seed_retry_base_sec: float = 1.0
+    seed_retry_max_sec: float = 30.0
+    degraded_no_peer_sec: float = 20.0
     # libp2p specific
     libp2p_control_path: Optional[str] = None  # e.g., "/tmp/p2pd.sock" or ":/ip4/127.0.0.1/tcp/9999"
     libp2p_protocol: str = "/ez/1.0.0"

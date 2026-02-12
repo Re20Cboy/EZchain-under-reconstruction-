@@ -46,6 +46,13 @@ class Router:
         self._seen_msg_ids: Dict[str, int] = {}
         self._maintenance_task: Optional[asyncio.Task] = None
         self._clock_future_skew_ms = 30_000
+        self._seed_state: Dict[str, Dict[str, Any]] = {}
+        self._started_monotonic = time.monotonic()
+        self._last_peer_seen_monotonic = self._started_monotonic
+        self._maintenance_interval_sec = max(0.5, float(config.maintenance_interval_sec))
+        self._seed_retry_base_sec = max(0.1, float(config.seed_retry_base_sec))
+        self._seed_retry_max_sec = max(self._seed_retry_base_sec, float(config.seed_retry_max_sec))
+        self._degraded_no_peer_sec = max(1.0, float(config.degraded_no_peer_sec))
         self._enforce_identity = bool(config.enforce_identity_verification)
         signed_types = set(config.signed_message_types or [])
         self._signed_message_types: Set[str] = signed_types if signed_types else set(self.DEFAULT_SIGNED_TYPES)
@@ -78,15 +85,8 @@ class Router:
             self.logger.info("libp2p_ready", extra={"extra": {"control": self.cfg.libp2p_control_path, "protocol": self.cfg.libp2p_protocol}})
         # connect to seeds (tcp addr or libp2p multiaddr)
         for seed in self.cfg.peer_seeds:
-            try:
-                if self.cfg.transport == "libp2p":
-                    await self.transport.connect_seed(seed)
-                else:
-                    # no-op: for tcp seeds we dial on first send/hello
-                    pass
-                await self._send_hello(seed)
-            except Exception as e:
-                self.logger.warning("seed_connect_failed", extra={"extra": {"seed": seed, "err": str(e)}})
+            self._seed_state.setdefault(seed, self._new_seed_state())
+            await self._attempt_seed_hello(seed, force=True)
         if not self._maintenance_task:
             self._maintenance_task = asyncio.create_task(self._maintenance_loop())
 
@@ -187,6 +187,8 @@ class Router:
             identity_fingerprint=self._extract_identity_fingerprint(msg),
         )
         self.peer_manager.add_peer(info)
+        self._last_peer_seen_monotonic = time.monotonic()
+        self._seed_mark_success(remote_addr)
         # reply welcome
         # reply WELCOME on the same connection to avoid dialing ephemeral ports
         payload = {
@@ -216,6 +218,8 @@ class Router:
             identity_fingerprint=self._extract_identity_fingerprint(msg),
         )
         self.peer_manager.add_peer(info)
+        self._last_peer_seen_monotonic = time.monotonic()
+        self._seed_mark_success(remote_addr)
         self.logger.info("welcome_recv", extra={"extra": {"from": remote_addr, "role": info.role}})
 
     async def _h_ping(self, msg: Dict[str, Any], remote_addr: str, writer: Any):
@@ -372,10 +376,80 @@ class Router:
 
     async def _maintenance_loop(self):
         while True:
-            await asyncio.sleep(5.0)
-            self._evict_old_msg_ids()
-            # Keep trying to establish seed links so disconnected nodes can recover.
-            if not self.peer_manager.list_peers():
-                for seed in self.cfg.peer_seeds:
-                    with contextlib.suppress(Exception):
-                        await self._send_hello(seed)
+            await asyncio.sleep(self._maintenance_interval_sec)
+            await self._maintenance_once()
+
+    async def _maintenance_once(self):
+        self._evict_old_msg_ids()
+        for seed in self.cfg.peer_seeds:
+            await self._attempt_seed_hello(seed)
+
+    def _new_seed_state(self) -> Dict[str, Any]:
+        return {
+            "failures": 0,
+            "next_retry_monotonic": 0.0,
+            "last_attempt_monotonic": 0.0,
+            "last_success_monotonic": 0.0,
+            "last_error": "",
+        }
+
+    async def _attempt_seed_hello(self, seed: str, force: bool = False) -> None:
+        state = self._seed_state.setdefault(seed, self._new_seed_state())
+        now = time.monotonic()
+        if not force and now < float(state.get("next_retry_monotonic", 0.0)):
+            return
+
+        state["last_attempt_monotonic"] = now
+        try:
+            if self.cfg.transport == "libp2p":
+                await self.transport.connect_seed(seed)
+            await self._send_hello(seed)
+            state["failures"] = 0
+            state["next_retry_monotonic"] = now + self._seed_retry_base_sec
+            state["last_success_monotonic"] = now
+            state["last_error"] = ""
+        except Exception as e:
+            failures = int(state.get("failures", 0)) + 1
+            backoff = min(self._seed_retry_max_sec, self._seed_retry_base_sec * (2 ** min(failures - 1, 10)))
+            state["failures"] = failures
+            state["next_retry_monotonic"] = now + backoff
+            state["last_error"] = str(e)
+            self.logger.warning(
+                "seed_connect_failed",
+                extra={"extra": {"seed": seed, "failures": failures, "retry_in_sec": backoff, "err": str(e)}},
+            )
+
+    def _seed_mark_success(self, remote_addr: str) -> None:
+        state = self._seed_state.get(remote_addr)
+        if not state:
+            return
+        now = time.monotonic()
+        state["failures"] = 0
+        state["last_success_monotonic"] = now
+        state["next_retry_monotonic"] = now + self._seed_retry_base_sec
+        state["last_error"] = ""
+
+    def get_health_status(self) -> Dict[str, Any]:
+        now = time.monotonic()
+        peer_count = len(self.peer_manager.list_peers())
+        no_peer_for = max(0.0, now - self._last_peer_seen_monotonic)
+        degraded = peer_count == 0 and no_peer_for >= self._degraded_no_peer_sec
+        seed_state = {}
+        for seed, state in self._seed_state.items():
+            seed_state[seed] = {
+                "failures": int(state.get("failures", 0)),
+                "last_error": state.get("last_error", ""),
+                "last_success_age_sec": (
+                    round(now - float(state.get("last_success_monotonic", 0.0)), 3)
+                    if float(state.get("last_success_monotonic", 0.0)) > 0
+                    else None
+                ),
+                "next_retry_in_sec": max(0.0, round(float(state.get("next_retry_monotonic", 0.0)) - now, 3)),
+            }
+        return {
+            "node_id": self.node_id,
+            "peer_count": peer_count,
+            "degraded": degraded,
+            "no_peer_for_sec": round(no_peer_for, 3),
+            "seed_state": seed_state,
+        }

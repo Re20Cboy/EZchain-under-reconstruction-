@@ -24,6 +24,7 @@
   - `modules/ez_p2p/demo/account_node.py`（账户节点，发送 `HELLO`、`PING`、`ACCTXN_SUBMIT`）。
 - 适配器：新增 `txpool_adapter`，桥接 `EZ_Tx_Pool.TXPool.add_submit_tx_info(...)`。
 - 日志：结构化 JSON 输出；修复了握手时“拨回临时端口”的问题，现原路复用入站连接回复，避免 `dial_failed` 噪声。
+- 重连与退化：种子节点指数退避重连（base/max 可配），并提供 Router 健康快照 `get_health_status()`（含 `degraded`、seed 失败状态）。
 
 ## 目录结构（节选）
 ```
