@@ -66,3 +66,15 @@ Every 4 hours:
 3. Median confirmation delay
 4. Top 3 error codes
 5. Run `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
+
+## 8. Canary (Week 6 Release)
+1. Start canary sampling for release candidate:
+   - `python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 1800 --interval-sec 15 --out-json dist/canary_report.json`
+2. Gate release by canary thresholds:
+   - `python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency`
+3. If gate fails:
+   - Pause rollout.
+   - Review `error_code_totals` and audit logs.
+   - Rollback to previous snapshot with `ops_restore.py`.
+4. If gate passes:
+   - Proceed to broader beta rollout.

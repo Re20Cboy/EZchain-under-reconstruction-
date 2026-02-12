@@ -63,6 +63,12 @@ python scripts/stability_gate.py \
 python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip
 ```
 
+5. 第 6 周灰度观测（可选，发布周建议）：
+```bash
+python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 300 --interval-sec 10 --out-json dist/canary_report.json
+python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency
+```
+
 ## 4. 官方测试网 profile 校验
 ```bash
 python scripts/testnet_profile_gate.py --config ezchain.yaml

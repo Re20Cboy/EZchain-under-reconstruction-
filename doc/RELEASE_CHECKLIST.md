@@ -9,6 +9,8 @@
 6. `python scripts/prepare_rc.py --version v0.1.0-rc1`
 7. `python scripts/rc_gate.py`
 8. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allow-bind-restricted-skip --target none`
+9. `python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 1800 --interval-sec 15 --out-json dist/canary_report.json`
+10. `python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency`
 
 ## Functional acceptance
 1. Wallet create/import/show/balance pass.
@@ -17,6 +19,11 @@
 4. Duplicate `client_tx_id` blocked.
 5. Replay nonce blocked.
 6. `/metrics` exposes tx success rate and error-code distribution.
+7. Canary report includes:
+   - crash_rate
+   - transaction_success_rate_avg
+   - sync_latency_ms_p95
+   - node_online_rate_avg
 
 ## Security acceptance
 1. API is loopback-only (`127.0.0.1`/`localhost`).

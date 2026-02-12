@@ -22,6 +22,7 @@
 ## 发布与运维
 - 发布检查清单：`doc/RELEASE_CHECKLIST.md`
 - 运行手册（故障/回滚/备份）：`doc/MVP_RUNBOOK.md`
+- 灰度观测脚本（canary）：`scripts/canary_monitor.py` / `scripts/canary_gate.py`
 - 安全威胁模型（内部门禁）：`doc/SECURITY_THREAT_MODEL.md`
 - 发布记录：`doc/releases/`
 

@@ -43,6 +43,7 @@ def main() -> int:
                 "EZ_Test/test_ops_backup_restore.py",
                 "EZ_Test/test_profile_config_script.py",
                 "EZ_Test/test_stability_scripts.py",
+                "EZ_Test/test_canary_scripts.py",
             ],
             cwd=root,
         )

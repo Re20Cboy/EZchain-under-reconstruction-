@@ -39,6 +39,17 @@ def main() -> int:
     parser.add_argument("--run-metrics", action="store_true")
     parser.add_argument("--metrics-url", default="http://127.0.0.1:8787/metrics")
     parser.add_argument("--metrics-min-success-rate", type=float, default=0.0)
+    parser.add_argument("--run-canary", action="store_true")
+    parser.add_argument("--canary-url", default="http://127.0.0.1:8787/metrics")
+    parser.add_argument("--canary-duration-sec", type=int, default=300)
+    parser.add_argument("--canary-interval-sec", type=float, default=10.0)
+    parser.add_argument("--canary-timeout-sec", type=float, default=5.0)
+    parser.add_argument("--canary-out", default="dist/canary_report.json")
+    parser.add_argument("--canary-max-crash-rate", type=float, default=0.05)
+    parser.add_argument("--canary-min-tx-success-rate", type=float, default=0.95)
+    parser.add_argument("--canary-max-sync-latency-ms-p95", type=float, default=30000.0)
+    parser.add_argument("--canary-min-node-online-rate", type=float, default=0.95)
+    parser.add_argument("--canary-allow-missing-latency", action="store_true")
     parser.add_argument("--manifest-out", default="dist/release_candidate_manifest.json")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -61,6 +72,32 @@ def main() -> int:
         report_cmd.append("--allow-bind-restricted-skip")
     if args.run_metrics:
         report_cmd.extend(["--run-metrics", "--metrics-url", args.metrics_url, "--metrics-min-success-rate", str(args.metrics_min_success_rate)])
+    if args.run_canary:
+        report_cmd.extend(
+            [
+                "--run-canary",
+                "--canary-url",
+                args.canary_url,
+                "--canary-duration-sec",
+                str(args.canary_duration_sec),
+                "--canary-interval-sec",
+                str(args.canary_interval_sec),
+                "--canary-timeout-sec",
+                str(args.canary_timeout_sec),
+                "--canary-out",
+                args.canary_out,
+                "--canary-max-crash-rate",
+                str(args.canary_max_crash_rate),
+                "--canary-min-tx-success-rate",
+                str(args.canary_min_tx_success_rate),
+                "--canary-max-sync-latency-ms-p95",
+                str(args.canary_max_sync_latency_ms_p95),
+                "--canary-min-node-online-rate",
+                str(args.canary_min_node_online_rate),
+            ]
+        )
+        if args.canary_allow_missing_latency:
+            report_cmd.append("--canary-allow-missing-latency")
     if args.require_official_testnet:
         report_cmd.extend(["--require-official-testnet", "--official-config", args.official_config])
         if args.official_check_connectivity:

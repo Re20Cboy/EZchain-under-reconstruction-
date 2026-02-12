@@ -76,6 +76,17 @@ def main() -> int:
     parser.add_argument("--run-metrics", action="store_true")
     parser.add_argument("--metrics-url", default="http://127.0.0.1:8787/metrics")
     parser.add_argument("--metrics-min-success-rate", type=float, default=0.0)
+    parser.add_argument("--run-canary", action="store_true")
+    parser.add_argument("--canary-url", default="http://127.0.0.1:8787/metrics")
+    parser.add_argument("--canary-duration-sec", type=int, default=300)
+    parser.add_argument("--canary-interval-sec", type=float, default=10.0)
+    parser.add_argument("--canary-timeout-sec", type=float, default=5.0)
+    parser.add_argument("--canary-out", default="dist/canary_report.json")
+    parser.add_argument("--canary-max-crash-rate", type=float, default=0.05)
+    parser.add_argument("--canary-min-tx-success-rate", type=float, default=0.95)
+    parser.add_argument("--canary-max-sync-latency-ms-p95", type=float, default=30000.0)
+    parser.add_argument("--canary-min-node-online-rate", type=float, default=0.95)
+    parser.add_argument("--canary-allow-missing-latency", action="store_true")
     parser.add_argument("--require-official-testnet", action="store_true")
     parser.add_argument("--official-config", default="ezchain.yaml")
     parser.add_argument("--official-check-connectivity", action="store_true")
@@ -123,6 +134,41 @@ def main() -> int:
             str(args.metrics_min_success_rate),
         ]
         steps.append(run_step("metrics_probe", metrics_cmd, cwd=root))
+
+    if args.run_canary:
+        canary_monitor_cmd = [
+            sys.executable,
+            "scripts/canary_monitor.py",
+            "--url",
+            args.canary_url,
+            "--duration-sec",
+            str(args.canary_duration_sec),
+            "--interval-sec",
+            str(args.canary_interval_sec),
+            "--timeout-sec",
+            str(args.canary_timeout_sec),
+            "--out-json",
+            args.canary_out,
+        ]
+        steps.append(run_step("canary_monitor", canary_monitor_cmd, cwd=root))
+
+        canary_gate_cmd = [
+            sys.executable,
+            "scripts/canary_gate.py",
+            "--report",
+            args.canary_out,
+            "--max-crash-rate",
+            str(args.canary_max_crash_rate),
+            "--min-tx-success-rate",
+            str(args.canary_min_tx_success_rate),
+            "--max-sync-latency-ms-p95",
+            str(args.canary_max_sync_latency_ms_p95),
+            "--min-node-online-rate",
+            str(args.canary_min_node_online_rate),
+        ]
+        if args.canary_allow_missing_latency:
+            canary_gate_cmd.append("--allow-missing-latency")
+        steps.append(run_step("canary_gate", canary_gate_cmd, cwd=root))
 
     if args.require_official_testnet:
         testnet_cmd = [
