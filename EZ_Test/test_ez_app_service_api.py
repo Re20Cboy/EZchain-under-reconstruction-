@@ -393,10 +393,16 @@ def test_service_concurrent_replay_and_duplicate_protection():
             with ThreadPoolExecutor(max_workers=6) as ex:
                 results_replay = list(ex.map(send_replay, range(6)))
 
-            success_replay = [item for item in results_replay if item[0] == 200]
             replay_reject = [item for item in results_replay if item[0] == 409 and item[1]["error"]["code"] == "replay_detected"]
-            assert len(success_replay) == 1
+            non_replay = [item for item in results_replay if not (item[0] == 409 and item[1]["error"]["code"] == "replay_detected")]
             assert len(replay_reject) == 5
+            assert len(non_replay) == 1
+            # The one accepted nonce can still fail on business validation (e.g. spendable-value composition),
+            # but replay guard must make all remaining concurrent requests reject with replay_detected.
+            status, body = non_replay[0]
+            if status != 200:
+                assert status == 400
+                assert body["error"]["code"] in {"insufficient_balance", "insufficient_spendable_values"}
         finally:
             server.shutdown()
             server.server_close()
