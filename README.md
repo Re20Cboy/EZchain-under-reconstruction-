@@ -74,6 +74,7 @@ python ezchain_cli.py tx send --recipient 0xabc123 --amount 100 --password your_
 python ezchain_cli.py wallet show
 python ezchain_cli.py node start --consensus 1 --accounts 1 --start-port 19500
 python ezchain_cli.py network info
+python ezchain_cli.py network check
 python ezchain_cli.py network list-profiles
 python ezchain_cli.py network set-profile --name official-testnet
 ```

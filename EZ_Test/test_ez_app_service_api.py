@@ -148,6 +148,12 @@ def test_service_auth_and_tx_flow():
             assert metrics["transactions"]["send_success"] >= 1
             assert metrics["transactions"]["success_rate"] >= 0
 
+            status, body = _request(port, "GET", "/network/info")
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["network"] == "testnet"
+            assert "bootstrap_probe" in body["data"]
+
             status, body = _request(
                 port,
                 "POST",

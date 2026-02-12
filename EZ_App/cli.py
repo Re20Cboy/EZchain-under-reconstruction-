@@ -21,6 +21,17 @@ def _build_runtime(config_path: str):
     return cfg, wallet_store, node_manager, tx_engine
 
 
+def _network_mode(cfg) -> str:
+    nodes = cfg.network.bootstrap_nodes or []
+    if not nodes:
+        return "local"
+    for endpoint in nodes:
+        host = str(endpoint).split(":", 1)[0].strip().lower()
+        if host not in {"127.0.0.1", "localhost"}:
+            return "official-testnet"
+    return "local"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="EZchain CLI")
     parser.add_argument("--config", default="ezchain.yaml")
@@ -67,6 +78,7 @@ def main(argv=None) -> int:
     network = sub.add_parser("network")
     network_sub = network.add_subparsers(dest="network_cmd", required=True)
     network_sub.add_parser("info")
+    network_sub.add_parser("check")
     network_sub.add_parser("list-profiles")
     n_profile = network_sub.add_parser("set-profile")
     n_profile.add_argument("--name", required=True, choices=list_profiles())
@@ -130,28 +142,57 @@ def main(argv=None) -> int:
             consensus = args.consensus if args.consensus is not None else cfg.network.consensus_nodes
             accounts = args.accounts if args.accounts is not None else cfg.network.account_nodes
             start_port = args.start_port if args.start_port is not None else cfg.network.start_port
-            print(json.dumps(node_manager.start(consensus=consensus, accounts=accounts, start_port=start_port), indent=2))
+            mode = _network_mode(cfg)
+            print(
+                json.dumps(
+                    node_manager.start(
+                        consensus=consensus,
+                        accounts=accounts,
+                        start_port=start_port,
+                        mode=mode,
+                        bootstrap_nodes=cfg.network.bootstrap_nodes,
+                        network_name=cfg.network.name,
+                    ),
+                    indent=2,
+                )
+            )
             return 0
         if args.node_cmd == "stop":
             print(json.dumps(node_manager.stop(), indent=2))
             return 0
         if args.node_cmd == "status":
-            print(json.dumps(node_manager.status(), indent=2))
+            print(json.dumps(node_manager.status(bootstrap_nodes=cfg.network.bootstrap_nodes), indent=2))
             return 0
 
     if args.cmd == "network" and args.network_cmd == "info":
+        mode = _network_mode(cfg)
+        probe = node_manager.probe_bootstrap(cfg.network.bootstrap_nodes) if cfg.network.bootstrap_nodes else None
         print(
             json.dumps(
                 {
                     "network": cfg.network.name,
+                    "mode": mode,
                     "bootstrap_nodes": cfg.network.bootstrap_nodes,
                     "consensus_nodes": cfg.network.consensus_nodes,
                     "account_nodes": cfg.network.account_nodes,
                     "start_port": cfg.network.start_port,
+                    "bootstrap_probe": probe,
                 },
                 indent=2,
             )
         )
+        return 0
+
+    if args.cmd == "network" and args.network_cmd == "check":
+        probe = node_manager.probe_bootstrap(cfg.network.bootstrap_nodes) if cfg.network.bootstrap_nodes else {
+            "total": 0,
+            "reachable": 0,
+            "unreachable": 0,
+            "all_reachable": False,
+            "any_reachable": False,
+            "checked": [],
+        }
+        print(json.dumps({"network": cfg.network.name, "mode": _network_mode(cfg), "bootstrap_probe": probe}, indent=2))
         return 0
 
     if args.cmd == "network" and args.network_cmd == "list-profiles":
@@ -192,6 +233,11 @@ def main(argv=None) -> int:
             max_payload_bytes=cfg.security.max_payload_bytes,
             nonce_ttl_seconds=cfg.security.nonce_ttl_seconds,
             log_dir=cfg.app.log_dir,
+            network_info={
+                "name": cfg.network.name,
+                "mode": _network_mode(cfg),
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+            },
         ).run()
         return 0
 

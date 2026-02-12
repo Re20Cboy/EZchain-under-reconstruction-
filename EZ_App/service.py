@@ -159,6 +159,7 @@ class LocalService:
         max_payload_bytes: int = 65536,
         nonce_ttl_seconds: int = 600,
         log_dir: str | None = None,
+        network_info: Dict[str, Any] | None = None,
     ):
         self.host = host
         self.port = port
@@ -167,6 +168,7 @@ class LocalService:
         self.tx_engine = tx_engine
         self.api_token = api_token
         self.max_payload_bytes = max(1024, max_payload_bytes)
+        self.network_info = network_info or {"name": "testnet", "mode": "local", "bootstrap_nodes": []}
         nonce_file = Path(wallet_store.base_dir) / "used_nonces.json"
         self.nonce_guard = NonceGuard(nonce_file=nonce_file, ttl_seconds=nonce_ttl_seconds)
         effective_log_dir = Path(log_dir) if log_dir else (Path(wallet_store.base_dir) / "logs")
@@ -405,7 +407,23 @@ function nodeStop(){ post("/node/stop", {}); }
                     self._ok(service.metrics.snapshot(current_node_status=node_status))
                     return
                 if self.path == "/network/info":
-                    self._ok({"network": "testnet", "mode": "local"})
+                    bootstrap_nodes = service.network_info.get("bootstrap_nodes", [])
+                    probe = service.node_manager.probe_bootstrap(bootstrap_nodes) if bootstrap_nodes else {
+                        "total": 0,
+                        "reachable": 0,
+                        "unreachable": 0,
+                        "all_reachable": False,
+                        "any_reachable": False,
+                        "checked": [],
+                    }
+                    self._ok(
+                        {
+                            "network": service.network_info.get("name", "testnet"),
+                            "mode": service.network_info.get("mode", "local"),
+                            "bootstrap_nodes": bootstrap_nodes,
+                            "bootstrap_probe": probe,
+                        }
+                    )
                     return
                 self._err(404, "not_found", "Route not found")
 
