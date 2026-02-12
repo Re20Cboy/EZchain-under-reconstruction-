@@ -60,7 +60,7 @@ TEST_GROUPS: Tuple[Dict[str, object], ...] = (
             "EZ_Test/test_pack_transactions_integration.py",
             "EZ_Test/test_pack_transactions_sender_uniqueness.py",
             "EZ_Test/test_integration_creat_single_transaction.py",
-            "EZ_Test/test_transactions_pool.py",
+            "EZ_Test/test_tx_pool.py",
         ],
     },
     {

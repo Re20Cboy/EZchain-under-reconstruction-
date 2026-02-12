@@ -157,7 +157,7 @@ class TestSenderUniqueness(unittest.TestCase):
     def test_package_transactions_with_sender_uniqueness(self):
         """测试完整的打包流程确保sender唯一性"""
         # 创建模拟的交易池
-        mock_pool = MagicMock(spec=TransactionPool)
+        mock_pool = MagicMock()
         mock_pool.get_all_multi_transactions.return_value = self.mock_txns
 
         # 执行打包
@@ -227,7 +227,7 @@ class TestSenderUniqueness(unittest.TestCase):
         # 设置较小的最大交易数
         small_packager = TransactionPackager(max_multi_txns_per_block=3)
 
-        mock_pool = MagicMock(spec=TransactionPool)
+        mock_pool = MagicMock()
         mock_pool.get_all_multi_transactions.return_value = self.mock_txns
 
         # 执行打包

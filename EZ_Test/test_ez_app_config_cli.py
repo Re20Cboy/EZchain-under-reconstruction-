@@ -1,0 +1,39 @@
+import json
+import tempfile
+from pathlib import Path
+
+from EZ_App.cli import main
+from EZ_App.config import load_config
+
+
+def test_load_config_yaml_subset():
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "ezchain.yaml"
+        p.write_text(
+            "network:\n  name: testnet\n  start_port: 19999\napp:\n  data_dir: .tmp_ez\n  api_port: 8899\n",
+            encoding="utf-8",
+        )
+        cfg = load_config(p)
+        assert cfg.network.start_port == 19999
+        assert cfg.app.api_port == 8899
+
+
+def test_cli_wallet_create_show():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        log_dir = data_dir / "logs"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {log_dir}\n"
+                "  api_port: 8787\n"
+            ),
+            encoding="utf-8",
+        )
+
+        code = main(["--config", str(cfg_path), "wallet", "create", "--password", "pw123", "--name", "demo"])
+        assert code == 0
+        code = main(["--config", str(cfg_path), "wallet", "show"])
+        assert code == 0

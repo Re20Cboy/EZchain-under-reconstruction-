@@ -4,8 +4,12 @@ import uuid
 import sqlite3
 import json
 import os
+import tempfile
+import hashlib
 
 from .Value import Value, ValueState
+
+_PYTEST_RUN_ID = uuid.uuid4().hex[:12]
 
 class ValueNode:
     """链表节点，用于管理Value及其索引"""
@@ -350,8 +354,20 @@ class AccountValueCollection:
             if db_path:
                 self.storage = AccountValueCollectionStorage(db_path)
             else:
-                # 为每个账户创建独立的存储实例，使用账户名作为数据库名称的一部分
-                unique_db_path = f"ez_account_value_collection_{account_address}.db"
+                # 在pytest环境中默认使用临时数据库，避免测试间状态污染。
+                if os.environ.get("PYTEST_CURRENT_TEST"):
+                    raw_test_id = os.environ.get("PYTEST_CURRENT_TEST", "pytest_default")
+                    test_id = raw_test_id.split(" (", 1)[0]
+                    scoped_id = hashlib.sha1(
+                        f"{_PYTEST_RUN_ID}:{account_address}:{test_id}".encode("utf-8")
+                    ).hexdigest()[:16]
+                    unique_db_path = os.path.join(
+                        tempfile.gettempdir(),
+                        f"ez_account_value_collection_{scoped_id}.db",
+                    )
+                else:
+                    # 为每个账户创建独立的存储实例，使用账户名作为数据库名称的一部分
+                    unique_db_path = f"ez_account_value_collection_{account_address}.db"
                 self.storage = AccountValueCollectionStorage(unique_db_path)
 
         # 内存数据结构

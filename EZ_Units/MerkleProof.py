@@ -1,5 +1,7 @@
 import sys
 import os
+import re
+from typing import Optional
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
 
@@ -10,8 +12,13 @@ class MerkleTreeProof:
     def __init__(self, mt_prf_list=[]):
         self.mt_prf_list = mt_prf_list
 
-    def check_prf(self, acc_txns_digest, true_root, values_are_hashed=True):
+    def check_prf(self, acc_txns_digest, true_root, values_are_hashed: Optional[bool] = None):
         check_flag = True
+        if values_are_hashed is None:
+            values_are_hashed = (
+                isinstance(acc_txns_digest, str)
+                and re.fullmatch(r"[0-9a-fA-F]{64}", acc_txns_digest) is not None
+            )
         # If values are already hashed, use them directly; otherwise hash them
         if values_are_hashed:
             current_hash = acc_txns_digest
@@ -65,7 +72,7 @@ class MerkleTreeProof:
 
         return check_flag
 
-    def debug_check_prf(self, acc_txns_digest, true_root, values_are_hashed=True):
+    def debug_check_prf(self, acc_txns_digest, true_root, values_are_hashed: Optional[bool] = None):
         """Debug version of check_prf with detailed logging"""
         print(f"[DEBUG] MerkleTreeProof.debug_check_prf start")
         print(f"[DEBUG] acc_txns_digest: {acc_txns_digest}")
@@ -74,6 +81,11 @@ class MerkleTreeProof:
         print(f"[DEBUG] proof length: {len(self.mt_prf_list)}")
 
         check_flag = True
+        if values_are_hashed is None:
+            values_are_hashed = (
+                isinstance(acc_txns_digest, str)
+                and re.fullmatch(r"[0-9a-fA-F]{64}", acc_txns_digest) is not None
+            )
         # If values are already hashed, use them directly; otherwise hash them
         if values_are_hashed:
             current_hash = acc_txns_digest

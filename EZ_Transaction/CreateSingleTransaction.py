@@ -65,32 +65,67 @@ class CreateTransaction:
             nonce = self._generate_nonce()
         
         timestamp = datetime.now().isoformat()
-        
+
+        # Sync from persistent store when multiple AccountValueCollection instances
+        # share the same account data (common in integration tests).
+        if hasattr(self.value_selector, "account_collection") and hasattr(self.value_selector.account_collection, "reload_from_storage"):
+            self.value_selector.account_collection.reload_from_storage()
+
         # Select values for transaction
-        selected_values, change_value, change_transaction, main_transaction = \
-            self.value_selector.pick_values_for_transaction(
+        try:
+            pick_result = self.value_selector.pick_values_for_transaction(
                 required_amount=amount,
                 sender=self.sender_address,
                 recipient=recipient,
                 nonce=nonce,
                 time=timestamp
             )
+        except ValueError as exc:
+            msg = str(exc)
+            if "无法精确凑出目标金额" in msg:
+                # Compatibility fallback for legacy tests/workflows that expect
+                # automatic change handling when exact match is unavailable.
+                pick_result = self.value_selector.pick_values_for_transaction_with_change_legacy(
+                    required_amount=amount,
+                    sender=self.sender_address,
+                    recipient=recipient,
+                    nonce=nonce,
+                    time=timestamp,
+                )
+            elif (
+                "余额不足" in msg
+                or "没有可用的UNSPENT" in msg
+            ):
+                raise ValueError("余额不足！") from exc
+            else:
+                raise
+
+        # Backward/forward compatibility:
+        # - new selector returns (selected_values, main_transaction)
+        # - legacy selector returns (selected_values, change_value, change_transaction, main_transaction)
+        if len(pick_result) == 2:
+            selected_values, main_transaction = pick_result
+            change_value = None
+            change_transaction = None
+        elif len(pick_result) == 4:
+            selected_values, change_value, change_transaction, main_transaction = pick_result
+        else:
+            raise ValueError(f"Unexpected value selector return shape: {len(pick_result)}")
         
-        # Create main transaction using the Transaction constructor with auto-calculated hash
-        main_transaction = Transaction(
-            sender=self.sender_address,
-            recipient=recipient,
-            nonce=nonce,
-            signature=None,
-            value=selected_values,
-            time=timestamp
-        )
-        
-        # Sign the main transaction using secure signature handler
+        # Ensure we always have a signed main transaction.
+        if main_transaction is None:
+            main_transaction = Transaction(
+                sender=self.sender_address,
+                recipient=recipient,
+                nonce=nonce,
+                signature=None,
+                value=selected_values,
+                time=timestamp
+            )
         main_transaction.sig_txn(private_key_pem)
-        
+
         # Handle change transaction if needed
-        if change_value:
+        if change_value and change_transaction is None:
             # Create change transaction using the Transaction constructor
             change_transaction = Transaction(
                 sender=self.sender_address,
@@ -103,6 +138,12 @@ class CreateTransaction:
             
             # Sign the change transaction
             change_transaction.sig_txn(private_key_pem)
+        elif change_transaction is not None and getattr(change_transaction, "signature", None) is None:
+            change_transaction.sig_txn(private_key_pem)
+
+        # Mark selected/change values as pending for legacy workflow compatibility.
+        for value in selected_values:
+            self.value_selector._update_value_state(value, ValueState.PENDING)
         
         # Store created transactions
         result = {

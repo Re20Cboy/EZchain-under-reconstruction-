@@ -1,6 +1,8 @@
 import copy
 import sys
 import os
+import re
+from typing import Optional
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(__file__) + '/..')
@@ -10,7 +12,7 @@ from EZ_Tool_Box.Hash import sha256_hash
 # TODO: 默克尔树构造前的数据类型检查。
 
 class MerkleTreeNode:
-    def __init__(self, left, right, value, content=None, path=[], leaf_index=None):
+    def __init__(self, left, right, value, content=None, path=[], leaf_index=None, prehashed=False):
         self.left = left
         self.right = right
         self.value = value
@@ -18,25 +20,31 @@ class MerkleTreeNode:
         self.path = path
         self.leaf_index = leaf_index
         self.father = None
+        self.prehashed = prehashed
 
     def __str__(self):
         return str(self.value)
 
 
 class MerkleTree:
-    def __init__(self, values, values_are_hashed=True):
+    def __init__(self, values, values_are_hashed: Optional[bool] = None):
         self.leaves = []
         self.prf_list = None
         self.build_tree(values, values_are_hashed)
 
-    def build_tree(self, leaves, values_are_hashed=True):
+    def _looks_like_hash(self, value):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value) is not None
+
+    def build_tree(self, leaves, values_are_hashed: Optional[bool] = None):
+        if values_are_hashed is None:
+            values_are_hashed = bool(leaves) and all(self._looks_like_hash(e) for e in leaves)
         if values_are_hashed:
             # Input values are already hashed, use them directly
-            leaves = [MerkleTreeNode(None, None, e, e, leaf_index=index) for index, e in
+            leaves = [MerkleTreeNode(None, None, e, e, leaf_index=index, prehashed=True) for index, e in
                       enumerate(leaves, start=0)]
         else:
             # Input values are not hashed, hash them first
-            leaves = [MerkleTreeNode(None, None, sha256_hash(e), e, leaf_index=index) for index, e in
+            leaves = [MerkleTreeNode(None, None, sha256_hash(e), e, leaf_index=index, prehashed=False) for index, e in
                       enumerate(leaves, start=0)]
 
         for item in leaves:
@@ -115,7 +123,8 @@ class MerkleTree:
             else:
                 return (self.check_tree(node=node.left) and self.check_tree(node=node.right))
         else:
-            if node.value != sha256_hash(node.content):
+            expected = node.content if node.prehashed else sha256_hash(node.content)
+            if node.value != expected:
                 return False
         return True
 

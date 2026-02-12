@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from EZ_App.config import ensure_directories, load_config
+from EZ_App.node_manager import NodeManager
+from EZ_App.service import LocalService
+from EZ_App.wallet_store import WalletStore
+
+
+def _build_runtime(config_path: str):
+    cfg = load_config(config_path)
+    ensure_directories(cfg)
+    wallet_store = WalletStore(cfg.app.data_dir)
+    node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+    return cfg, wallet_store, node_manager
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="EZchain CLI")
+    parser.add_argument("--config", default="ezchain.yaml")
+
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    wallet = sub.add_parser("wallet")
+    wallet_sub = wallet.add_subparsers(dest="wallet_cmd", required=True)
+
+    w_create = wallet_sub.add_parser("create")
+    w_create.add_argument("--name", default="default")
+    w_create.add_argument("--password", required=True)
+
+    w_import = wallet_sub.add_parser("import")
+    w_import.add_argument("--name", default="default")
+    w_import.add_argument("--password", required=True)
+    w_import.add_argument("--mnemonic", required=True)
+
+    w_show = wallet_sub.add_parser("show")
+
+    tx = sub.add_parser("tx")
+    tx_sub = tx.add_subparsers(dest="tx_cmd", required=True)
+    tx_send = tx_sub.add_parser("send")
+    tx_send.add_argument("--sender", required=True)
+    tx_send.add_argument("--recipient", required=True)
+    tx_send.add_argument("--amount", type=int, required=True)
+
+    node = sub.add_parser("node")
+    node_sub = node.add_subparsers(dest="node_cmd", required=True)
+    n_start = node_sub.add_parser("start")
+    n_start.add_argument("--consensus", type=int, default=1)
+    n_start.add_argument("--accounts", type=int, default=1)
+    n_start.add_argument("--start-port", type=int, default=19500)
+    node_sub.add_parser("stop")
+    node_sub.add_parser("status")
+
+    network = sub.add_parser("network")
+    network_sub = network.add_subparsers(dest="network_cmd", required=True)
+    network_sub.add_parser("info")
+
+    serve = sub.add_parser("serve")
+
+    args = parser.parse_args(argv)
+    cfg, wallet_store, node_manager = _build_runtime(args.config)
+
+    if args.cmd == "wallet":
+        if args.wallet_cmd == "create":
+            result = wallet_store.create_wallet(password=args.password, name=args.name)
+            print(json.dumps({"address": result["address"], "mnemonic": result["mnemonic"]}, indent=2))
+            return 0
+        if args.wallet_cmd == "import":
+            result = wallet_store.import_wallet(mnemonic=args.mnemonic, password=args.password, name=args.name)
+            print(json.dumps({"address": result["address"]}, indent=2))
+            return 0
+        if args.wallet_cmd == "show":
+            summary = wallet_store.summary()
+            print(json.dumps(summary.__dict__, indent=2))
+            return 0
+
+    if args.cmd == "tx" and args.tx_cmd == "send":
+        item = {
+            "sender": args.sender,
+            "recipient": args.recipient,
+            "amount": args.amount,
+            "status": "submitted",
+        }
+        wallet_store.append_history(item)
+        print(json.dumps(item, indent=2))
+        return 0
+
+    if args.cmd == "node":
+        if args.node_cmd == "start":
+            print(json.dumps(node_manager.start(consensus=args.consensus, accounts=args.accounts, start_port=args.start_port), indent=2))
+            return 0
+        if args.node_cmd == "stop":
+            print(json.dumps(node_manager.stop(), indent=2))
+            return 0
+        if args.node_cmd == "status":
+            print(json.dumps(node_manager.status(), indent=2))
+            return 0
+
+    if args.cmd == "network" and args.network_cmd == "info":
+        print(json.dumps({"network": cfg.network.name, "bootstrap_nodes": cfg.network.bootstrap_nodes}, indent=2))
+        return 0
+
+    if args.cmd == "serve":
+        LocalService(
+            host=cfg.app.api_host,
+            port=cfg.app.api_port,
+            wallet_store=wallet_store,
+            node_manager=node_manager,
+        ).run()
+        return 0
+
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

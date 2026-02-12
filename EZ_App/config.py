@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+DEFAULT_CONFIG = {
+    "network": {
+        "name": "testnet",
+        "bootstrap_nodes": ["127.0.0.1:19500"],
+        "consensus_nodes": 1,
+        "account_nodes": 1,
+        "start_port": 19500,
+    },
+    "app": {
+        "data_dir": ".ezchain",
+        "log_dir": ".ezchain/logs",
+        "api_host": "127.0.0.1",
+        "api_port": 8787,
+    },
+}
+
+
+@dataclass
+class NetworkConfig:
+    name: str = "testnet"
+    bootstrap_nodes: List[str] = field(default_factory=lambda: ["127.0.0.1:19500"])
+    consensus_nodes: int = 1
+    account_nodes: int = 1
+    start_port: int = 19500
+
+
+@dataclass
+class AppConfig:
+    data_dir: str = ".ezchain"
+    log_dir: str = ".ezchain/logs"
+    api_host: str = "127.0.0.1"
+    api_port: int = 8787
+
+
+@dataclass
+class EZAppConfig:
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+    app: AppConfig = field(default_factory=AppConfig)
+
+
+def _parse_min_yaml(text: str) -> Dict[str, Any]:
+    """Parse a tiny YAML subset used by ezchain.yaml.
+
+    Supports only:
+    - root keys: "section:"
+    - 2-space indented key/value pairs under a section
+    - primitive scalar values and JSON-style arrays
+    """
+    result: Dict[str, Any] = {}
+    current_section: str | None = None
+
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if not line or line.strip().startswith("#"):
+            continue
+        if not line.startswith(" ") and line.endswith(":"):
+            current_section = line[:-1].strip()
+            result[current_section] = {}
+            continue
+        if current_section and line.startswith("  ") and ":" in line:
+            key, val = line.strip().split(":", 1)
+            value = val.strip()
+            if value.startswith("[") and value.endswith("]"):
+                parsed = json.loads(value)
+            elif value.lower() in {"true", "false"}:
+                parsed = value.lower() == "true"
+            else:
+                try:
+                    parsed = int(value)
+                except ValueError:
+                    parsed = value.strip('"')
+            result[current_section][key] = parsed
+    return result
+
+
+def load_config(path: str | Path = "ezchain.yaml") -> EZAppConfig:
+    config_path = Path(path)
+    if not config_path.exists():
+        return EZAppConfig()
+
+    text = config_path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = _parse_min_yaml(text)
+
+    merged = json.loads(json.dumps(DEFAULT_CONFIG))
+    for section in ("network", "app"):
+        if section in data and isinstance(data[section], dict):
+            merged[section].update(data[section])
+
+    return EZAppConfig(
+        network=NetworkConfig(**merged["network"]),
+        app=AppConfig(**merged["app"]),
+    )
+
+
+def ensure_directories(cfg: EZAppConfig) -> None:
+    Path(cfg.app.data_dir).mkdir(parents=True, exist_ok=True)
+    Path(cfg.app.log_dir).mkdir(parents=True, exist_ok=True)

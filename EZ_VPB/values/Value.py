@@ -5,6 +5,7 @@ import time
 
 class ValueState(Enum):
     UNSPENT = "unspent"  # 未花费状态，表示该value尚未被用于任何交易
+    SELECTED = "pending"  # 兼容旧状态名：映射到PENDING
     PENDING = "pending"  # 待确认状态，表示该value已被用于交易，但交易尚未被区块链网络确认
     ONCHAIN = "onchain"  # 链上提交状态，表示该value已被用于交易，并且该交易已提交到区块链网络，但尚未被确认
     RECEIVED = "received"  # 已接收状态，表示该value已被交易的接收方成功接收到（暂未开始检测vpb合法性）
@@ -92,6 +93,12 @@ class Value:  # 针对VCB区块链的专门设计的值结构，总量2^259 = 16
 
     def is_pending(self):  # 检查值是否为待确认状态
         return self.state == ValueState.PENDING
+
+    # Backward compatibility alias for legacy tests/callers.
+    # LOCAL_COMMITTED was removed from the current state model.
+    # Keep this method for old callers but always report False.
+    def is_local_committed(self):
+        return False
 
     def is_onchain(self):  # 检查值是否为链上提交状态
         return self.state == ValueState.ONCHAIN

@@ -58,6 +58,29 @@ Common options:
 python run_ez_p2p_smoke_test.py --waves 5 --interval 1.0 --accounts 6 --consensus 2
 ```
 
+## 🧰 EZ App (CLI + Local API)
+An initial product layer now exists under `EZ_App/` with:
+- Wallet create/import/show
+- Local node lifecycle (`start/status/stop`)
+- Local loopback API (`/health`, `/wallet/*`, `/tx/send`, `/tx/history`, `/node/*`, `/network/info`)
+
+Quick start:
+
+```bash
+python ezchain_cli.py wallet create --password your_password --name default
+python ezchain_cli.py wallet show
+python ezchain_cli.py node start --consensus 1 --accounts 1 --start-port 19500
+python ezchain_cli.py network info
+```
+
+Start local API server:
+
+```bash
+python ezchain_cli.py serve
+```
+
+Default config file: `ezchain.yaml`
+
 
 ## 🤝 How to Support  
 EZchain is a community-driven project—your help accelerates our mission:  

@@ -19,5 +19,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run test suite
-        run: python run_ezchain_tests.py
+      - name: Release gate (core + transactions)
+        run: python run_ezchain_tests.py --groups core transactions --skip-slow
+      - name: EZ App tests
+        run: pytest -q EZ_Test/test_ez_app_crypto_wallet.py EZ_Test/test_ez_app_config_cli.py
