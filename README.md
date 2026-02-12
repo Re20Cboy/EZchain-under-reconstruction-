@@ -1,6 +1,8 @@
 ﻿# EZchain: A Scale-out Decentralized Blockchain for Web3.0 Inclusivity  
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)  
 
+Chinese README: `README.zh-CN.md`
+
 
 ## 🌟 Our Vision  
 At EZchain, we stand firm on the **core principles of decentralization**—the bedrock of Web3. Our mission is to break down barriers that exclude edge devices (mobile phones, IoT gadgets, agents, etc.) from full Web3 participation:  
