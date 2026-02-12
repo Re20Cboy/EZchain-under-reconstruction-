@@ -150,7 +150,7 @@ class ServiceMetrics:
 
 class LocalService:
     NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
-    CLIENT_TX_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{8,128}$")
+    CLIENT_TX_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{4,128}$")
     RECIPIENT_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{4,160}$")
 
     def __init__(
@@ -381,7 +381,7 @@ function nodeStop(){ post("/node/stop", {}); }
                     self._err(400, "invalid_recipient", "recipient must match [A-Za-z0-9_.:-]{4,160}")
                     return False
                 if not isinstance(client_tx_id, str) or not service.CLIENT_TX_ID_PATTERN.fullmatch(client_tx_id):
-                    self._err(400, "invalid_client_tx_id", "client_tx_id must match [A-Za-z0-9_.:-]{8,128}")
+                    self._err(400, "invalid_client_tx_id", "client_tx_id must match [A-Za-z0-9_.:-]{4,128}")
                     return False
                 return True
 
