@@ -76,6 +76,10 @@ def main() -> int:
     parser.add_argument("--run-metrics", action="store_true")
     parser.add_argument("--metrics-url", default="http://127.0.0.1:8787/metrics")
     parser.add_argument("--metrics-min-success-rate", type=float, default=0.0)
+    parser.add_argument("--require-official-testnet", action="store_true")
+    parser.add_argument("--official-config", default="ezchain.yaml")
+    parser.add_argument("--official-check-connectivity", action="store_true")
+    parser.add_argument("--official-allow-unreachable", action="store_true")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -119,6 +123,19 @@ def main() -> int:
             str(args.metrics_min_success_rate),
         ]
         steps.append(run_step("metrics_probe", metrics_cmd, cwd=root))
+
+    if args.require_official_testnet:
+        testnet_cmd = [
+            sys.executable,
+            "scripts/testnet_profile_gate.py",
+            "--config",
+            args.official_config,
+        ]
+        if args.official_check_connectivity:
+            testnet_cmd.append("--check-connectivity")
+        if args.official_allow_unreachable:
+            testnet_cmd.append("--allow-unreachable")
+        steps.append(run_step("official_testnet_gate", testnet_cmd, cwd=root))
 
     overall = "passed" if all(s["status"] == "passed" for s in steps) else "failed"
     if not steps:
