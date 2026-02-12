@@ -3,13 +3,14 @@ import json
 import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import pytest
 
 from EZ_App.config import ensure_directories, load_api_token, load_config
 from EZ_App.node_manager import NodeManager
 from EZ_App.runtime import TxEngine
-from EZ_App.service import LocalService
+from EZ_App.service import LocalService, NonceGuard
 from EZ_App.wallet_store import WalletStore
 
 
@@ -52,6 +53,20 @@ def _start_server_or_skip(service: LocalService):
         thread.join(timeout=2)
         raise AssertionError("service did not become ready in time")
     return server, port, thread
+
+
+def test_nonce_guard_claim_is_atomic_for_same_nonce():
+    with tempfile.TemporaryDirectory() as td:
+        guard = NonceGuard(nonce_file=Path(td) / "used_nonces.json", ttl_seconds=60)
+
+        def claim_once() -> bool:
+            return guard.claim("nonce-atomic-001")
+
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            outcomes = list(ex.map(lambda _: claim_once(), range(10)))
+
+        assert outcomes.count(True) == 1
+        assert outcomes.count(False) == 9
 
 
 def test_service_auth_and_tx_flow():
@@ -306,3 +321,80 @@ def test_service_restart_recovers_history_and_nonce_state():
             server2.shutdown()
             server2.server_close()
             thread2.join(timeout=2)
+
+
+def test_service_concurrent_replay_and_duplicate_protection():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        auth_headers = {"X-EZ-Token": token}
+
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir),
+            api_token=token,
+        )
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            status, _ = _request(port, "POST", "/wallet/create", {"name": "demo", "password": "pw123"}, auth_headers)
+            assert status == 200
+            status, _ = _request(port, "POST", "/tx/faucet", {"password": "pw123", "amount": 1000}, auth_headers)
+            assert status == 200
+
+            # Case A: unique nonces but same client_tx_id => only one submit should pass.
+            def send_duplicate(i: int):
+                return _request(
+                    port,
+                    "POST",
+                    "/tx/send",
+                    {"password": "pw123", "recipient": "0xabc123", "amount": 5, "client_tx_id": "cid-concurrent-dup"},
+                    {"X-EZ-Token": token, "X-EZ-Nonce": f"nonce-dup-{i:04d}"},
+                )
+
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                results_dup = list(ex.map(send_duplicate, range(6)))
+
+            success_dup = [item for item in results_dup if item[0] == 200]
+            duplicate_reject = [item for item in results_dup if item[0] == 409 and item[1]["error"]["code"] == "duplicate_transaction"]
+            assert len(success_dup) == 1
+            assert len(duplicate_reject) == 5
+
+            # Case B: same nonce but unique client_tx_id => only one nonce claim should pass.
+            def send_replay(i: int):
+                return _request(
+                    port,
+                    "POST",
+                    "/tx/send",
+                    {"password": "pw123", "recipient": "0xabc123", "amount": 5, "client_tx_id": f"cid-concurrent-replay-{i}"},
+                    {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-replay-shared"},
+                )
+
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                results_replay = list(ex.map(send_replay, range(6)))
+
+            success_replay = [item for item in results_replay if item[0] == 200]
+            replay_reject = [item for item in results_replay if item[0] == 409 and item[1]["error"]["code"] == "replay_detected"]
+            assert len(success_replay) == 1
+            assert len(replay_reject) == 5
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)

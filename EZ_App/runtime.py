@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import json
+import threading
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,7 @@ class TxEngine:
         self.pool = TxPool(db_path=str(self.data_dir / "app_tx_pool.db"))
         self.max_tx_amount = max_tx_amount
         self.idempotency_file = self.data_dir / "tx_idempotency.json"
+        self.idempotency_lock = threading.Lock()
 
     def _build_account(self, wallet_store: WalletStore, password: str) -> Account:
         wallet = wallet_store.load_wallet(password=password)
@@ -108,12 +110,26 @@ class TxEngine:
 
         account = self._build_account(wallet_store, password)
         idem_key = ""
-        idempotency = self._load_idempotency()
         if client_tx_id:
-            idem_key = f"{account.address}:{client_tx_id}"
-            if idem_key in idempotency:
-                raise ValueError("duplicate_transaction")
+            with self.idempotency_lock:
+                idempotency = self._load_idempotency()
+                idem_key = f"{account.address}:{client_tx_id}"
+                if idem_key in idempotency:
+                    raise ValueError("duplicate_transaction")
+                result = self._submit_transaction(account=account, recipient=recipient, amount=amount, client_tx_id=client_tx_id)
+                idempotency[idem_key] = {
+                    "tx_hash": result.tx_hash,
+                    "submit_hash": result.submit_hash,
+                    "amount": amount,
+                    "recipient": recipient,
+                    "recorded_at": datetime.utcnow().isoformat(),
+                }
+                self._save_idempotency(idempotency)
+                return result
 
+        return self._submit_transaction(account=account, recipient=recipient, amount=amount, client_tx_id=client_tx_id)
+
+    def _submit_transaction(self, account: Account, recipient: str, amount: int, client_tx_id: Optional[str]) -> TxResult:
         multi_txn_result = account.create_batch_transactions([
             {
                 "recipient": recipient,
@@ -140,7 +156,7 @@ class TxEngine:
         if not success:
             raise RuntimeError(f"submit_to_pool_failed:{message}")
 
-        result = TxResult(
+        return TxResult(
             tx_hash=submit_tx_info.multi_transactions_hash,
             submit_hash=submit_tx_info.get_hash(),
             amount=amount,
@@ -148,16 +164,6 @@ class TxEngine:
             status="submitted",
             client_tx_id=client_tx_id,
         )
-        if idem_key:
-            idempotency[idem_key] = {
-                "tx_hash": result.tx_hash,
-                "submit_hash": result.submit_hash,
-                "amount": amount,
-                "recipient": recipient,
-                "recorded_at": datetime.utcnow().isoformat(),
-            }
-            self._save_idempotency(idempotency)
-        return result
 
     def balance(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
         account = self._build_account(wallet_store, password)
