@@ -138,6 +138,16 @@ def test_service_auth_and_tx_flow():
             assert body["ok"] is True
             assert len(body["data"]["items"]) >= 1
 
+            status, body = _request(port, "GET", "/metrics")
+            assert status == 200
+            assert body["ok"] is True
+            metrics = body["data"]
+            assert "node_online_rate" in metrics
+            assert "error_code_distribution" in metrics
+            assert "transactions" in metrics
+            assert metrics["transactions"]["send_success"] >= 1
+            assert metrics["transactions"]["success_rate"] >= 0
+
             status, body = _request(
                 port,
                 "POST",

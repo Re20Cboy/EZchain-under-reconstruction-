@@ -4,6 +4,7 @@ import json
 import threading
 import time
 import uuid
+from collections import defaultdict, deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -81,6 +82,71 @@ class AuditLogger:
                 handle.write(line + "\n")
 
 
+class ServiceMetrics:
+    def __init__(self):
+        self.started_at = time.time()
+        self.lock = threading.Lock()
+        self.requests_total = 0
+        self.tx_send_success = 0
+        self.tx_send_failed = 0
+        self.node_status_checks = 0
+        self.node_status_running = 0
+        self.error_code_distribution: Dict[str, int] = defaultdict(int)
+        self.tx_latency_ms = deque(maxlen=500)
+
+    def record_response(self, status_code: int, error_code: str | None) -> None:
+        with self.lock:
+            self.requests_total += 1
+            if error_code:
+                self.error_code_distribution[error_code] += 1
+            elif status_code >= 400:
+                self.error_code_distribution["http_error"] += 1
+
+    def record_tx_send(self, ok: bool, latency_ms: float | None, error_code: str | None = None) -> None:
+        with self.lock:
+            if ok:
+                self.tx_send_success += 1
+                if latency_ms is not None:
+                    self.tx_latency_ms.append(float(latency_ms))
+            else:
+                self.tx_send_failed += 1
+                if error_code:
+                    self.error_code_distribution[error_code] += 1
+
+    def record_node_status(self, status: str) -> None:
+        with self.lock:
+            self.node_status_checks += 1
+            if status == "running":
+                self.node_status_running += 1
+
+    def snapshot(self, current_node_status: str) -> Dict[str, Any]:
+        with self.lock:
+            tx_total = self.tx_send_success + self.tx_send_failed
+            tx_success_rate = (self.tx_send_success / tx_total) if tx_total else 0.0
+            node_online_rate = (
+                self.node_status_running / self.node_status_checks
+                if self.node_status_checks
+                else (1.0 if current_node_status == "running" else 0.0)
+            )
+            avg_latency = (
+                sum(self.tx_latency_ms) / len(self.tx_latency_ms)
+                if self.tx_latency_ms
+                else None
+            )
+            return {
+                "uptime_seconds": int(max(0, time.time() - self.started_at)),
+                "requests_total": self.requests_total,
+                "transactions": {
+                    "send_success": self.tx_send_success,
+                    "send_failed": self.tx_send_failed,
+                    "success_rate": round(tx_success_rate, 4),
+                    "avg_confirmation_latency_ms": round(avg_latency, 3) if avg_latency is not None else None,
+                },
+                "node_online_rate": round(node_online_rate, 4),
+                "error_code_distribution": dict(self.error_code_distribution),
+            }
+
+
 class LocalService:
     def __init__(
         self,
@@ -105,6 +171,7 @@ class LocalService:
         self.nonce_guard = NonceGuard(nonce_file=nonce_file, ttl_seconds=nonce_ttl_seconds)
         effective_log_dir = Path(log_dir) if log_dir else (Path(wallet_store.base_dir) / "logs")
         self.audit_logger = AuditLogger(effective_log_dir / "service_audit.log")
+        self.metrics = ServiceMetrics()
 
     def _ui_html(self) -> str:
         return """<!doctype html>
@@ -164,6 +231,7 @@ class LocalService:
           <button onclick="nodeStart()">Start</button>
           <button onclick="nodeStatus()">Status</button>
           <button onclick="nodeStop()">Stop</button>
+          <button onclick="showMetrics()">Metrics</button>
         </div>
       </div>
     </div>
@@ -207,6 +275,7 @@ function sendTx(){
   );
 }
 function historyTx(){ get("/tx/history"); }
+function showMetrics(){ get("/metrics"); }
 function nodeStart(){ post("/node/start", { consensus:1, accounts:1, start_port:19500 }); }
 function nodeStatus(){ get("/node/status"); }
 function nodeStop(){ post("/node/stop", {}); }
@@ -238,6 +307,7 @@ function nodeStop(){ post("/node/stop", {}); }
                         "error_code": error_code,
                     }
                 )
+                service.metrics.record_response(status_code=code, error_code=error_code)
 
             def _write_html(self, code: int, html: str) -> None:
                 body = html.encode("utf-8")
@@ -326,7 +396,13 @@ function nodeStop(){ post("/node/stop", {}); }
                     self._ok({"items": service.wallet_store.get_history()})
                     return
                 if self.path == "/node/status":
-                    self._ok(service.node_manager.status())
+                    node_status = service.node_manager.status()
+                    service.metrics.record_node_status(node_status.get("status", "stopped"))
+                    self._ok(node_status)
+                    return
+                if self.path == "/metrics":
+                    node_status = service.node_manager.status().get("status", "stopped")
+                    self._ok(service.metrics.snapshot(current_node_status=node_status))
                     return
                 if self.path == "/network/info":
                     self._ok({"network": "testnet", "mode": "local"})
@@ -390,6 +466,7 @@ function nodeStop(){ post("/node/stop", {}); }
                     return
 
                 if self.path == "/tx/send":
+                    started = time.perf_counter()
                     nonce = self.headers.get("X-EZ-Nonce", "")
                     if not nonce:
                         self._err(400, "nonce_required", "Missing X-EZ-Nonce")
@@ -416,19 +493,25 @@ function nodeStop(){ post("/node/stop", {}); }
                             client_tx_id=client_tx_id,
                         )
                     except FileNotFoundError:
+                        service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="wallet_not_found")
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
                     except ValueError as exc:
                         if str(exc) == "duplicate_transaction":
+                            service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="duplicate_transaction")
                             self._err(409, "duplicate_transaction", "Duplicate client_tx_id")
                             return
+                        service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="invalid_request")
                         self._err(400, "invalid_request", str(exc))
                         return
                     except Exception as exc:
+                        service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="send_failed")
                         self._err(500, "send_failed", str(exc))
                         return
 
                     sender = service.wallet_store.summary().address
+                    latency_ms = (time.perf_counter() - started) * 1000.0
+                    service.metrics.record_tx_send(ok=True, latency_ms=latency_ms)
                     history_item = {
                         "tx_id": result.tx_hash,
                         "submit_hash": result.submit_hash,

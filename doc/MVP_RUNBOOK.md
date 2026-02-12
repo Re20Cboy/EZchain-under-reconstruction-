@@ -18,6 +18,7 @@ This runbook covers EZchain MVP operations on the hosted public testnet topology
    - `python ezchain_cli.py serve`
 2. Health check:
    - `curl http://127.0.0.1:8787/health`
+   - `curl http://127.0.0.1:8787/metrics`
 3. Check node status:
    - `python ezchain_cli.py node status`
 
@@ -60,3 +61,4 @@ Every 4 hours:
 2. Transaction success ratio
 3. Median confirmation delay
 4. Top 3 error codes
+5. Run `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`

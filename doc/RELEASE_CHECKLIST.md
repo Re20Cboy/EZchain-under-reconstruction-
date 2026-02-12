@@ -4,6 +4,7 @@
 1. `python scripts/release_gate.py --skip-slow`
 2. `python scripts/security_gate.py`
 3. `python scripts/stability_smoke.py --cycles 30 --interval 1`
+4. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
 
 ## Functional acceptance
 1. Wallet create/import/show/balance pass.
@@ -11,6 +12,7 @@
 3. Node start/status/stop pass.
 4. Duplicate `client_tx_id` blocked.
 5. Replay nonce blocked.
+6. `/metrics` exposes tx success rate and error-code distribution.
 
 ## Security acceptance
 1. API is loopback-only (`127.0.0.1`/`localhost`).
