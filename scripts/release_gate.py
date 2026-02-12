@@ -18,6 +18,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain release gate")
     parser.add_argument("--skip-slow", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
+    parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -45,23 +46,23 @@ def main() -> int:
         )
         run([sys.executable, "scripts/security_gate.py"], cwd=root)
         if args.with_stability:
-            run(
-                [
-                    sys.executable,
-                    "scripts/stability_gate.py",
-                    "--cycles",
-                    "30",
-                    "--interval",
-                    "1",
-                    "--restart-every",
-                    "10",
-                    "--max-failures",
-                    "0",
-                    "--max-failure-rate",
-                    "0.0",
-                ],
-                cwd=root,
-            )
+            stability_cmd = [
+                sys.executable,
+                "scripts/stability_gate.py",
+                "--cycles",
+                "30",
+                "--interval",
+                "1",
+                "--restart-every",
+                "10",
+                "--max-failures",
+                "0",
+                "--max-failure-rate",
+                "0.0",
+            ]
+            if args.allow_bind_restricted_skip:
+                stability_cmd.append("--allow-bind-restricted-skip")
+            run(stability_cmd, cwd=root)
     except RuntimeError as exc:
         print(f"[release-gate] FAILED: {exc}")
         return 1

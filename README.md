@@ -113,6 +113,7 @@ python scripts/release_gate.py --skip-slow --with-stability
 python scripts/stability_smoke.py --cycles 20 --interval 1
 python scripts/stability_smoke.py --cycles 30 --interval 1 --restart-every 10
 python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0
+python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip --run-metrics
 python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics
 bash scripts/install_macos.sh
 # Windows: powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1
