@@ -8,6 +8,7 @@
 5. `python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip --run-metrics`
 6. `python scripts/prepare_rc.py --version v0.1.0-rc1`
 7. `python scripts/rc_gate.py`
+8. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allow-bind-restricted-skip --target none`
 
 ## Functional acceptance
 1. Wallet create/import/show/balance pass.

@@ -116,6 +116,7 @@ python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --m
 python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip --run-metrics
 python scripts/prepare_rc.py --version v0.1.0-rc1
 python scripts/rc_gate.py
+python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allow-bind-restricted-skip --target none
 python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics
 bash scripts/install_macos.sh
 # Windows: powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1
