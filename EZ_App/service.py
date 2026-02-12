@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import uuid
@@ -148,6 +149,10 @@ class ServiceMetrics:
 
 
 class LocalService:
+    NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+    CLIENT_TX_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{8,128}$")
+    RECIPIENT_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{4,160}$")
+
     def __init__(
         self,
         host: str,
@@ -359,6 +364,27 @@ function nodeStop(){ post("/node/stop", {}); }
                 token = self.headers.get("X-EZ-Token", "")
                 return bool(token) and token == service.api_token
 
+            def _validate_nonce(self, nonce: str) -> bool:
+                if not nonce:
+                    self._err(400, "nonce_required", "Missing X-EZ-Nonce")
+                    return False
+                if not service.NONCE_PATTERN.fullmatch(nonce):
+                    self._err(400, "invalid_nonce_format", "X-EZ-Nonce must match [A-Za-z0-9_-]{8,128}")
+                    return False
+                return True
+
+            def _validate_send_fields(self, recipient: str, password: str, client_tx_id: str) -> bool:
+                if not password:
+                    self._err(400, "password_required", "password is required")
+                    return False
+                if not isinstance(recipient, str) or not service.RECIPIENT_PATTERN.fullmatch(recipient):
+                    self._err(400, "invalid_recipient", "recipient must match [A-Za-z0-9_.:-]{4,160}")
+                    return False
+                if not isinstance(client_tx_id, str) or not service.CLIENT_TX_ID_PATTERN.fullmatch(client_tx_id):
+                    self._err(400, "invalid_client_tx_id", "client_tx_id must match [A-Za-z0-9_.:-]{8,128}")
+                    return False
+                return True
+
             def log_message(self, fmt: str, *args):
                 return
 
@@ -486,8 +512,7 @@ function nodeStop(){ post("/node/stop", {}); }
                 if self.path == "/tx/send":
                     started = time.perf_counter()
                     nonce = self.headers.get("X-EZ-Nonce", "")
-                    if not nonce:
-                        self._err(400, "nonce_required", "Missing X-EZ-Nonce")
+                    if not self._validate_nonce(nonce):
                         return
                     if not service.nonce_guard.claim(nonce):
                         self._err(409, "replay_detected", "Replay nonce detected")
@@ -496,6 +521,9 @@ function nodeStop(){ post("/node/stop", {}); }
                     recipient = body.get("recipient", "")
                     password = body.get("password", "")
                     client_tx_id = body.get("client_tx_id") or uuid.uuid4().hex
+                    if not self._validate_send_fields(recipient=recipient, password=password, client_tx_id=client_tx_id):
+                        service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="invalid_request")
+                        return
                     try:
                         amount = int(body.get("amount", 0))
                     except (TypeError, ValueError):

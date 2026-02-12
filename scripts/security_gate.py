@@ -67,6 +67,15 @@ def main() -> int:
     if secret_hits:
         failures.append(f"potential hardcoded secrets found in: {', '.join(secret_hits[:5])}")
 
+    threat_model = root / "doc" / "SECURITY_THREAT_MODEL.md"
+    if not threat_model.exists():
+        failures.append("missing doc/SECURITY_THREAT_MODEL.md")
+    else:
+        text = threat_model.read_text(encoding="utf-8", errors="ignore")
+        for marker in ("Replay", "Duplicate", "Malformed payload", "Key and secret exposure"):
+            if marker.lower() not in text.lower():
+                failures.append(f"threat model missing section marker: {marker}")
+
     if not args.skip_tests:
         try:
             run(

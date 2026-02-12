@@ -123,6 +123,7 @@ bash scripts/build_macos.sh
 Additional docs:
 - Installation: `doc/INSTALLATION.md`
 - API errors: `doc/API_ERROR_CODES.md`
+- Threat model: `doc/SECURITY_THREAT_MODEL.md`
 - Runbook: `doc/MVP_RUNBOOK.md`
 - Release checklist: `doc/RELEASE_CHECKLIST.md`
 

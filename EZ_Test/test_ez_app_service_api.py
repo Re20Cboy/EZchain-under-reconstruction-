@@ -121,6 +121,26 @@ def test_service_auth_and_tx_flow():
             assert status == 400
             assert body["error"]["code"] == "nonce_required"
 
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "cid-x-111"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "bad"},
+            )
+            assert status == 400
+            assert body["error"]["code"] == "invalid_nonce_format"
+
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "bad id"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-ok-1"},
+            )
+            assert status == 400
+            assert body["error"]["code"] == "invalid_client_tx_id"
+
             send_headers = {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-1"}
             status, body = _request(
                 port,
@@ -183,6 +203,20 @@ def test_service_auth_and_tx_flow():
             )
             assert status == 413
             assert body["error"]["code"] == "payload_too_large"
+
+            status, body = _request(
+                port,
+                "POST",
+                "/wallet/create",
+                headers={
+                    "X-EZ-Token": token,
+                    "Content-Type": "application/json",
+                    "Content-Length": "11",
+                },
+                raw_body='{"x":',
+            )
+            assert status == 400
+            assert body["error"]["code"] == "invalid_request"
 
             log_path = data_dir / "logs" / "service_audit.log"
             assert log_path.exists()
