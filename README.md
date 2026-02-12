@@ -90,6 +90,7 @@ python ezchain_cli.py auth show-token
 
 Use this token in API calls via header `X-EZ-Token`.
 For balance endpoint, also pass wallet password in header `X-EZ-Password`.
+For transaction send endpoint, pass anti-replay header `X-EZ-Nonce` and unique body field `client_tx_id`.
 
 Open simple local panel:
 
@@ -98,6 +99,14 @@ open http://127.0.0.1:8787/ui
 ```
 
 Default config file: `ezchain.yaml`
+
+Security and release gates:
+
+```bash
+python scripts/security_gate.py
+python scripts/release_gate.py --skip-slow
+python scripts/stability_smoke.py --cycles 20 --interval 1
+```
 
 
 ## 🤝 How to Support  

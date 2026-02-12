@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import secrets
+import json
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from EZ_Account.Account import Account
 from EZ_Tx_Pool.TXPool import TxPool
@@ -19,13 +21,16 @@ class TxResult:
     amount: int
     recipient: str
     status: str
+    client_tx_id: Optional[str] = None
 
 
 class TxEngine:
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, max_tx_amount: int = 100000000):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.pool = TxPool(db_path=str(self.data_dir / "app_tx_pool.db"))
+        self.max_tx_amount = max_tx_amount
+        self.idempotency_file = self.data_dir / "tx_idempotency.json"
 
     def _build_account(self, wallet_store: WalletStore, password: str) -> Account:
         wallet = wallet_store.load_wallet(password=password)
@@ -71,13 +76,43 @@ class TxEngine:
             "total_balance": account.get_total_balance(),
         }
 
-    def send(self, wallet_store: WalletStore, password: str, recipient: str, amount: int) -> TxResult:
+    def _load_idempotency(self) -> Dict[str, Dict[str, Any]]:
+        if not self.idempotency_file.exists():
+            return {}
+        try:
+            data = self.idempotency_file.read_text(encoding="utf-8")
+            parsed = json.loads(data)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+        return {}
+
+    def _save_idempotency(self, data: Dict[str, Dict[str, Any]]) -> None:
+        self.idempotency_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def send(
+        self,
+        wallet_store: WalletStore,
+        password: str,
+        recipient: str,
+        amount: int,
+        client_tx_id: Optional[str] = None,
+    ) -> TxResult:
         if amount <= 0:
             raise ValueError("amount_must_be_positive")
+        if amount > self.max_tx_amount:
+            raise ValueError("amount_exceeds_limit")
         if not recipient:
             raise ValueError("recipient_required")
 
         account = self._build_account(wallet_store, password)
+        idem_key = ""
+        idempotency = self._load_idempotency()
+        if client_tx_id:
+            idem_key = f"{account.address}:{client_tx_id}"
+            if idem_key in idempotency:
+                raise ValueError("duplicate_transaction")
 
         multi_txn_result = account.create_batch_transactions([
             {
@@ -103,13 +138,24 @@ class TxEngine:
         if not success:
             raise RuntimeError(f"submit_to_pool_failed:{message}")
 
-        return TxResult(
+        result = TxResult(
             tx_hash=submit_tx_info.multi_transactions_hash,
             submit_hash=submit_tx_info.get_hash(),
             amount=amount,
             recipient=recipient,
             status="submitted",
+            client_tx_id=client_tx_id,
         )
+        if idem_key:
+            idempotency[idem_key] = {
+                "tx_hash": result.tx_hash,
+                "submit_hash": result.submit_hash,
+                "amount": amount,
+                "recipient": recipient,
+                "recorded_at": datetime.utcnow().isoformat(),
+            }
+            self._save_idempotency(idempotency)
+        return result
 
     def balance(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
         account = self._build_account(wallet_store, password)

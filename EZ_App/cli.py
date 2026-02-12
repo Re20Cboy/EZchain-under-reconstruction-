@@ -16,7 +16,7 @@ def _build_runtime(config_path: str):
     ensure_directories(cfg)
     wallet_store = WalletStore(cfg.app.data_dir)
     node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
-    tx_engine = TxEngine(cfg.app.data_dir)
+    tx_engine = TxEngine(cfg.app.data_dir, max_tx_amount=cfg.security.max_tx_amount)
     return cfg, wallet_store, node_manager, tx_engine
 
 
@@ -48,6 +48,7 @@ def main(argv=None) -> int:
     tx_send.add_argument("--recipient", required=True)
     tx_send.add_argument("--amount", type=int, required=True)
     tx_send.add_argument("--password", required=True)
+    tx_send.add_argument("--client-tx-id", default=None)
 
     tx_faucet = tx_sub.add_parser("faucet")
     tx_faucet.add_argument("--amount", type=int, required=True)
@@ -104,6 +105,7 @@ def main(argv=None) -> int:
                 password=args.password,
                 recipient=args.recipient,
                 amount=args.amount,
+                client_tx_id=args.client_tx_id,
             )
             sender = wallet_store.summary().address
             item = {
@@ -113,6 +115,7 @@ def main(argv=None) -> int:
                 "recipient": result.recipient,
                 "amount": result.amount,
                 "status": result.status,
+                "client_tx_id": result.client_tx_id,
             }
             wallet_store.append_history(item)
             print(json.dumps(item, indent=2))
@@ -145,6 +148,9 @@ def main(argv=None) -> int:
             node_manager=node_manager,
             tx_engine=tx_engine,
             api_token=load_api_token(cfg),
+            max_payload_bytes=cfg.security.max_payload_bytes,
+            nonce_ttl_seconds=cfg.security.nonce_ttl_seconds,
+            log_dir=cfg.app.log_dir,
         ).run()
         return 0
 

@@ -26,13 +26,25 @@ def test_tx_engine_faucet_and_send():
 
         store = WalletStore(cfg.app.data_dir)
         created = store.create_wallet(password="pw123", name="demo")
-        engine = TxEngine(cfg.app.data_dir)
+        engine = TxEngine(cfg.app.data_dir, max_tx_amount=1000)
 
         faucet = engine.faucet(store, password="pw123", amount=500)
         assert faucet["available_balance"] >= 500
 
-        result = engine.send(store, password="pw123", recipient="0xabc123", amount=100)
+        result = engine.send(store, password="pw123", recipient="0xabc123", amount=100, client_tx_id="client-a")
         assert result.status == "submitted"
         assert result.amount == 100
         assert result.tx_hash
         assert created["address"].startswith("0x")
+
+        try:
+            engine.send(store, password="pw123", recipient="0xabc123", amount=100, client_tx_id="client-a")
+            raise AssertionError("expected duplicate_transaction error")
+        except ValueError as exc:
+            assert str(exc) == "duplicate_transaction"
+
+        try:
+            engine.send(store, password="pw123", recipient="0xabc123", amount=2000, client_tx_id="client-b")
+            raise AssertionError("expected amount_exceeds_limit error")
+        except ValueError as exc:
+            assert str(exc) == "amount_exceeds_limit"

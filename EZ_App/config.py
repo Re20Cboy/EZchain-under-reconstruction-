@@ -22,6 +22,11 @@ DEFAULT_CONFIG = {
         "api_port": 8787,
         "api_token_file": ".ezchain/api.token",
     },
+    "security": {
+        "max_payload_bytes": 65536,
+        "max_tx_amount": 100000000,
+        "nonce_ttl_seconds": 600,
+    },
 }
 
 
@@ -47,6 +52,14 @@ class AppConfig:
 class EZAppConfig:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     app: AppConfig = field(default_factory=AppConfig)
+    security: "SecurityConfig" = field(default_factory=lambda: SecurityConfig())
+
+
+@dataclass
+class SecurityConfig:
+    max_payload_bytes: int = 65536
+    max_tx_amount: int = 100000000
+    nonce_ttl_seconds: int = 600
 
 
 def _parse_min_yaml(text: str) -> Dict[str, Any]:
@@ -89,13 +102,14 @@ def load_config(path: str | Path = "ezchain.yaml") -> EZAppConfig:
         data = _parse_min_yaml(text)
 
     merged = json.loads(json.dumps(DEFAULT_CONFIG))
-    for section in ("network", "app"):
+    for section in ("network", "app", "security"):
         if section in data and isinstance(data[section], dict):
             merged[section].update(data[section])
 
     return EZAppConfig(
         network=NetworkConfig(**merged["network"]),
         app=AppConfig(**merged["app"]),
+        security=SecurityConfig(**merged["security"]),
     )
 
 

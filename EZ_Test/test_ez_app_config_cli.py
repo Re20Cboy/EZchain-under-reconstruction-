@@ -9,12 +9,17 @@ def test_load_config_yaml_subset():
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / "ezchain.yaml"
         p.write_text(
-            "network:\n  name: testnet\n  start_port: 19999\napp:\n  data_dir: .tmp_ez\n  api_port: 8899\n",
+            (
+                "network:\n  name: testnet\n  start_port: 19999\n"
+                "app:\n  data_dir: .tmp_ez\n  api_port: 8899\n"
+                "security:\n  max_payload_bytes: 4096\n"
+            ),
             encoding="utf-8",
         )
         cfg = load_config(p)
         assert cfg.network.start_port == 19999
         assert cfg.app.api_port == 8899
+        assert cfg.security.max_payload_bytes == 4096
 
 
 def test_cli_wallet_create_show():

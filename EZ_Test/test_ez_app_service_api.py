@@ -12,11 +12,13 @@ from EZ_App.service import LocalService
 from EZ_App.wallet_store import WalletStore
 
 
-def _request(port: int, method: str, path: str, payload=None, headers=None):
+def _request(port: int, method: str, path: str, payload=None, headers=None, raw_body=None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     body = None
     h = headers or {}
-    if payload is not None:
+    if raw_body is not None:
+        body = raw_body
+    elif payload is not None:
         body = json.dumps(payload)
         h = {"Content-Type": "application/json", **h}
     conn.request(method, path, body=body, headers=h)
@@ -96,14 +98,60 @@ def test_service_auth_and_tx_flow():
             assert body["data"]["available_balance"] >= 300
 
             status, body = _request(port, "POST", "/tx/send", {"password": "pw123", "recipient": "0xabc123", "amount": 50}, auth_headers)
+            assert status == 400
+            assert body["error"]["code"] == "nonce_required"
+
+            send_headers = {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-1"}
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 50, "client_tx_id": "cid-1"},
+                send_headers,
+            )
             assert status == 200
             assert body["ok"] is True
             assert body["data"]["status"] == "submitted"
+
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 50, "client_tx_id": "cid-1"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-2"},
+            )
+            assert status == 409
+            assert body["error"]["code"] == "duplicate_transaction"
+
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "cid-2"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-2"},
+            )
+            assert status == 409
+            assert body["error"]["code"] == "replay_detected"
 
             status, body = _request(port, "GET", "/tx/history")
             assert status == 200
             assert body["ok"] is True
             assert len(body["data"]["items"]) >= 1
+
+            status, body = _request(
+                port,
+                "POST",
+                "/wallet/create",
+                headers={"X-EZ-Token": token, "Content-Type": "application/json", "Content-Length": "70000"},
+                raw_body="x" * 70000,
+            )
+            assert status == 413
+            assert body["error"]["code"] == "payload_too_large"
+
+            log_path = data_dir / "logs" / "service_audit.log"
+            assert log_path.exists()
+            log_text = log_path.read_text(encoding="utf-8")
+            assert "pw123" not in log_text
         finally:
             server.shutdown()
             server.server_close()

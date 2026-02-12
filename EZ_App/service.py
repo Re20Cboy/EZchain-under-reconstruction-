@@ -1,13 +1,84 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Dict
 
 from EZ_App.node_manager import NodeManager
 from EZ_App.runtime import TxEngine
 from EZ_App.wallet_store import WalletStore
+
+
+class NonceGuard:
+    def __init__(self, nonce_file: Path, ttl_seconds: int):
+        self.nonce_file = nonce_file
+        self.ttl_seconds = max(1, ttl_seconds)
+        self.lock = threading.Lock()
+
+    def _load(self) -> Dict[str, float]:
+        if not self.nonce_file.exists():
+            return {}
+        try:
+            parsed = json.loads(self.nonce_file.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                return {str(k): float(v) for k, v in parsed.items()}
+        except Exception:
+            return {}
+        return {}
+
+    def _save(self, data: Dict[str, float]) -> None:
+        self.nonce_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def claim(self, nonce: str) -> bool:
+        if not nonce:
+            return False
+        now = time.time()
+        with self.lock:
+            data = self._load()
+            for key, expiry in list(data.items()):
+                if expiry <= now:
+                    data.pop(key, None)
+
+            if nonce in data and data[nonce] > now:
+                return False
+
+            data[nonce] = now + self.ttl_seconds
+            self._save(data)
+            return True
+
+
+class AuditLogger:
+    REDACT_KEYS = {"password", "mnemonic", "encrypted_private_key", "X-EZ-Password", "X-EZ-Token"}
+
+    def __init__(self, log_file: Path):
+        self.log_file = log_file
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.lock = threading.Lock()
+
+    def _sanitize(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            sanitized: Dict[str, Any] = {}
+            for key, item in value.items():
+                if key in self.REDACT_KEYS:
+                    sanitized[key] = "***"
+                else:
+                    sanitized[key] = self._sanitize(item)
+            return sanitized
+        if isinstance(value, list):
+            return [self._sanitize(v) for v in value]
+        return value
+
+    def log(self, event: Dict[str, Any]) -> None:
+        payload = self._sanitize(event)
+        line = json.dumps(payload, ensure_ascii=True)
+        with self.lock:
+            with self.log_file.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
 
 
 class LocalService:
@@ -19,6 +90,9 @@ class LocalService:
         node_manager: NodeManager,
         tx_engine: TxEngine,
         api_token: str,
+        max_payload_bytes: int = 65536,
+        nonce_ttl_seconds: int = 600,
+        log_dir: str = ".ezchain/logs",
     ):
         self.host = host
         self.port = port
@@ -26,6 +100,10 @@ class LocalService:
         self.node_manager = node_manager
         self.tx_engine = tx_engine
         self.api_token = api_token
+        self.max_payload_bytes = max(1024, max_payload_bytes)
+        nonce_file = Path(wallet_store.base_dir) / "used_nonces.json"
+        self.nonce_guard = NonceGuard(nonce_file=nonce_file, ttl_seconds=nonce_ttl_seconds)
+        self.audit_logger = AuditLogger(Path(log_dir) / "service_audit.log")
 
     def _ui_html(self) -> str:
         return """<!doctype html>
@@ -55,7 +133,7 @@ class LocalService:
       <div class="row">
         <input id="token" placeholder="X-EZ-Token (run: ezchain_cli.py auth show-token)" />
       </div>
-      <div class="muted">All POST routes and sensitive balance routes require token.</div>
+      <div class="muted">All POST routes and sensitive balance routes require token. /tx/send also requires nonce and client_tx_id.</div>
     </div>
     <div class="grid">
       <div class="card">
@@ -72,6 +150,7 @@ class LocalService:
         <h3>Transactions</h3>
         <div class="row"><input id="recipient" placeholder="recipient address"/></div>
         <div class="row"><input id="amount" placeholder="amount" value="100"/></div>
+        <div class="row"><input id="client_tx_id" placeholder="client_tx_id (optional auto)"/></div>
         <div class="row">
           <button onclick="faucet()">Faucet</button>
           <button onclick="sendTx()">Send</button>
@@ -105,15 +184,27 @@ async function get(url, auth=false) {
   const r = await fetch(url, { headers: h });
   out(await r.json());
 }
-async function post(url, body) {
-  const r = await fetch(url, { method: "POST", headers: headers(true), body: JSON.stringify(body) });
+async function post(url, body, extraHeaders={}) {
+  const r = await fetch(url, { method: "POST", headers: { ...headers(true), ...extraHeaders }, body: JSON.stringify(body) });
   out(await r.json());
 }
 function createWallet(){ post("/wallet/create", { name:document.getElementById("name").value, password:document.getElementById("password").value }); }
 function showWallet(){ get("/wallet/show"); }
 function showBalance(){ get("/wallet/balance", true); }
 function faucet(){ post("/tx/faucet", { amount: Number(document.getElementById("amount").value), password:document.getElementById("password").value }); }
-function sendTx(){ post("/tx/send", { recipient:document.getElementById("recipient").value, amount:Number(document.getElementById("amount").value), password:document.getElementById("password").value }); }
+function sendTx(){
+  const clientTxId = document.getElementById("client_tx_id").value || crypto.randomUUID();
+  post(
+    "/tx/send",
+    {
+      recipient:document.getElementById("recipient").value,
+      amount:Number(document.getElementById("amount").value),
+      password:document.getElementById("password").value,
+      client_tx_id: clientTxId
+    },
+    { "X-EZ-Nonce": crypto.randomUUID() }
+  );
+}
 function historyTx(){ get("/tx/history"); }
 function nodeStart(){ post("/node/start", { consensus:1, accounts:1, start_port:19500 }); }
 function nodeStatus(){ get("/node/status"); }
@@ -134,6 +225,18 @@ function nodeStop(){ post("/node/stop", {}); }
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                error_code = payload.get("error", {}).get("code") if isinstance(payload, dict) else None
+                service.audit_logger.log(
+                    {
+                        "time": datetime.utcnow().isoformat(),
+                        "remote": self.client_address[0] if self.client_address else "unknown",
+                        "method": self.command,
+                        "path": self.path,
+                        "status": code,
+                        "ok": payload.get("ok", False) if isinstance(payload, dict) else False,
+                        "error_code": error_code,
+                    }
+                )
 
             def _write_html(self, code: int, html: str) -> None:
                 body = html.encode("utf-8")
@@ -149,14 +252,35 @@ function nodeStop(){ post("/node/stop", {}); }
             def _err(self, code: int, err_code: str, message: str) -> None:
                 self._write(code, {"ok": False, "error": {"code": err_code, "message": message}})
 
+            def _payload_too_large(self) -> bool:
+                raw = self.headers.get("Content-Length", "0")
+                try:
+                    size = int(raw)
+                except ValueError:
+                    self._err(400, "invalid_content_length", "Invalid Content-Length")
+                    return True
+                if size > service.max_payload_bytes:
+                    self._err(413, "payload_too_large", "Payload exceeds max size")
+                    return True
+                return False
+
             def _read_json(self) -> Dict[str, Any]:
+                if self._payload_too_large():
+                    return {}
+
                 length = int(self.headers.get("Content-Length", "0"))
                 if length == 0:
                     return {}
+
+                raw = self.rfile.read(length)
                 try:
-                    return json.loads(self.rfile.read(length).decode("utf-8"))
+                    parsed = json.loads(raw.decode("utf-8"))
                 except json.JSONDecodeError:
-                    return {}
+                    raise ValueError("invalid_json")
+
+                if not isinstance(parsed, dict):
+                    raise ValueError("invalid_json_object")
+                return parsed
 
             def _auth_ok(self) -> bool:
                 token = self.headers.get("X-EZ-Token", "")
@@ -213,8 +337,13 @@ function nodeStop(){ post("/node/stop", {}); }
                     self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
                     return
 
-                if self.path == "/wallet/create":
+                try:
                     body = self._read_json()
+                except ValueError as exc:
+                    self._err(400, "invalid_request", str(exc))
+                    return
+
+                if self.path == "/wallet/create":
                     password = body.get("password", "")
                     if not password:
                         self._err(400, "password_required", "password is required")
@@ -225,7 +354,6 @@ function nodeStop(){ post("/node/stop", {}); }
                     return
 
                 if self.path == "/wallet/import":
-                    body = self._read_json()
                     mnemonic = body.get("mnemonic", "")
                     password = body.get("password", "")
                     if not mnemonic or not password:
@@ -240,9 +368,12 @@ function nodeStop(){ post("/node/stop", {}); }
                     return
 
                 if self.path == "/tx/faucet":
-                    body = self._read_json()
                     password = body.get("password", "")
-                    amount = int(body.get("amount", 0))
+                    try:
+                        amount = int(body.get("amount", 0))
+                    except (TypeError, ValueError):
+                        self._err(400, "invalid_request", "amount must be an integer")
+                        return
                     try:
                         data = service.tx_engine.faucet(service.wallet_store, password=password, amount=amount)
                     except FileNotFoundError:
@@ -258,21 +389,38 @@ function nodeStop(){ post("/node/stop", {}); }
                     return
 
                 if self.path == "/tx/send":
-                    body = self._read_json()
+                    nonce = self.headers.get("X-EZ-Nonce", "")
+                    if not nonce:
+                        self._err(400, "nonce_required", "Missing X-EZ-Nonce")
+                        return
+                    if not service.nonce_guard.claim(nonce):
+                        self._err(409, "replay_detected", "Replay nonce detected")
+                        return
+
                     recipient = body.get("recipient", "")
-                    amount = int(body.get("amount", 0))
                     password = body.get("password", "")
+                    client_tx_id = body.get("client_tx_id") or uuid.uuid4().hex
+                    try:
+                        amount = int(body.get("amount", 0))
+                    except (TypeError, ValueError):
+                        self._err(400, "invalid_request", "amount must be an integer")
+                        return
+
                     try:
                         result = service.tx_engine.send(
                             service.wallet_store,
                             password=password,
                             recipient=recipient,
                             amount=amount,
+                            client_tx_id=client_tx_id,
                         )
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
                     except ValueError as exc:
+                        if str(exc) == "duplicate_transaction":
+                            self._err(409, "duplicate_transaction", "Duplicate client_tx_id")
+                            return
                         self._err(400, "invalid_request", str(exc))
                         return
                     except Exception as exc:
@@ -287,6 +435,7 @@ function nodeStop(){ post("/node/stop", {}); }
                         "recipient": result.recipient,
                         "amount": result.amount,
                         "status": result.status,
+                        "client_tx_id": result.client_tx_id,
                         "timestamp": datetime.utcnow().isoformat(),
                     }
                     service.wallet_store.append_history(history_item)
@@ -294,12 +443,13 @@ function nodeStop(){ post("/node/stop", {}); }
                     return
 
                 if self.path == "/node/start":
-                    body = self._read_json()
-                    self._ok(service.node_manager.start(
-                        consensus=int(body.get("consensus", 1)),
-                        accounts=int(body.get("accounts", 1)),
-                        start_port=int(body.get("start_port", 19500)),
-                    ))
+                    self._ok(
+                        service.node_manager.start(
+                            consensus=int(body.get("consensus", 1)),
+                            accounts=int(body.get("accounts", 1)),
+                            start_port=int(body.get("start_port", 19500)),
+                        )
+                    )
                     return
 
                 if self.path == "/node/stop":

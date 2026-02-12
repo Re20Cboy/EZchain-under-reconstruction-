@@ -22,4 +22,6 @@ jobs:
       - name: Release gate (core + transactions)
         run: python run_ezchain_tests.py --groups core transactions --skip-slow
       - name: EZ App tests
-        run: pytest -q EZ_Test/test_ez_app_crypto_wallet.py EZ_Test/test_ez_app_config_cli.py
+        run: pytest -q EZ_Test/test_ez_app_crypto_wallet.py EZ_Test/test_ez_app_config_cli.py EZ_Test/test_ez_app_tx_engine.py EZ_Test/test_ez_app_service_api.py
+      - name: Security gate
+        run: python scripts/security_gate.py
