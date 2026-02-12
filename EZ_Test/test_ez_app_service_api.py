@@ -2,6 +2,7 @@ import http.client
 import json
 import tempfile
 import threading
+import time
 from pathlib import Path
 import pytest
 
@@ -36,6 +37,20 @@ def _start_server_or_skip(service: LocalService):
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        try:
+            status, body = _request(port, "GET", "/health")
+            if status == 200 and body.get("ok") is True:
+                break
+        except Exception:
+            pass
+        time.sleep(0.05)
+    else:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        raise AssertionError("service did not become ready in time")
     return server, port, thread
 
 
