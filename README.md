@@ -153,8 +153,11 @@ EZchain is a community-driven project—your help accelerates our mission:
 
 
 ## 📄 Learn More  
-- Read the full whitepaper: [EZchain: A Scale-out Decentralized Blockchain Ledger System for Web3.0](https://arxiv.org/abs/2312.00281v1)  
+- The published paper (renamed as VWchain): https://www.sciencedirect.com/science/article/abs/pii/S1383762126000512
+- cite: Lide Xue, Mingzheng Wang, Xin Wang, VWchain: A lightweight scalable edge-side blockchain based on Value-Witness, Journal of Systems Architecture, Volume 175, 2026, 103733, ISSN 1383-7621, https://doi.org/10.1016/j.sysarc.2026.103733.
+- The original whitepaper (2023): [EZchain: A Scale-out Decentralized Blockchain Ledger System for Web3.0](https://arxiv.org/abs/2312.00281v1)  
 - Prototype simulation: https://github.com/Re20Cboy/Ezchain-py
 
 
 *"Web3 is for everyone—EZchain makes it possible."*
+
