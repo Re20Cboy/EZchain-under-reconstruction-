@@ -10,9 +10,9 @@ pip install -r requirements.txt
 ```
 
 ## 2. 日常开发最小回归（提交前）
-1. 核心 + 交易分组：
+1. 核心 + 交易 + V2 分组：
 ```bash
-python run_ezchain_tests.py --groups core transactions --skip-slow
+python run_ezchain_tests.py --groups core transactions v2 --skip-slow
 ```
 
 2. 产品层与脚本测试：
@@ -88,9 +88,10 @@ python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allo
 
 ## 6. CI 对齐说明
 CI 当前固定执行：
-- `run_ezchain_tests.py --groups core transactions --skip-slow`
+- `run_ezchain_tests.py --groups core transactions v2 --skip-slow`
 - EZ_App 关键 pytest 集合
 - `scripts/security_gate.py`
+- `run_ez_v2_acceptance.py` 作为 V2 默认路径门槛
 
 本地请至少覆盖同等范围，避免“本地通过/CI 失败”。
 

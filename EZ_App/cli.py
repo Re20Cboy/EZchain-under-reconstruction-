@@ -17,11 +17,17 @@ def _build_runtime(config_path: str):
     ensure_directories(cfg)
     wallet_store = WalletStore(cfg.app.data_dir)
     node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
-    tx_engine = TxEngine(cfg.app.data_dir, max_tx_amount=cfg.security.max_tx_amount)
+    tx_engine = TxEngine(
+        cfg.app.data_dir,
+        max_tx_amount=cfg.security.max_tx_amount,
+        protocol_version=cfg.app.protocol_version,
+    )
     return cfg, wallet_store, node_manager, tx_engine
 
 
 def _network_mode(cfg) -> str:
+    if str(cfg.app.protocol_version).lower() == "v2":
+        return "v2-localnet"
     nodes = cfg.network.bootstrap_nodes or []
     if not nodes:
         return "local"
@@ -53,6 +59,8 @@ def main(argv=None) -> int:
     wallet_sub.add_parser("show")
     w_balance = wallet_sub.add_parser("balance")
     w_balance.add_argument("--password", required=True)
+    w_checkpoints = wallet_sub.add_parser("checkpoints")
+    w_checkpoints.add_argument("--password", required=True)
 
     tx = sub.add_parser("tx")
     tx_sub = tx.add_subparsers(dest="tx_cmd", required=True)
@@ -61,6 +69,11 @@ def main(argv=None) -> int:
     tx_send.add_argument("--amount", type=int, required=True)
     tx_send.add_argument("--password", required=True)
     tx_send.add_argument("--client-tx-id", default=None)
+    tx_pending = tx_sub.add_parser("pending")
+    tx_pending.add_argument("--password", required=True)
+    tx_receipts = tx_sub.add_parser("receipts")
+    tx_receipts.add_argument("--password", required=True)
+    tx_sub.add_parser("history")
 
     tx_faucet = tx_sub.add_parser("faucet")
     tx_faucet.add_argument("--amount", type=int, required=True)
@@ -99,18 +112,24 @@ def main(argv=None) -> int:
     if args.cmd == "wallet":
         if args.wallet_cmd == "create":
             result = wallet_store.create_wallet(password=args.password, name=args.name)
-            print(json.dumps({"address": result["address"], "mnemonic": result["mnemonic"]}, indent=2))
+            summary = wallet_store.summary(protocol_version=cfg.app.protocol_version)
+            print(json.dumps({"address": summary.address, "mnemonic": result["mnemonic"]}, indent=2))
             return 0
         if args.wallet_cmd == "import":
             result = wallet_store.import_wallet(mnemonic=args.mnemonic, password=args.password, name=args.name)
-            print(json.dumps({"address": result["address"]}, indent=2))
+            summary = wallet_store.summary(protocol_version=cfg.app.protocol_version)
+            print(json.dumps({"address": summary.address}, indent=2))
             return 0
         if args.wallet_cmd == "show":
-            summary = wallet_store.summary()
+            summary = wallet_store.summary(protocol_version=cfg.app.protocol_version)
             print(json.dumps(summary.__dict__, indent=2))
             return 0
         if args.wallet_cmd == "balance":
             data = tx_engine.balance(wallet_store, password=args.password)
+            print(json.dumps(data, indent=2))
+            return 0
+        if args.wallet_cmd == "checkpoints":
+            data = tx_engine.checkpoints(wallet_store, password=args.password)
             print(json.dumps(data, indent=2))
             return 0
 
@@ -127,7 +146,7 @@ def main(argv=None) -> int:
                 amount=args.amount,
                 client_tx_id=args.client_tx_id,
             )
-            sender = wallet_store.summary().address
+            sender = wallet_store.summary(protocol_version=cfg.app.protocol_version).address
             item = {
                 "tx_id": result.tx_hash,
                 "submit_hash": result.submit_hash,
@@ -137,8 +156,21 @@ def main(argv=None) -> int:
                 "status": result.status,
                 "client_tx_id": result.client_tx_id,
             }
+            if result.receipt_height is not None:
+                item["receipt_height"] = result.receipt_height
+            if result.receipt_block_hash is not None:
+                item["receipt_block_hash"] = result.receipt_block_hash
             wallet_store.append_history(item)
             print(json.dumps(item, indent=2))
+            return 0
+        if args.tx_cmd == "pending":
+            print(json.dumps(tx_engine.pending(wallet_store, password=args.password), indent=2))
+            return 0
+        if args.tx_cmd == "receipts":
+            print(json.dumps(tx_engine.receipts(wallet_store, password=args.password), indent=2))
+            return 0
+        if args.tx_cmd == "history":
+            print(json.dumps({"items": wallet_store.get_history()}, indent=2))
             return 0
 
     if args.cmd == "node":

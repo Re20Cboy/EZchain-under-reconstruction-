@@ -3,16 +3,21 @@ from __future__ import annotations
 import secrets
 import json
 import threading
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from EZ_Account.Account import Account
-from EZ_Tx_Pool.TXPool import TxPool
-from EZ_VPB.values.Value import Value, ValueState
+from EZ_V2.app_client import V2LocalAppClient, V2LocalAppSession
+from EZ_V2.crypto import keccak256
+from EZ_V2.encoding import canonical_encode
+from EZ_V2.values import LocalValueStatus, ValueRange
 
 from EZ_App.wallet_store import WalletStore
+
+if TYPE_CHECKING:
+    from EZ_Account.Account import Account
 
 
 @dataclass
@@ -23,18 +28,51 @@ class TxResult:
     recipient: str
     status: str
     client_tx_id: Optional[str] = None
+    receipt_height: Optional[int] = None
+    receipt_block_hash: Optional[str] = None
 
 
 class TxEngine:
-    def __init__(self, data_dir: str, max_tx_amount: int = 100000000):
+    def __init__(
+        self,
+        data_dir: str,
+        max_tx_amount: int = 100000000,
+        protocol_version: str = "v1",
+        v2_chain_id: int = 1,
+        v2_expiry_height: int = 1000000,
+        v2_backend_dir: str | None = None,
+    ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        self.pool = TxPool(db_path=str(self.data_dir / "app_tx_pool.db"))
+        self.protocol_version = str(protocol_version or "v1").lower()
+        if self.protocol_version not in {"v1", "v2"}:
+            raise ValueError("unsupported protocol_version")
+        if self.protocol_version == "v1":
+            from EZ_Tx_Pool.TXPool import TxPool
+
+            self.pool = TxPool(db_path=str(self.data_dir / "app_tx_pool.db"))
+        else:
+            self.pool = None
         self.max_tx_amount = max_tx_amount
+        self.v2_chain_id = v2_chain_id
+        self.v2_expiry_height = v2_expiry_height
+        self.v2_genesis_block_hash = b"\x00" * 32
+        self.v2_backend_dir = Path(v2_backend_dir) if v2_backend_dir else (self.data_dir / "v2_runtime")
+        self.v2_backend_dir.mkdir(parents=True, exist_ok=True)
+        self.v2_client = V2LocalAppClient(
+            backend_dir=str(self.v2_backend_dir),
+            chain_id=self.v2_chain_id,
+            genesis_block_hash=self.v2_genesis_block_hash,
+        )
+        self.v2_backend_lock = threading.Lock()
+        self._v2_session_registry: dict[int, V2LocalAppSession] = {}
+        self.v2_faucet_state_file = self.data_dir / "v2_faucet_state.json"
         self.idempotency_file = self.data_dir / "tx_idempotency.json"
         self.idempotency_lock = threading.Lock()
 
     def _build_account(self, wallet_store: WalletStore, password: str) -> Account:
+        from EZ_Account.Account import Account
+
         wallet = wallet_store.load_wallet(password=password)
         wallet_dir = self.data_dir / "wallet_state" / wallet["address"]
         wallet_dir.mkdir(parents=True, exist_ok=True)
@@ -46,14 +84,173 @@ class TxEngine:
             data_directory=str(wallet_dir),
         )
 
+    def _build_v2_wallet(self, wallet_store: WalletStore, password: str) -> tuple[Dict[str, Any], str]:
+        wallet = wallet_store.load_v2_wallet(password=password)
+        wallet_dir = self.data_dir / "wallet_state_v2" / wallet["address"]
+        wallet_dir.mkdir(parents=True, exist_ok=True)
+        return wallet, str(wallet_dir / "wallet_v2.db")
+
+    def _open_v2_session(
+        self,
+        wallet_store: WalletStore,
+        password: str,
+        *,
+        auto_confirm_receipts: bool = True,
+    ) -> tuple[Dict[str, Any], V2LocalAppSession]:
+        wallet_identity, wallet_db_path = self._build_v2_wallet(wallet_store, password)
+        session = self.v2_client.open_session(
+            wallet_identity=wallet_identity,
+            wallet_db_path=wallet_db_path,
+            auto_confirm_receipts=auto_confirm_receipts,
+        )
+        return wallet_identity, session
+
+    def _open_v2_backend(
+        self,
+        wallet_store: WalletStore,
+        password: str,
+        *,
+        auto_confirm_receipts: bool = True,
+    ):
+        wallet_identity, session = self._open_v2_session(
+            wallet_store,
+            password,
+            auto_confirm_receipts=auto_confirm_receipts,
+        )
+        self._v2_session_registry[id(session.wallet)] = session
+        self._v2_session_registry[id(session.consensus)] = session
+        return wallet_identity, session.wallet, session.consensus, session.account_node
+
+    def _close_v2_backend(self, account, consensus) -> None:
+        session = self._v2_session_registry.pop(id(account), None)
+        if session is None:
+            session = self._v2_session_registry.pop(id(consensus), None)
+        else:
+            self._v2_session_registry.pop(id(session.consensus), None)
+        if session is not None:
+            session.close()
+
+    def _record_v2_received_events(self, wallet_store: WalletStore, session: V2LocalAppSession) -> None:
+        for event in session.sync_wallet_state():
+            wallet_store.append_history(
+                {
+                    "tx_id": self._v2_tx_hash(event.target_tx),
+                    "transfer_package_hash": event.package_hash.hex(),
+                    "sender": event.sender_addr,
+                    "recipient": event.recipient_addr,
+                    "amount": event.target_value.size,
+                    "status": "received",
+                    "direction": "inbound",
+                    "value_begin": event.target_value.begin,
+                    "value_end": event.target_value.end,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+    def _load_v2_faucet_state(self) -> Dict[str, int]:
+        if not self.v2_faucet_state_file.exists():
+            return {"next_begin": 0}
+        try:
+            parsed = json.loads(self.v2_faucet_state_file.read_text(encoding="utf-8"))
+        except Exception:
+            return {"next_begin": 0}
+        if not isinstance(parsed, dict):
+            return {"next_begin": 0}
+        next_begin = int(parsed.get("next_begin", 0))
+        return {"next_begin": max(0, next_begin)}
+
+    def _save_v2_faucet_state(self, state: Dict[str, int]) -> None:
+        self.v2_faucet_state_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    def _next_v2_faucet_range(self, amount: int) -> ValueRange:
+        state = self._load_v2_faucet_state()
+        begin = int(state.get("next_begin", 0))
+        value = ValueRange(begin=begin, end=begin + amount - 1)
+        self._save_v2_faucet_state({"next_begin": value.end + 1})
+        return value
+
+    def _v2_tx_hash(self, tx: Any) -> str:
+        return keccak256(b"EZCHAIN_APP_V2_TX" + canonical_encode(tx)).hex()
+
+    def _v2_submit_hash(self, envelope: Any) -> str:
+        return keccak256(b"EZCHAIN_APP_V2_SUBMISSION" + canonical_encode(envelope)).hex()
+
+    def _submit_transaction_v2(
+        self,
+        wallet_store: WalletStore,
+        password: str,
+        recipient: str,
+        amount: int,
+        client_tx_id: Optional[str],
+    ) -> TxResult:
+        with self.v2_backend_lock:
+            _, session = self._open_v2_session(wallet_store, password)
+            try:
+                self._record_v2_received_events(wallet_store, session)
+                account = session.wallet
+                if account.list_pending_bundles():
+                    raise ValueError("pending_bundle_exists")
+                if account.total_balance() < amount:
+                    raise ValueError("insufficient_balance")
+                if account.available_balance() < amount:
+                    raise ValueError("insufficient_spendable_values")
+
+                confirmed = session.submit_confirmed_payment(
+                    recipient_addr=recipient,
+                    amount=amount,
+                    fee=0,
+                    expiry_height=self.v2_expiry_height,
+                    anti_spam_nonce=secrets.randbelow(1 << 63),
+                )
+                receipt = confirmed.receipt
+                return TxResult(
+                    tx_hash=self._v2_tx_hash(confirmed.submitted.target_tx),
+                    submit_hash=self._v2_submit_hash(confirmed.submitted.submission.envelope),
+                    amount=amount,
+                    recipient=recipient,
+                    status="confirmed",
+                    client_tx_id=client_tx_id,
+                    receipt_height=receipt.header_lite.height if receipt else None,
+                    receipt_block_hash=receipt.header_lite.block_hash.hex() if receipt else None,
+                )
+            except ValueError as exc:
+                if str(exc) == "wallet already has a pending bundle":
+                    raise ValueError("pending_bundle_exists") from exc
+                raise
+            finally:
+                session.close()
+
     def faucet(self, wallet_store: WalletStore, password: str, amount: int) -> Dict[str, Any]:
         if amount <= 0:
             raise ValueError("amount_must_be_positive")
+
+        if self.protocol_version == "v2":
+            with self.v2_backend_lock:
+                _, session = self._open_v2_session(wallet_store, password)
+                try:
+                    minted_value = self._next_v2_faucet_range(amount)
+                    session.register_genesis_value(minted_value)
+                    self._record_v2_received_events(wallet_store, session)
+                    account = session.wallet
+                    consensus = session.consensus
+                    return {
+                        "address": account.address,
+                        "protocol_version": "v2",
+                        "faucet_amount": amount,
+                        "minted_values": 1,
+                        "available_balance": account.available_balance(),
+                        "total_balance": account.total_balance(),
+                        "chain_height": consensus.chain.current_height,
+                    }
+                finally:
+                    session.close()
 
         account = self._build_account(wallet_store, password)
         # Build chunks that guarantee full subset coverage for [1..amount].
         # If the current cover is [0..cover], adding chunk <= cover+1 extends it
         # to [0..cover+chunk], which avoids "cannot compose exact amount" failures.
+        from EZ_VPB.values.Value import Value, ValueState
+
         remainder = amount
         cover = 0
         minted_chunks = []
@@ -108,25 +305,49 @@ class TxEngine:
         if not recipient:
             raise ValueError("recipient_required")
 
-        account = self._build_account(wallet_store, password)
+        sender_address = wallet_store.summary(protocol_version=self.protocol_version).address
         idem_key = ""
         if client_tx_id:
             with self.idempotency_lock:
                 idempotency = self._load_idempotency()
-                idem_key = f"{account.address}:{client_tx_id}"
+                idem_key = f"{sender_address}:{client_tx_id}"
                 if idem_key in idempotency:
                     raise ValueError("duplicate_transaction")
-                result = self._submit_transaction(account=account, recipient=recipient, amount=amount, client_tx_id=client_tx_id)
+                if self.protocol_version == "v2":
+                    result = self._submit_transaction_v2(
+                        wallet_store=wallet_store,
+                        password=password,
+                        recipient=recipient,
+                        amount=amount,
+                        client_tx_id=client_tx_id,
+                    )
+                else:
+                    account = self._build_account(wallet_store, password)
+                    result = self._submit_transaction(
+                        account=account,
+                        recipient=recipient,
+                        amount=amount,
+                        client_tx_id=client_tx_id,
+                    )
                 idempotency[idem_key] = {
                     "tx_hash": result.tx_hash,
                     "submit_hash": result.submit_hash,
                     "amount": amount,
                     "recipient": recipient,
-                    "recorded_at": datetime.utcnow().isoformat(),
+                    "recorded_at": datetime.now(timezone.utc).isoformat(),
                 }
                 self._save_idempotency(idempotency)
                 return result
 
+        if self.protocol_version == "v2":
+            return self._submit_transaction_v2(
+                wallet_store=wallet_store,
+                password=password,
+                recipient=recipient,
+                amount=amount,
+                client_tx_id=client_tx_id,
+            )
+        account = self._build_account(wallet_store, password)
         return self._submit_transaction(account=account, recipient=recipient, amount=amount, client_tx_id=client_tx_id)
 
     def _submit_transaction(self, account: Account, recipient: str, amount: int, client_tx_id: Optional[str]) -> TxResult:
@@ -166,6 +387,36 @@ class TxEngine:
         )
 
     def balance(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
+        if self.protocol_version == "v2":
+            with self.v2_backend_lock:
+                _, session = self._open_v2_session(wallet_store, password)
+                try:
+                    self._record_v2_received_events(wallet_store, session)
+                    account = session.wallet
+                    consensus = session.consensus
+                    pending_incoming_transfer_count = session.pending_incoming_transfer_count()
+                    breakdown = {
+                        status.value: amount
+                        for status, amount in account.balance_breakdown().items()
+                    }
+                    return {
+                        "address": account.address,
+                        "protocol_version": "v2",
+                        "available_balance": account.available_balance(),
+                        "total_balance": account.total_balance(),
+                        "unspent_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
+                        "pending_balance": account.pending_balance(),
+                        "onchain_balance": 0,
+                        "confirmed_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
+                        "pending_bundle_count": len(account.list_pending_bundles()),
+                        "pending_incoming_transfer_count": pending_incoming_transfer_count,
+                        "v2_status_breakdown": breakdown,
+                        "chain_height": consensus.chain.current_height,
+                    }
+                finally:
+                    session.close()
+        from EZ_VPB.values.Value import ValueState
+
         account = self._build_account(wallet_store, password)
         return {
             "address": account.address,
@@ -176,3 +427,101 @@ class TxEngine:
             "onchain_balance": account.get_balance(ValueState.ONCHAIN),
             "confirmed_balance": account.get_balance(ValueState.CONFIRMED),
         }
+
+    def pending(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
+        if self.protocol_version != "v2":
+            raise ValueError("pending query is only supported in v2")
+        with self.v2_backend_lock:
+            _, session = self._open_v2_session(wallet_store, password)
+            try:
+                self._record_v2_received_events(wallet_store, session)
+                account = session.wallet
+                consensus = session.consensus
+                items = [
+                    {
+                        "seq": context.seq,
+                        "bundle_hash": context.bundle_hash.hex(),
+                        "created_at": context.created_at,
+                        "outgoing_values": [
+                            {"begin": value.begin, "end": value.end}
+                            for value in context.outgoing_values
+                        ],
+                    }
+                    for context in account.list_pending_bundles()
+                ]
+                return {
+                    "address": account.address,
+                    "protocol_version": "v2",
+                    "chain_height": consensus.chain.current_height,
+                    "items": items,
+                }
+            finally:
+                session.close()
+
+    def receipts(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
+        if self.protocol_version != "v2":
+            raise ValueError("receipt query is only supported in v2")
+        with self.v2_backend_lock:
+            _, session = self._open_v2_session(wallet_store, password)
+            try:
+                self._record_v2_received_events(wallet_store, session)
+                account = session.wallet
+                consensus = session.consensus
+                items = [
+                    {
+                        "seq": receipt.seq,
+                        "height": receipt.header_lite.height,
+                        "block_hash": receipt.header_lite.block_hash.hex(),
+                        "state_root": receipt.header_lite.state_root.hex(),
+                        "prev_ref": (
+                            None
+                            if receipt.prev_ref is None
+                            else {
+                                "height": receipt.prev_ref.height,
+                                "block_hash": receipt.prev_ref.block_hash.hex(),
+                                "bundle_hash": receipt.prev_ref.bundle_hash.hex(),
+                                "seq": receipt.prev_ref.seq,
+                            }
+                        ),
+                    }
+                    for receipt in account.list_receipts()
+                ]
+                return {
+                    "address": account.address,
+                    "protocol_version": "v2",
+                    "chain_height": consensus.chain.current_height,
+                    "items": items,
+                }
+            finally:
+                session.close()
+
+    def checkpoints(self, wallet_store: WalletStore, password: str) -> Dict[str, Any]:
+        if self.protocol_version != "v2":
+            raise ValueError("checkpoint query is only supported in v2")
+        with self.v2_backend_lock:
+            _, session = self._open_v2_session(wallet_store, password)
+            try:
+                self._record_v2_received_events(wallet_store, session)
+                account = session.wallet
+                consensus = session.consensus
+                pending_incoming_transfer_count = session.pending_incoming_transfer_count()
+                items = [
+                    {
+                        "value_begin": checkpoint.value_begin,
+                        "value_end": checkpoint.value_end,
+                        "owner_addr": checkpoint.owner_addr,
+                        "checkpoint_height": checkpoint.checkpoint_height,
+                        "checkpoint_block_hash": checkpoint.checkpoint_block_hash.hex(),
+                        "checkpoint_bundle_hash": checkpoint.checkpoint_bundle_hash.hex(),
+                    }
+                    for checkpoint in account.list_checkpoints()
+                ]
+                return {
+                    "address": account.address,
+                    "protocol_version": "v2",
+                    "chain_height": consensus.chain.current_height,
+                    "items": items,
+                    "pending_incoming_transfer_count": pending_incoming_transfer_count,
+                }
+            finally:
+                session.close()

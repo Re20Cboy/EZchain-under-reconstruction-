@@ -13,6 +13,7 @@ This runbook covers EZchain MVP operations on the hosted public testnet topology
 3. Run release gate:
    - `python scripts/release_gate.py --skip-slow`
    - `python scripts/release_gate.py --skip-slow --with-stability`
+   - release gate now includes the V2 acceptance path (`run_ez_v2_acceptance.py`)
 4. Verify security gate:
    - `python scripts/security_gate.py`
 

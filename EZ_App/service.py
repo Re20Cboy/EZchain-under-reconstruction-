@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -219,6 +219,7 @@ class LocalService:
           <button onclick="createWallet()">Create</button>
           <button onclick="showWallet()">Show</button>
           <button onclick="showBalance()">Balance</button>
+          <button onclick="walletCheckpoints()">Checkpoints</button>
         </div>
       </div>
       <div class="card">
@@ -230,6 +231,8 @@ class LocalService:
           <button onclick="faucet()">Faucet</button>
           <button onclick="sendTx()">Send</button>
           <button onclick="historyTx()">History</button>
+          <button onclick="pendingTx()">Pending</button>
+          <button onclick="receiptsTx()">Receipts</button>
         </div>
       </div>
       <div class="card">
@@ -260,13 +263,21 @@ async function get(url, auth=false) {
   const r = await fetch(url, { headers: h });
   out(await r.json());
 }
+async function getSecure(url) {
+  const h = headers(false);
+  const password = document.getElementById("password").value;
+  if (password) h["X-EZ-Password"] = password;
+  const r = await fetch(url, { headers: h });
+  out(await r.json());
+}
 async function post(url, body, extraHeaders={}) {
   const r = await fetch(url, { method: "POST", headers: { ...headers(true), ...extraHeaders }, body: JSON.stringify(body) });
   out(await r.json());
 }
 function createWallet(){ post("/wallet/create", { name:document.getElementById("name").value, password:document.getElementById("password").value }); }
 function showWallet(){ get("/wallet/show"); }
-function showBalance(){ get("/wallet/balance", true); }
+function showBalance(){ getSecure("/wallet/balance"); }
+function walletCheckpoints(){ getSecure("/wallet/checkpoints"); }
 function faucet(){ post("/tx/faucet", { amount: Number(document.getElementById("amount").value), password:document.getElementById("password").value }); }
 function sendTx(){
   const clientTxId = document.getElementById("client_tx_id").value || crypto.randomUUID();
@@ -282,6 +293,8 @@ function sendTx(){
   );
 }
 function historyTx(){ get("/tx/history"); }
+function pendingTx(){ getSecure("/tx/pending"); }
+function receiptsTx(){ getSecure("/tx/receipts"); }
 function showMetrics(){ get("/metrics"); }
 function nodeStart(){ post("/node/start", { consensus:1, accounts:1, start_port:19500 }); }
 function nodeStatus(){ get("/node/status"); }
@@ -305,7 +318,7 @@ function nodeStop(){ post("/node/stop", {}); }
                 error_code = payload.get("error", {}).get("code") if isinstance(payload, dict) else None
                 service.audit_logger.log(
                     {
-                        "time": datetime.utcnow().isoformat(),
+                        "time": datetime.now(timezone.utc).isoformat(),
                         "remote": self.client_address[0] if self.client_address else "unknown",
                         "method": self.command,
                         "path": self.path,
@@ -390,14 +403,14 @@ function nodeStop(){ post("/node/stop", {}); }
 
             def do_GET(self):
                 if self.path == "/health":
-                    self._ok({"status": "ok", "time": datetime.utcnow().isoformat()})
+                    self._ok({"status": "ok", "time": datetime.now(timezone.utc).isoformat()})
                     return
                 if self.path == "/" or self.path == "/ui":
                     self._write_html(200, service._ui_html())
                     return
                 if self.path == "/wallet/show":
                     try:
-                        s = service.wallet_store.summary()
+                        s = service.wallet_store.summary(protocol_version=service.tx_engine.protocol_version)
                         self._ok({"address": s.address, "name": s.name, "created_at": s.created_at})
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
@@ -420,8 +433,71 @@ function nodeStop(){ post("/node/stop", {}); }
                         return
                     self._ok(data)
                     return
+                if self.path == "/wallet/checkpoints":
+                    if not self._auth_ok():
+                        self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                        return
+                    password = self.headers.get("X-EZ-Password", "")
+                    if not password:
+                        self._err(400, "password_required", "Missing X-EZ-Password header")
+                        return
+                    try:
+                        data = service.tx_engine.checkpoints(service.wallet_store, password=password)
+                    except FileNotFoundError:
+                        self._err(404, "wallet_not_found", "Wallet not found")
+                        return
+                    except ValueError as exc:
+                        self._err(400, "invalid_request", str(exc))
+                        return
+                    except Exception as exc:
+                        self._err(500, "checkpoints_failed", str(exc))
+                        return
+                    self._ok(data)
+                    return
                 if self.path == "/tx/history":
                     self._ok({"items": service.wallet_store.get_history()})
+                    return
+                if self.path == "/tx/pending":
+                    if not self._auth_ok():
+                        self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                        return
+                    password = self.headers.get("X-EZ-Password", "")
+                    if not password:
+                        self._err(400, "password_required", "Missing X-EZ-Password header")
+                        return
+                    try:
+                        data = service.tx_engine.pending(service.wallet_store, password=password)
+                    except FileNotFoundError:
+                        self._err(404, "wallet_not_found", "Wallet not found")
+                        return
+                    except ValueError as exc:
+                        self._err(400, "invalid_request", str(exc))
+                        return
+                    except Exception as exc:
+                        self._err(500, "pending_failed", str(exc))
+                        return
+                    self._ok(data)
+                    return
+                if self.path == "/tx/receipts":
+                    if not self._auth_ok():
+                        self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                        return
+                    password = self.headers.get("X-EZ-Password", "")
+                    if not password:
+                        self._err(400, "password_required", "Missing X-EZ-Password header")
+                        return
+                    try:
+                        data = service.tx_engine.receipts(service.wallet_store, password=password)
+                    except FileNotFoundError:
+                        self._err(404, "wallet_not_found", "Wallet not found")
+                        return
+                    except ValueError as exc:
+                        self._err(400, "invalid_request", str(exc))
+                        return
+                    except Exception as exc:
+                        self._err(500, "receipts_failed", str(exc))
+                        return
+                    self._ok(data)
                     return
                 if self.path == "/node/status":
                     node_status = service.node_manager.status()
@@ -471,7 +547,8 @@ function nodeStop(){ post("/node/stop", {}); }
                         return
                     name = body.get("name", "default")
                     created = service.wallet_store.create_wallet(password=password, name=name)
-                    self._ok({"address": created["address"], "mnemonic": created["mnemonic"]})
+                    summary = service.wallet_store.summary(protocol_version=service.tx_engine.protocol_version)
+                    self._ok({"address": summary.address, "mnemonic": created["mnemonic"]})
                     return
 
                 if self.path == "/wallet/import":
@@ -485,7 +562,8 @@ function nodeStop(){ post("/node/stop", {}); }
                         password=password,
                         name=body.get("name", "default"),
                     )
-                    self._ok({"address": imported["address"]})
+                    summary = service.wallet_store.summary(protocol_version=service.tx_engine.protocol_version)
+                    self._ok({"address": summary.address})
                     return
 
                 if self.path == "/tx/faucet":
@@ -555,7 +633,7 @@ function nodeStop(){ post("/node/stop", {}); }
                         self._err(500, "send_failed", str(exc))
                         return
 
-                    sender = service.wallet_store.summary().address
+                    sender = service.wallet_store.summary(protocol_version=service.tx_engine.protocol_version).address
                     latency_ms = (time.perf_counter() - started) * 1000.0
                     service.metrics.record_tx_send(ok=True, latency_ms=latency_ms)
                     history_item = {
@@ -566,18 +644,24 @@ function nodeStop(){ post("/node/stop", {}); }
                         "amount": result.amount,
                         "status": result.status,
                         "client_tx_id": result.client_tx_id,
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                     }
+                    if result.receipt_height is not None:
+                        history_item["receipt_height"] = result.receipt_height
+                    if result.receipt_block_hash is not None:
+                        history_item["receipt_block_hash"] = result.receipt_block_hash
                     service.wallet_store.append_history(history_item)
                     self._ok(history_item)
                     return
 
                 if self.path == "/node/start":
+                    node_mode = "v2-localnet" if service.tx_engine.protocol_version == "v2" else "local"
                     self._ok(
                         service.node_manager.start(
                             consensus=int(body.get("consensus", 1)),
                             accounts=int(body.get("accounts", 1)),
                             start_port=int(body.get("start_port", 19500)),
+                            mode=node_mode,
                         )
                     )
                     return

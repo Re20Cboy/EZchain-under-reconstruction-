@@ -202,6 +202,10 @@ yarn-error.log*
 *.log
 *.tmp
 *.temp
+.ezchain/
+.ezchain_v2/
+.ezchain*/api.token
+.ezchain*/v2_runtime/
 
 # Claude AI Code Assistant
 .claude/

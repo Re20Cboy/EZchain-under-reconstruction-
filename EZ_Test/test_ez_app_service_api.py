@@ -243,6 +243,126 @@ def test_service_auth_and_tx_flow():
             thread.join(timeout=2)
 
 
+def test_service_v2_local_backend_flow():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_v2"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+
+        wallet_store = WalletStore(cfg.app.data_dir)
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        tx_engine = TxEngine(cfg.app.data_dir, protocol_version="v2")
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=wallet_store,
+            node_manager=node_manager,
+            tx_engine=tx_engine,
+            api_token=token,
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            auth_headers = {"X-EZ-Token": token}
+            status, body = _request(port, "POST", "/wallet/create", {"name": "demo", "password": "pw123"}, auth_headers)
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["address"].startswith("0x")
+
+            status, body = _request(port, "POST", "/tx/faucet", {"password": "pw123", "amount": 300}, auth_headers)
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["chain_height"] == 0
+
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 50, "client_tx_id": "cid-v2-1"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-v2-0001"},
+            )
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["status"] == "confirmed"
+            assert body["data"]["receipt_height"] == 1
+            assert body["data"]["receipt_block_hash"]
+
+            status, body = _request(
+                port,
+                "GET",
+                "/wallet/balance",
+                headers={"X-EZ-Token": token, "X-EZ-Password": "pw123"},
+            )
+            assert status == 200
+            assert body["data"]["available_balance"] == 250
+            assert body["data"]["pending_bundle_count"] == 0
+            assert body["data"]["chain_height"] == 1
+            assert body["data"]["pending_incoming_transfer_count"] == 0
+
+            status, body = _request(
+                port,
+                "GET",
+                "/wallet/checkpoints",
+                headers={"X-EZ-Token": token, "X-EZ-Password": "pw123"},
+            )
+            assert status == 200
+            assert body["data"]["items"] == []
+
+            status, body = _request(
+                port,
+                "GET",
+                "/tx/pending",
+                headers={"X-EZ-Token": token, "X-EZ-Password": "pw123"},
+            )
+            assert status == 200
+            assert body["data"]["items"] == []
+
+            status, body = _request(
+                port,
+                "GET",
+                "/tx/receipts",
+                headers={"X-EZ-Token": token, "X-EZ-Password": "pw123"},
+            )
+            assert status == 200
+            assert body["data"]["chain_height"] == 1
+            assert len(body["data"]["items"]) == 1
+            assert body["data"]["items"][0]["seq"] == 1
+
+            status, body = _request(port, "GET", "/tx/history")
+            assert status == 200
+            assert len(body["data"]["items"]) == 1
+            assert body["data"]["items"][0]["status"] == "confirmed"
+            assert body["data"]["items"][0]["receipt_height"] == 1
+
+            status, body = _request(port, "POST", "/node/start", {"consensus": 1, "accounts": 1}, auth_headers)
+            assert status == 200
+            assert body["data"]["mode"] == "v2-localnet"
+
+            status, body = _request(port, "GET", "/node/status")
+            assert status == 200
+            assert body["data"]["mode"] == "v2-localnet"
+            assert body["data"]["backend"]["height"] == 1
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
 def test_service_restart_recovers_history_and_nonce_state():
     with tempfile.TemporaryDirectory() as td:
         cfg_path = Path(td) / "ezchain.yaml"

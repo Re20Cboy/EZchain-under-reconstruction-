@@ -91,6 +91,20 @@ TEST_GROUPS: Tuple[Dict[str, object], ...] = (
             "EZ_Test/test_transaction_injector.py",
         ],
     },
+    {
+        "name": "v2",
+        "title": "V2 Local Runtime",
+        "description": "V2 protocol core, wallet storage, localnet, app runtime, and acceptance gate",
+        "tests": [
+            "EZ_Test/test_ez_v2_protocol.py",
+            "EZ_Test/test_ez_v2_wallet_storage.py",
+            "EZ_Test/test_ez_v2_runtime.py",
+            "EZ_Test/test_ez_v2_localnet.py",
+            "EZ_Test/test_ez_v2_app_runtime.py",
+            "EZ_Test/test_ez_v2_node_manager.py",
+            "EZ_Test/test_ez_v2_acceptance.py",
+        ],
+    },
 )
 
 

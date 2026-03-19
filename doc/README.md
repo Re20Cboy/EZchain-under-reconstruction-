@@ -3,6 +3,9 @@
 本目录是当前 MVP 阶段的统一文档入口。
 
 ## 先看这里（所有人）
+- 仓库结构图：`doc/PROJECT_STRUCTURE.md`
+- V2 快速上手：`doc/EZchain-V2-quickstart.md`
+- V1 freeze / V2 切换规则：`EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
 - 项目状态检查点：`doc/PROJECT_CHECKPOINT_2026-02-12.md`
 - 后续计划（MVP 收口）：`doc/MVP_ROADMAP_NEXT.md`
 - 安装与首次使用：`doc/INSTALLATION.md`
@@ -31,7 +34,7 @@
 - 白皮书文本提取：`doc/VWchian.txt`
 
 ## 当前默认流程（推荐）
-1. 安装并生成配置：按 `doc/INSTALLATION.md`。
-2. 使用 `official-testnet` profile 连通测试网。
-3. 用 `doc/USER_QUICKSTART.md` 跑通钱包创建、收款、转账。
-4. 提交前执行 `doc/DEV_TESTING.md` 的最小门禁命令。
+1. 先看 `doc/PROJECT_STRUCTURE.md`，确认当前 V2 / V1 分层。
+2. 使用 `configs/ezchain.v2-localnet.yaml` 作为本地默认配置。
+3. 用 `doc/EZchain-V2-quickstart.md` 跑通钱包创建、faucet、转账和 service。
+4. 提交前执行 `doc/DEV_TESTING.md` 的 V2 默认门槛。

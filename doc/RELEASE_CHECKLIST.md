@@ -2,6 +2,8 @@
 
 ## Required checks
 1. `python scripts/release_gate.py --skip-slow`
+   - includes `run_ezchain_tests.py --groups core transactions v2 --skip-slow`
+   - includes `python run_ez_v2_acceptance.py`
 2. `python scripts/security_gate.py`
 3. `python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0`
 4. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`

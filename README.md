@@ -1,163 +1,140 @@
-﻿# EZchain: A Scale-out Decentralized Blockchain for Web3.0 Inclusivity  
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)  
+# EZchain
 
 Chinese README: `README.zh-CN.md`
 
+EZchain is a research-to-product codebase for a scale-out blockchain design.  
+This repository currently contains two lanes:
 
-## 🌟 Our Vision  
-At EZchain, we stand firm on the **core principles of decentralization**—the bedrock of Web3. Our mission is to break down barriers that exclude edge devices (mobile phones, IoT gadgets, agents, etc.) from full Web3 participation:  
-- No more prohibitive transaction fees for basic wallet usage.  
-- No reliance on top-tier consensus nodes or miner cartels—instead, a **self-governing ecosystem** where most participants contribute to network health.  
-- Revive the early Bitcoin spirit: enable full-node operation on **consumer-grade hardware** (ordinary laptops, smartphones) with minimal bandwidth and storage demands.  
+- `EZ_V2`: the active local-development and acceptance lane
+- `V1` modules: frozen legacy/reference modules kept for comparison and compatibility
 
-We believe Web3 should be accessible to *everyone*, not just those with specialized resources. EZchain is built to make this a reality—without compromising on performance, security, or scalability.
+The repository is in a transition stage. The recommended local path is now **V2**.
 
+## Current Status
 
-## 🚀 What is EZchain?  
-EZchain is a novel Layer-1+2 decentralized ledger system designed explicitly for Web3.0. Unlike Layer-2/off-chain solutions that trade security for speed, or sharded blockchains that complicate cross-chain trust, EZchain achieves **scale-out performance** while preserving strict decentralization and security.  
+- V2 local runtime, wallet flow, local service API, and local acceptance gate are runnable
+- V1 remains in the tree as a legacy lane and is being frozen instead of deleted immediately
+- Default local config template: `configs/ezchain.v2-localnet.yaml`
+- Recommended acceptance entry: `python3 run_ez_v2_acceptance.py`
 
-Key innovations powering EZchain:  
-1. **Value-Centric Data Structure**: Replaces traditional UTXO/account models with a unique "value" structure (integer sets) to eliminate redundant transaction history tracking.  
-2. **Lightweight On-Chain Data**: Blocks are fixed at ~1 MB but theoretically hold *unlimited transactions* via Merkle Tree Roots and Bloom Filters.  
-3. **P2P Transaction Verification**: Shifts validation work from consensus nodes to account nodes (end users), reducing network bottlenecks and enabling edge-device participation.  
+For the migration rule itself, see:
+- `EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
 
+## Recommended Quick Start
 
-## ⚡ Core Advantages  
-| Feature                  | EZchain Performance                                                                 |
-|--------------------------|-------------------------------------------------------------------------------------|
-| **Throughput**           | 10,000+ TPS (surpasses bandwidth limits for "scale-out"; far exceeds traditional Layer-1) |
-| **Transaction Latency**  | ~10 seconds (meets consumer app needs for mobile/Web3 payments)                     |
-| **Hardware Compatibility**| Runs on consumer-grade devices (no need for enterprise servers/mining rigs)         |
-| **Cost Efficiency**      | Near-constant storage/bandwidth costs (no infinite growth with transaction volume)  |
-| **Security**             | Tolerates up to 1/3 (BFT) or 1/2 (PoW) Byzantine nodes; main-chain consensus integrity preserved |
-
-
-## 📊 Simulation Progress  
-We have completed a full prototype simulation (Python-based) verifying EZchain’s core claims:  
-- System throughput exceeds 10,000 TPS with 5 Mb/s bandwidth.  
-- Account node storage converges to a fixed value (no unbounded expansion).
-- Edge-side nodes can go online or offline freely, conduct transaction verification independently, and submit proofs, with transaction security being fully tied to the main chain.
-
-The simulator code is available at: [github.com/Re20Cboy/Ezchain-py](https://github.com/Re20Cboy/Ezchain-py)  
-
-
-## 🛠️ Current Work  
-We are now **rebuilding and optimizing the codebase** for an official open-source release. This includes:  
-- Refactoring for production-grade stability.  
-- Enhancing edge-device compatibility (mobile/IoT).  
-- Integrating flexible consensus plugins (PoW, BFT, PoS, DPoS).  
-
-## 🧪 P2P One-Click Smoke Test
-Run a quick end-to-end P2P smoke test locally:
+Use the V2 local config:
 
 ```bash
-python run_ez_p2p_smoke_test.py
+cp configs/ezchain.v2-localnet.yaml ezchain.yaml
 ```
 
-Common options:
+Create wallet, mint local test value, and send a transaction:
 
 ```bash
-python run_ez_p2p_smoke_test.py --waves 5 --interval 1.0 --accounts 6 --consensus 2
+python3 ezchain_cli.py --config ezchain.yaml wallet create --password your_password --name default
+python3 ezchain_cli.py --config ezchain.yaml tx faucet --amount 1000 --password your_password
+python3 ezchain_cli.py --config ezchain.yaml wallet balance --password your_password
+python3 ezchain_cli.py --config ezchain.yaml tx send --recipient 0xabc123 --amount 100 --password your_password --client-tx-id cid-001
+python3 ezchain_cli.py --config ezchain.yaml tx receipts --password your_password
 ```
 
-## 🧰 EZ App (CLI + Local API)
-An initial product layer now exists under `EZ_App/` with:
-- Wallet create/import/show
-- Local node lifecycle (`start/status/stop`)
-- Local loopback API (`/health`, `/metrics`, `/wallet/*`, `/tx/send`, `/tx/history`, `/node/*`, `/network/info`)
-
-Quick start:
+Start the local API:
 
 ```bash
-python ezchain_cli.py wallet create --password your_password --name default
-python ezchain_cli.py tx faucet --amount 1000 --password your_password
-python ezchain_cli.py wallet balance --password your_password
-python ezchain_cli.py tx send --recipient 0xabc123 --amount 100 --password your_password
-python ezchain_cli.py wallet show
-python ezchain_cli.py node start --consensus 1 --accounts 1 --start-port 19500
-python ezchain_cli.py network info
-python ezchain_cli.py network check
-python ezchain_cli.py network list-profiles
-python ezchain_cli.py network set-profile --name official-testnet
-python ezchain_cli.py config migrate
+python3 ezchain_cli.py --config ezchain.yaml serve
 ```
 
-Start local API server:
+Show the local API token:
 
 ```bash
-python ezchain_cli.py serve
+python3 ezchain_cli.py --config ezchain.yaml auth show-token
 ```
 
-Show local API token:
+One-command V2 service demo:
 
 ```bash
-python ezchain_cli.py auth show-token
+./scripts/run_v2_service_quickstart.sh
 ```
 
-Use this token in API calls via header `X-EZ-Token`.
-For balance endpoint, also pass wallet password in header `X-EZ-Password`.
-For transaction send endpoint, pass anti-replay header `X-EZ-Nonce` and unique body field `client_tx_id`.
+## Repository Map
 
-Open simple local panel:
+### Active implementation
+
+- `EZ_V2/`: V2 protocol core, wallet storage, runtime, localnet, validator, control plane
+- `EZ_App/`: CLI, local HTTP service, runtime bridge, node lifecycle manager
+- `configs/`: runnable config templates
+- `scripts/`: release gates, quickstarts, operations utilities
+- `EZ_Test/`: tests, including V2 acceptance and runtime coverage
+- `doc/`: current user, developer, release, and operations docs
+- `EZchain-V2-design/`: V2 protocol design, roadmap, transition documents
+
+### Legacy / frozen path
+
+- `EZ_VPB/`
+- `EZ_VPB_Validator/`
+- `EZ_Tx_Pool/`
+- `EZ_Main_Chain/`
+- `EZ_Account/`
+- `EZ_Transaction/`
+
+These V1 modules are still present for reference and comparison, but new protocol work should go to `EZ_V2/`.
+
+For a cleaner structural view, see:
+- `doc/PROJECT_STRUCTURE.md`
+
+## Main Entry Points
+
+- CLI: `ezchain_cli.py`
+- App runtime: `EZ_App/runtime.py`
+- Local service: `EZ_App/service.py`
+- Node lifecycle manager: `EZ_App/node_manager.py`
+- V2 local runtime/localnet:
+  - `EZ_V2/runtime_v2.py`
+  - `EZ_V2/localnet.py`
+  - `run_ez_v2_localnet.py`
+- V2 acceptance: `run_ez_v2_acceptance.py`
+
+## Testing And Gates
+
+List unified test groups:
 
 ```bash
-open http://127.0.0.1:8787/ui
+python3 run_ezchain_tests.py --list
 ```
 
-Default config file: `ezchain.yaml`
-
-Security and release gates:
+Run the current recommended local regression set:
 
 ```bash
-python scripts/security_gate.py
-python scripts/release_gate.py --skip-slow
-python scripts/release_gate.py --skip-slow --with-stability
-python scripts/stability_smoke.py --cycles 20 --interval 1
-python scripts/stability_smoke.py --cycles 30 --interval 1 --restart-every 10
-python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0
-python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip --run-metrics
-python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 300 --interval-sec 10 --out-json dist/canary_report.json
-python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency
-python scripts/prepare_rc.py --version v0.1.0-rc1
-python scripts/rc_gate.py
-python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allow-bind-restricted-skip --run-canary --target none
-python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics
-bash scripts/install_macos.sh
-# Windows: powershell -ExecutionPolicy Bypass -File scripts/install_windows.ps1
-python scripts/ops_backup.py --config ezchain.yaml --out-dir backups --label pre-upgrade
-python scripts/ops_restore.py --backup-dir backups/<snapshot-dir> --config ezchain.yaml --force
-bash scripts/build_macos.sh
-# Windows: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+python3 run_ezchain_tests.py --groups core transactions v2 --skip-slow
+python3 run_ez_v2_acceptance.py
 ```
 
-Additional docs:
+Run the release gate:
+
+```bash
+python3 scripts/release_gate.py --skip-slow
+python3 scripts/release_gate.py --skip-slow --with-stability
+```
+
+## Documentation
+
 - Docs hub: `doc/README.md`
-- Project checkpoint: `doc/PROJECT_CHECKPOINT_2026-02-12.md`
-- User quickstart: `doc/USER_QUICKSTART.md`
+- Project structure: `doc/PROJECT_STRUCTURE.md`
+- V2 quickstart: `doc/EZchain-V2-quickstart.md`
 - Developer testing: `doc/DEV_TESTING.md`
-- Installation: `doc/INSTALLATION.md`
-- API errors: `doc/API_ERROR_CODES.md`
-- Threat model: `doc/SECURITY_THREAT_MODEL.md`
-- Runbook: `doc/MVP_RUNBOOK.md`
 - Release checklist: `doc/RELEASE_CHECKLIST.md`
+- Runbook: `doc/MVP_RUNBOOK.md`
+- V1 freeze / V2 transition: `EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
+- V2 roadmap: `EZchain-V2-design/EZchain-V2-implementation-roadmap.md`
 
+## Research Context
 
-## 🤝 How to Support  
-EZchain is a community-driven project—your help accelerates our mission:  
-1. **Contribute Code**: Join us in refining the core protocol, optimizing edge-device support, or building developer tools. Open issues/PRs on our GitHub once the open-source repo launches!  
-2. **Donate a Coffee**: Every bit helps fund development. You can send support to our wallet address:  
-    0xec1e068969f9197f46a478ccbb7692dab7dd8428 (ETH)
-    bc1pkl7c6l2jppjumt9yyvugs8zl40mwvd0qdh7smamy48e0yhz6v9kqts6wcv (BTC)
-    BM3t5W8gA3yBBuZDVEAVfz9VLYPYbn3mBfJu6kXhyPGz (SOL)
-3. **Spread the Word**: Share EZchain’s vision with Web3 communities—decentralization thrives on visibility!  
+- Published paper (renamed as VWchain): https://www.sciencedirect.com/science/article/abs/pii/S1383762126000512
+- Original whitepaper: https://arxiv.org/abs/2312.00281v1
+- Prototype simulator: https://github.com/Re20Cboy/Ezchain-py
 
+## Notes
 
-## 📄 Learn More  
-- The published paper (renamed as VWchain): https://www.sciencedirect.com/science/article/abs/pii/S1383762126000512
-- cite: Lide Xue, Mingzheng Wang, Xin Wang, VWchain: A lightweight scalable edge-side blockchain based on Value-Witness, Journal of Systems Architecture, Volume 175, 2026, 103733, ISSN 1383-7621, https://doi.org/10.1016/j.sysarc.2026.103733.
-- The original whitepaper (2023): [EZchain: A Scale-out Decentralized Blockchain Ledger System for Web3.0](https://arxiv.org/abs/2312.00281v1)  
-- Prototype simulation: https://github.com/Re20Cboy/Ezchain-py
-
-
-*"Web3 is for everyone—EZchain makes it possible."*
-
+- This repository is not yet a finished public-network V2 node stack.
+- The current stable path is the local V2 runtime/localnet path.
+- The repository is being cleaned up logically before any large-scale source deletion is attempted.

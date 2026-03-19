@@ -19,15 +19,18 @@ def main() -> int:
     parser.add_argument("--skip-slow", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
+    parser.add_argument("--skip-v2-acceptance", action="store_true")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
-    cmd = [sys.executable, "run_ezchain_tests.py", "--groups", "core", "transactions"]
+    cmd = [sys.executable, "run_ezchain_tests.py", "--groups", "core", "transactions", "v2"]
     if args.skip_slow:
         cmd.append("--skip-slow")
 
     try:
         run(cmd, cwd=root)
+        if not args.skip_v2_acceptance:
+            run([sys.executable, "run_ez_v2_acceptance.py"], cwd=root)
         run(
             [
                 sys.executable,

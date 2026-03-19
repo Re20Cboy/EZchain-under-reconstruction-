@@ -27,6 +27,7 @@ DEFAULT_CONFIG = {
         "api_host": "127.0.0.1",
         "api_port": 8787,
         "api_token_file": ".ezchain/api.token",
+        "protocol_version": "v1",
     },
     "security": {
         "max_payload_bytes": 65536,
@@ -52,6 +53,7 @@ class AppConfig:
     api_host: str = "127.0.0.1"
     api_port: int = 8787
     api_token_file: str = ".ezchain/api.token"
+    protocol_version: str = "v1"
 
 
 @dataclass
@@ -116,7 +118,12 @@ def load_config(path: str | Path = "ezchain.yaml") -> EZAppConfig:
     return EZAppConfig(
         config_version=int(merged["meta"].get("config_version", CONFIG_SCHEMA_VERSION)),
         network=NetworkConfig(**merged["network"]),
-        app=AppConfig(**merged["app"]),
+        app=AppConfig(
+            **{
+                **merged["app"],
+                "protocol_version": str(merged["app"].get("protocol_version", "v1")).lower(),
+            }
+        ),
         security=SecurityConfig(**merged["security"]),
     )
 
@@ -139,6 +146,7 @@ def _to_yaml(cfg: EZAppConfig) -> str:
         f'  api_host: "{cfg.app.api_host}"',
         f"  api_port: {int(cfg.app.api_port)}",
         f'  api_token_file: "{cfg.app.api_token_file}"',
+        f'  protocol_version: "{cfg.app.protocol_version}"',
         "",
         "security:",
         f"  max_payload_bytes: {int(cfg.security.max_payload_bytes)}",

@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from EZ_App.cli import main
 from EZ_App.node_manager import NodeManager
+from EZ_App.runtime import TxEngine
+from EZ_App.wallet_store import WalletStore
 
 
 def test_node_manager_probe_bootstrap_mixed():
@@ -50,6 +52,33 @@ def test_node_manager_official_testnet_mode_lifecycle():
 
         stopped = manager.stop()
         assert stopped["status"] == "stopped"
+
+
+def test_node_manager_v2_localnet_reports_embedded_backend_state():
+    with tempfile.TemporaryDirectory() as td:
+        manager = NodeManager(data_dir=td, project_root=str(Path(__file__).resolve().parent.parent))
+        started = manager.start(mode="v2-localnet", network_name="testnet")
+        assert started["status"] == "started"
+        assert started["mode"] == "v2-localnet"
+        assert int(started["pid"]) > 0
+
+        wallet_store = WalletStore(td)
+        wallet_store.create_wallet(password="pw123", name="demo")
+        engine = TxEngine(td, protocol_version="v2")
+        engine.faucet(wallet_store, password="pw123", amount=200)
+        result = engine.send(wallet_store, password="pw123", recipient="0xabc123", amount=50, client_tx_id="cid-node-v2")
+        assert result.receipt_height == 1
+
+        status = manager.status()
+        assert status["status"] == "running"
+        assert status["mode"] == "v2-localnet"
+        assert status["backend"]["height"] == 1
+        assert status["backend"]["chain_id"] == 1
+        assert status["backend"]["current_block_hash"]
+
+        stopped = manager.stop()
+        assert stopped["status"] == "stopped"
+        assert stopped["mode"] == "v2-localnet"
 
 
 def test_cli_network_check_output(capsys):
