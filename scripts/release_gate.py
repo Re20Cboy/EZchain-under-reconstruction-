@@ -18,6 +18,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain release gate")
     parser.add_argument("--skip-slow", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
+    parser.add_argument("--with-v2-adversarial", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     parser.add_argument("--skip-v2-acceptance", action="store_true")
     args = parser.parse_args()
@@ -29,27 +30,14 @@ def main() -> int:
 
     try:
         run(cmd, cwd=root)
+        if args.with_v2_adversarial:
+            adversarial_cmd = [sys.executable, "run_ezchain_tests.py", "--groups", "v2-adversarial"]
+            if args.skip_slow:
+                adversarial_cmd.append("--skip-slow")
+            run(adversarial_cmd, cwd=root)
         if not args.skip_v2_acceptance:
             run([sys.executable, "run_ez_v2_acceptance.py"], cwd=root)
-        run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-q",
-                "EZ_Test/test_ez_app_crypto_wallet.py",
-                "EZ_Test/test_ez_app_config_cli.py",
-                "EZ_Test/test_ez_app_profiles.py",
-                "EZ_Test/test_ez_app_network_connectivity.py",
-                "EZ_Test/test_ez_app_tx_engine.py",
-                "EZ_Test/test_ez_app_service_api.py",
-                "EZ_Test/test_ops_backup_restore.py",
-                "EZ_Test/test_profile_config_script.py",
-                "EZ_Test/test_stability_scripts.py",
-                "EZ_Test/test_canary_scripts.py",
-            ],
-            cwd=root,
-        )
+        run([sys.executable, "scripts/app_gate.py"], cwd=root)
         run([sys.executable, "scripts/security_gate.py"], cwd=root)
         if args.with_stability:
             stability_cmd = [

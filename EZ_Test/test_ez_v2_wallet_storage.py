@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from EZ_V2.chain import ChainStateV2, compute_bundle_hash, confirmed_ref
@@ -162,6 +163,66 @@ class EZV2WalletStorageTests(unittest.TestCase):
             removed = wallet.gc_unused_sidecars()
             self.assertGreaterEqual(removed, 1)
             self.assertIsNone(wallet.db.get_sidecar(compute_bundle_hash(submission.sidecar)))
+            wallet.close()
+
+    def test_receipt_confirmation_rejects_broken_prev_ref_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "wallet.sqlite3")
+            chain = ChainStateV2(chain_id=61)
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            bob_priv, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
+
+            wallet = WalletAccountV2(address=alice_addr, genesis_block_hash=b"\x78" * 32, db_path=db_path)
+            wallet.add_genesis_value(ValueRange(0, 199))
+
+            tx1 = OffChainTx(
+                sender_addr=alice_addr,
+                recipient_addr=bob_addr,
+                value_list=(ValueRange(0, 49),),
+                tx_local_index=0,
+                tx_time=1,
+            )
+            submission1, _ = wallet.build_bundle(
+                tx_list=(tx1,),
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=61,
+                seq=1,
+                expiry_height=10,
+                fee=1,
+                anti_spam_nonce=1,
+            )
+            chain.submit_bundle(submission1)
+            _, receipts1 = chain.build_block(timestamp=1)
+            wallet.on_receipt_confirmed(receipts1[alice_addr])
+
+            tx2 = OffChainTx(
+                sender_addr=alice_addr,
+                recipient_addr=bob_addr,
+                value_list=(ValueRange(50, 99),),
+                tx_local_index=0,
+                tx_time=2,
+            )
+            submission2, _ = wallet.build_bundle(
+                tx_list=(tx2,),
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=61,
+                seq=2,
+                expiry_height=20,
+                fee=1,
+                anti_spam_nonce=2,
+            )
+            chain.submit_bundle(submission2)
+            _, receipts2 = chain.build_block(timestamp=2)
+            forged_receipt = replace(receipts2[alice_addr], prev_ref=None)
+
+            with self.assertRaisesRegex(ValueError, "receipt prev_ref mismatch"):
+                wallet.on_receipt_confirmed(forged_receipt)
+
+            self.assertEqual(len(wallet.list_pending_bundles()), 1)
             wallet.close()
 
 

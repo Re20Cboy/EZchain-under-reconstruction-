@@ -60,6 +60,16 @@ Generate a fresh config from template on a clean machine:
 python scripts/profile_config.py --profile official-testnet --out ezchain.yaml
 ```
 
+If this installation is part of a formal official-testnet rehearsal, continue with:
+
+```bash
+python scripts/init_external_trial.py --executor your_name --os macos --install-path source
+```
+
+Then follow:
+
+- `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
+
 ## 6. Backup and Restore
 Backup current config and local state:
 

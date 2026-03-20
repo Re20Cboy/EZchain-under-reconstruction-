@@ -105,6 +105,18 @@ TEST_GROUPS: Tuple[Dict[str, object], ...] = (
             "EZ_Test/test_ez_v2_acceptance.py",
         ],
     },
+    {
+        "name": "v2-adversarial",
+        "title": "V2 Adversarial and Robustness",
+        "description": "Forged proofs/receipts, conflicting packages, withheld receipts, and long-round value preservation",
+        "tests": [
+            "EZ_Test/test_ez_v2_protocol.py",
+            "EZ_Test/test_ez_v2_wallet_storage.py",
+            "EZ_Test/test_ez_v2_runtime.py",
+            "EZ_Test/test_ez_v2_localnet.py",
+            "EZ_Test/test_ez_v2_app_runtime.py",
+        ],
+    },
 )
 
 

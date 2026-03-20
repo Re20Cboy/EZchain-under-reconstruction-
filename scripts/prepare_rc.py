@@ -35,10 +35,18 @@ def _git_head(root: Path) -> str:
     return "unknown"
 
 
+def _path_for_manifest(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare RC release notes and manifest")
     parser.add_argument("--version", required=True, help="e.g. v0.1.0-rc1")
     parser.add_argument("--report-json", default="dist/release_report.json")
+    parser.add_argument("--readiness-json", default="dist/v2_readiness.json")
     parser.add_argument("--notes-dir", default="doc/releases")
     parser.add_argument("--manifest-out", default="dist/rc_manifest.json")
     args = parser.parse_args()
@@ -53,6 +61,11 @@ def main() -> int:
     if report_path.exists():
         report = json.loads(report_path.read_text(encoding="utf-8"))
 
+    readiness_path = root / args.readiness_json
+    readiness = {}
+    if readiness_path.exists():
+        readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+
     git_head = str(report.get("git_head") or _git_head(root))
     if not notes_file.exists():
         notes_file.write_text(_default_notes(args.version, git_head), encoding="utf-8")
@@ -62,8 +75,16 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_head": git_head,
         "release_notes": str(notes_file.relative_to(root)),
-        "release_report_json": str(report_path.relative_to(root)) if report_path.exists() else "",
+        "release_report_json": _path_for_manifest(report_path, root) if report_path.exists() else "",
         "release_report_status": report.get("overall_status", "missing"),
+        "release_report_risks": report.get("risks", []),
+        "v2_readiness_json": _path_for_manifest(readiness_path, root) if readiness_path.exists() else "",
+        "v2_ready_for_default": readiness.get("ready_for_v2_default", False),
+        "v2_readiness_blocking_items": readiness.get("blocking_items", []),
+        "external_trial_status": report.get("summary", {}).get("external_trial_status", "missing"),
+        "external_trial_gate_status": report.get("summary", {}).get("external_trial_gate_status", "missing"),
+        "official_testnet_gate_status": report.get("summary", {}).get("official_testnet_gate_status", "missing"),
+        "v2_adversarial_gate_status": report.get("summary", {}).get("v2_adversarial_gate_status", "missing"),
     }
 
     manifest_out = root / args.manifest_out

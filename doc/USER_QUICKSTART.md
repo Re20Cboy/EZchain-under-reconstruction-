@@ -5,6 +5,10 @@
 ## 1. 安装
 优先参考：`doc/INSTALLATION.md`
 
+如果这次是为了形成正式试用记录，而不是个人临时体验，优先同时参考：
+
+- `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
+
 最简流程（源码运行）：
 ```bash
 python -m venv .venv
@@ -22,6 +26,12 @@ python scripts/profile_config.py --profile official-testnet --out ezchain.yaml
 ```bash
 python ezchain_cli.py network info
 python ezchain_cli.py network check
+```
+
+如果要为发布准备证据，建议先初始化试用记录：
+
+```bash
+python scripts/init_external_trial.py --executor your_name --os macos --install-path source
 ```
 
 ## 3. 创建钱包
@@ -81,3 +91,4 @@ python scripts/ops_restore.py --backup-dir backups/<snapshot-dir> --config ezcha
 1. `network check` 不通：检查网络、DNS、代理策略；可先切回 `local-dev` 验证本地能力。
 2. `tx send` 报参数错误：按 `doc/API_ERROR_CODES.md` 对照字段修复。
 3. 忘记备份：先停止服务，再手动备份 `ezchain.yaml` 和数据目录后再升级。
+4. 如果这是一次正式外部试用，请按 `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md` 填写记录，而不是只保留命令输出。

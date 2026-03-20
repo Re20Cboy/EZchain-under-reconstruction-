@@ -1,11 +1,10 @@
 """
-EZChain Genesis Block Module
+Legacy V1 genesis compatibility shim.
 
-This module provides functionality for creating and managing genesis blocks
-in the EZChain blockchain system.
+The physical implementation now lives in `EZ_V1.EZ_GENESIS`.
 """
 
-from .genesis import (
+from EZ_V1.EZ_GENESIS.genesis import (
     GenesisBlockCreator,
     create_genesis_block,
     create_genesis_vpb_for_account,
@@ -24,6 +23,3 @@ __all__ = [
     'GENESIS_BLOCK_INDEX',
     'DEFAULT_DENOMINATION_CONFIG'
 ]
-
-__version__ = "1.0.0"
-__author__ = "EZChain Team"

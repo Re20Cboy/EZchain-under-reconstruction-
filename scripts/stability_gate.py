@@ -61,6 +61,7 @@ def main() -> int:
     parser.add_argument("--jitter", type=float, default=0.0)
     parser.add_argument("--burst-every", type=int, default=0)
     parser.add_argument("--burst-size", type=int, default=1)
+    parser.add_argument("--json-out", default="")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     args = parser.parse_args()
 
@@ -75,6 +76,8 @@ def main() -> int:
             return 1
 
         summary = json.loads(out.read_text(encoding="utf-8"))
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(summary, indent=2), encoding="utf-8")
         if args.restart_every > 0 and summary.get("restarts", 0) <= 0 and not summary.get("skipped_bind_restricted", False):
             print("[stability-gate] FAILED: restart path was not exercised")
             print(json.dumps(summary, indent=2))

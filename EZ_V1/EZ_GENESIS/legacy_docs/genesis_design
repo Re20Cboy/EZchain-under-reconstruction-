@@ -1,0 +1,26 @@
+设计创世块内容，聚焦创世块交易，使其能够符合VPB验证等过程。
+创世块不仅是区块链的起点，更是初始价值（Values）发行与分配的唯一凭证 。
+
+核心职责：
+定义 Value 空间：确立全网初始 Value 的离散集合，确保无交集 。
+构建全局状态锚点：生成初始的 Merkle Root 和 Bloom Filter 。
+系统冷启动：为后续的交易VPB验证提供最初的“证据（P+B）”来源。
+
+创世块交易内容要点：
+1. 初始账户分配：接收输入的初始账户并对其分配value。
+2. value的面值和数量设定：目前先以每节点获100*20+50*20+20*20+10*20+5*20+1*20=4020为例。
+3. 交易格式设计：确保创世块交易格式与后续普通交易保持一致，便于验证和处理。
+4. 创世交易的sender地址统一为唯一随机生成的地址（或者是符合要求的有创世特殊含义的地址）。
+5. 其他方面（例如生成初始的 Merkle Root 和 Bloom Filter）均与普通区块保持一致。
+
+genesis.py需提供的方法/参数等：
+
+- create_genesis_block：
+  生成创世块，接受初始账户（Account）列表、值分配方案等作为参数，返回包含创世交易的区块对象。
+- create_genesis_block所需要调用的其他内置方法（例如：创世交易生成等）、参数常量等。
+- create_merkle_proof：
+  计算并返回给定交易列表中交易对应的 Merkle proof，符合EZ_VPB/proofs中ProofUnit类的定义与要求。
+- create_block_index:
+  计算并返回创世块的区块索引信息，符合EZ_VPB/block_index中BlockIndexList类的定义与要求。
+- create_genesis_vpb:
+  针对各个Account，生成创世块的VPB数据(根据create_merkle_proof与create_block_index的输出来完成)，确保创世块能够通过VPB验证流程。

@@ -1,18 +1,1 @@
-"""
-VPB Validator Core Module
-
-Core types and base classes for the VPB validation system.
-"""
-
-from .types import VerificationResult, VerificationError, VPBVerificationReport, MainChainInfo, VPBSlice, ValueIntersectionError
-from .validator_base import ValidatorBase
-
-__all__ = [
-    'VerificationResult',
-    'VerificationError',
-    'VPBVerificationReport',
-    'MainChainInfo',
-    'VPBSlice',
-    'ValueIntersectionError',
-    'ValidatorBase'
-]
+from EZ_V1.EZ_VPB_Validator.core import *  # noqa: F401,F403

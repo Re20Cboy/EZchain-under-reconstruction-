@@ -5,6 +5,10 @@ import argparse
 import json
 from pathlib import Path
 
+from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
 from EZ_App.config import ensure_directories, load_api_token, migrate_config_file
 from EZ_App.profiles import apply_network_profile, list_profiles
 

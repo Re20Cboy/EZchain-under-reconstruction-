@@ -1,23 +1,12 @@
 """
-EZ_VPB_Validator Package
+Legacy V1 VPB validator compatibility shim.
 
-This package provides a modular VPB (Value-Proofs-BlockIndex) validation system
-for EZChain. It breaks down the complex validation process into manageable
-steps and utilities for better maintainability and testability.
-
-Core Components:
-- Core types and base classes (core/)
-- Validation steps (steps/)
-- Utility modules (utils/)
-- Main validator interface (vpb_validator.py)
+The physical implementation now lives in `EZ_V1.EZ_VPB_Validator`.
 """
 
-from .vpb_validator import VPBValidator
-from .core.types import VerificationResult, VerificationError, VPBVerificationReport, MainChainInfo, VPBSlice
-from .core.validator_base import ValidatorBase
-
-__version__ = "1.0.0"
-__author__ = "EZChain Team"
+from EZ_V1.EZ_VPB_Validator.core.types import MainChainInfo, VPBSlice, VPBVerificationReport, VerificationError, VerificationResult
+from EZ_V1.EZ_VPB_Validator.core.validator_base import ValidatorBase
+from EZ_V1.EZ_VPB_Validator.vpb_validator import VPBValidator
 
 __all__ = [
     'VPBValidator',

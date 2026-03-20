@@ -30,6 +30,20 @@ def _request(port: int, method: str, path: str, payload=None, headers=None, raw_
     return resp.status, json.loads(data)
 
 
+def _request_text(port: int, method: str, path: str, payload=None, headers=None):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    body = None
+    h = headers or {}
+    if payload is not None:
+        body = json.dumps(payload)
+        h = {"Content-Type": "application/json", **h}
+    conn.request(method, path, body=body, headers=h)
+    resp = conn.getresponse()
+    data = resp.read().decode("utf-8")
+    conn.close()
+    return resp.status, data
+
+
 def _start_server_or_skip(service: LocalService):
     try:
         server = service.build_server()
@@ -107,6 +121,11 @@ def test_service_auth_and_tx_flow():
             status, body = _request(port, "GET", "/health")
             assert status == 200
             assert body["ok"] is True
+
+            status, body = _request_text(port, "GET", "/")
+            assert status == 200
+            assert "EZchain V2 Console" in body
+            assert "Wallet, node and transaction flows in one local panel." in body
 
             status, body = _request(port, "POST", "/wallet/create", {"name": "demo", "password": "pw123"})
             assert status == 401

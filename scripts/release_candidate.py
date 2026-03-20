@@ -31,11 +31,13 @@ def main() -> int:
     parser.add_argument("--target", choices=["none", "macos", "windows", "both"], default="none")
     parser.add_argument("--config", default="ezchain.yaml")
     parser.add_argument("--with-stability", action="store_true")
+    parser.add_argument("--with-v2-adversarial", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     parser.add_argument("--require-official-testnet", action="store_true")
-    parser.add_argument("--official-config", default="ezchain.yaml")
+    parser.add_argument("--official-config", default="configs/ezchain.official-testnet.yaml")
     parser.add_argument("--official-check-connectivity", action="store_true")
     parser.add_argument("--official-allow-unreachable", action="store_true")
+    parser.add_argument("--external-trial-record", default="")
     parser.add_argument("--run-metrics", action="store_true")
     parser.add_argument("--metrics-url", default="http://127.0.0.1:8787/metrics")
     parser.add_argument("--metrics-min-success-rate", type=float, default=0.0)
@@ -68,6 +70,8 @@ def main() -> int:
     ]
     if args.with_stability:
         report_cmd.append("--with-stability")
+    if args.with_v2_adversarial:
+        report_cmd.append("--with-v2-adversarial")
     if args.allow_bind_restricted_skip:
         report_cmd.append("--allow-bind-restricted-skip")
     if args.run_metrics:
@@ -104,7 +108,21 @@ def main() -> int:
             report_cmd.append("--official-check-connectivity")
         if args.official_allow_unreachable:
             report_cmd.append("--official-allow-unreachable")
+    if args.external_trial_record:
+        report_cmd.extend(["--external-trial-record", args.external_trial_record])
     steps.append(run_step("release_report", report_cmd, cwd=root, dry_run=args.dry_run))
+
+    readiness_cmd = [
+        sys.executable,
+        "scripts/v2_readiness.py",
+        "--report-json",
+        "dist/release_report.json",
+        "--out-json",
+        "dist/v2_readiness.json",
+        "--out-md",
+        "dist/v2_readiness.md",
+    ]
+    steps.append(run_step("v2_readiness", readiness_cmd, cwd=root, dry_run=args.dry_run))
 
     prepare_cmd = [sys.executable, "scripts/prepare_rc.py", "--version", args.version]
     steps.append(run_step("prepare_rc", prepare_cmd, cwd=root, dry_run=args.dry_run))

@@ -4,8 +4,16 @@ import time
 import uuid
 from dataclasses import replace
 
-from .chain import compute_bundle_hash, sign_bundle_envelope
+from .chain import (
+    compute_addr_key,
+    compute_bundle_hash,
+    confirmed_ref,
+    hash_account_leaf,
+    reconstructed_leaf,
+    sign_bundle_envelope,
+)
 from .crypto import address_from_public_key_pem
+from .smt import verify_proof
 from .storage import LocalWalletDB
 from .transport import transfer_package_hash
 from .types import (
@@ -425,6 +433,23 @@ class WalletAccountV2:
             receipt=receipt,
             bundle_sidecar=context.sidecar,
         )
+        if receipt.seq == 1:
+            if receipt.prev_ref is not None:
+                raise ValueError("receipt prev_ref mismatch")
+        else:
+            previous_unit = self.db.get_confirmed_unit(self.address, receipt.seq - 1)
+            if previous_unit is None:
+                raise ValueError("missing previous confirmed unit for receipt")
+            if confirmed_ref(previous_unit) != receipt.prev_ref:
+                raise ValueError("receipt prev_ref mismatch")
+        reconstructed = reconstructed_leaf(confirmed_unit)
+        if not verify_proof(
+            receipt.header_lite.state_root,
+            compute_addr_key(self.address),
+            hash_account_leaf(reconstructed),
+            receipt.account_state_proof,
+        ):
+            raise ValueError("receipt account state proof does not verify")
         updated_records = self._apply_confirmed_unit_to_records(
             confirmed_unit=confirmed_unit,
             pending_record_ids=context.pending_record_ids,
@@ -473,6 +498,12 @@ class WalletAccountV2:
             ):
                 if target_tx.sender_addr != self.address:
                     raise ValueError("target tx sender does not match wallet address")
+                latest_unit = record.witness_v2.confirmed_bundle_chain[0] if record.witness_v2.confirmed_bundle_chain else None
+                if latest_unit is None:
+                    continue
+                matching_txs = [tx for tx in latest_unit.bundle_sidecar.tx_list if tx == target_tx]
+                if len(matching_txs) != 1:
+                    continue
                 return TransferPackage(
                     target_tx=target_tx,
                     target_value=target_value,

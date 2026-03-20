@@ -232,6 +232,17 @@ class LocalWalletDB:
         ).fetchone()
         return loads_json(row["unit_json"]) if row else None
 
+    def get_confirmed_unit(self, sender_addr: str, seq: int) -> ConfirmedBundleUnit | None:
+        row = self._conn.execute(
+            """
+            SELECT unit_json
+            FROM confirmed_units
+            WHERE sender_addr = ? AND seq = ?
+            """,
+            (sender_addr, seq),
+        ).fetchone()
+        return loads_json(row["unit_json"]) if row else None
+
     def save_pending_bundle(self, context: PendingBundleContext) -> None:
         with self._conn:
             self._conn.execute(

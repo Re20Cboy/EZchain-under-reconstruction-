@@ -28,6 +28,8 @@ The project is currently organized as a **dual-lane repository**:
 
 ### Legacy / Frozen V1 Path
 
+- `EZ_V1/`
+  - logical umbrella and governance root for the frozen V1 lane
 - `EZ_VPB/`
 - `EZ_VPB_Validator/`
 - `EZ_Tx_Pool/`
@@ -40,13 +42,32 @@ The project is currently organized as a **dual-lane repository**:
 - `EZ_Msg/`
 - `EZ_Units/`
 
-These remain in the repository for:
+These top-level names remain in the repository for:
 
 - historical comparison
 - compatibility reference
 - legacy tests
+- phased cleanup before any future physical consolidation under `EZ_V1/`
+
+Most frozen V1 runtime implementations now physically live under `EZ_V1/`.
+Several top-level V1 directories are increasingly acting as compatibility shim
+surfaces plus lightweight signposts for archived material.
 
 They are **not** the preferred path for new features.
+
+For the functional grouping inside the legacy lane, see:
+
+- `doc/V1_LEGACY_STRUCTURE.md`
+- `doc/V1_PHYSICAL_MIGRATION_PLAN.md`
+
+For historical VPB/account artifacts that were moved out of top-level runtime
+trees, see:
+
+- `EZ_V1/EZ_VPB/legacy_docs/`
+- `EZ_V1/EZ_VPB/legacy_tests/`
+- `EZ_V1/EZ_Account/legacy_tests_backup/`
+- `EZ_V1/EZ_GENESIS/legacy_docs/`
+- `EZ_V1/EZ_Transaction/legacy_docs/`
 
 ## 2. Current Runtime Entry Points
 
@@ -106,7 +127,9 @@ They are **not** the preferred path for new features.
 - `EZ_App/runtime.py`
   - wallet-facing transaction engine
 - `EZ_App/service.py`
-  - local HTTP API
+  - local HTTP API, auth, audit, metrics, route handling
+- `EZ_App/ui_panel.py`
+  - embedded local Web console HTML/JS, separated from service backend logic
 - `EZ_App/node_manager.py`
   - local process lifecycle for node/localnet modes
 - `EZ_App/wallet_store.py`
@@ -144,6 +167,7 @@ To keep imports and runtime behavior stable, follow these rules:
 4. Put migration/transition rules into `EZchain-V2-design/`.
 5. Keep `doc/` as the source of current operational documentation.
 6. Treat V1 protocol modules as legacy unless a blocking compatibility fix is required.
+7. Clean up V1 logically through package exports and structure docs before any physical move is considered.
 
 ## 7. What Is Explicitly Not Being Done
 

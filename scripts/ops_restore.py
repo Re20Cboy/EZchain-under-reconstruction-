@@ -6,6 +6,10 @@ import json
 import shutil
 from pathlib import Path
 
+from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
 from EZ_App.config import load_config
 
 

@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from EZ_App.node_manager import NodeManager
 from EZ_App.runtime import TxEngine
+from EZ_App.ui_panel import build_local_panel_html
 from EZ_App.wallet_store import WalletStore
 
 
@@ -181,128 +182,7 @@ class LocalService:
         self.metrics = ServiceMetrics()
 
     def _ui_html(self) -> str:
-        return """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EZchain Local Panel</title>
-  <style>
-    :root { --bg:#f5f7fb; --card:#fff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#0f766e; }
-    body { font-family: "SF Mono", Menlo, Monaco, monospace; margin: 0; background: linear-gradient(120deg,#f5f7fb,#e8f7f3); color: var(--ink); }
-    .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin: 0 0 16px; font-size: 24px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .row { display:flex; gap:8px; margin:8px 0; }
-    input, button { font: inherit; padding: 8px; border-radius: 8px; border: 1px solid var(--line); width: 100%; }
-    button { background: var(--accent); color: #fff; border: 0; cursor: pointer; width: auto; }
-    pre { background:#0b1020; color:#d1fae5; padding:10px; border-radius:8px; overflow:auto; max-height: 240px; }
-    .muted { color: var(--muted); font-size: 12px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>EZchain Local Panel</h1>
-    <div class="card">
-      <div class="row">
-        <input id="token" placeholder="X-EZ-Token (run: ezchain_cli.py auth show-token)" />
-      </div>
-      <div class="muted">All POST routes and sensitive balance routes require token. /tx/send also requires nonce and client_tx_id.</div>
-    </div>
-    <div class="grid">
-      <div class="card">
-        <h3>Wallet</h3>
-        <div class="row"><input id="name" placeholder="name" value="default"/></div>
-        <div class="row"><input id="password" placeholder="password" type="password"/></div>
-        <div class="row">
-          <button onclick="createWallet()">Create</button>
-          <button onclick="showWallet()">Show</button>
-          <button onclick="showBalance()">Balance</button>
-          <button onclick="walletCheckpoints()">Checkpoints</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Transactions</h3>
-        <div class="row"><input id="recipient" placeholder="recipient address"/></div>
-        <div class="row"><input id="amount" placeholder="amount" value="100"/></div>
-        <div class="row"><input id="client_tx_id" placeholder="client_tx_id (optional auto)"/></div>
-        <div class="row">
-          <button onclick="faucet()">Faucet</button>
-          <button onclick="sendTx()">Send</button>
-          <button onclick="historyTx()">History</button>
-          <button onclick="pendingTx()">Pending</button>
-          <button onclick="receiptsTx()">Receipts</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Node</h3>
-        <div class="row">
-          <button onclick="nodeStart()">Start</button>
-          <button onclick="nodeStatus()">Status</button>
-          <button onclick="nodeStop()">Stop</button>
-          <button onclick="showMetrics()">Metrics</button>
-        </div>
-      </div>
-    </div>
-    <div class="card"><pre id="out">Ready.</pre></div>
-  </div>
-<script>
-const out = (v) => document.getElementById("out").textContent = JSON.stringify(v, null, 2);
-const token = () => document.getElementById("token").value.trim();
-const headers = (json=true) => {
-  const h = {};
-  if (json) h["Content-Type"] = "application/json";
-  const t = token();
-  if (t) h["X-EZ-Token"] = t;
-  return h;
-};
-async function get(url, auth=false) {
-  const h = {};
-  if (auth && token()) h["X-EZ-Token"] = token();
-  const r = await fetch(url, { headers: h });
-  out(await r.json());
-}
-async function getSecure(url) {
-  const h = headers(false);
-  const password = document.getElementById("password").value;
-  if (password) h["X-EZ-Password"] = password;
-  const r = await fetch(url, { headers: h });
-  out(await r.json());
-}
-async function post(url, body, extraHeaders={}) {
-  const r = await fetch(url, { method: "POST", headers: { ...headers(true), ...extraHeaders }, body: JSON.stringify(body) });
-  out(await r.json());
-}
-function createWallet(){ post("/wallet/create", { name:document.getElementById("name").value, password:document.getElementById("password").value }); }
-function showWallet(){ get("/wallet/show"); }
-function showBalance(){ getSecure("/wallet/balance"); }
-function walletCheckpoints(){ getSecure("/wallet/checkpoints"); }
-function faucet(){ post("/tx/faucet", { amount: Number(document.getElementById("amount").value), password:document.getElementById("password").value }); }
-function sendTx(){
-  const clientTxId = document.getElementById("client_tx_id").value || crypto.randomUUID();
-  post(
-    "/tx/send",
-    {
-      recipient:document.getElementById("recipient").value,
-      amount:Number(document.getElementById("amount").value),
-      password:document.getElementById("password").value,
-      client_tx_id: clientTxId
-    },
-    { "X-EZ-Nonce": crypto.randomUUID() }
-  );
-}
-function historyTx(){ get("/tx/history"); }
-function pendingTx(){ getSecure("/tx/pending"); }
-function receiptsTx(){ getSecure("/tx/receipts"); }
-function showMetrics(){ get("/metrics"); }
-function nodeStart(){ post("/node/start", { consensus:1, accounts:1, start_port:19500 }); }
-function nodeStatus(){ get("/node/status"); }
-function nodeStop(){ post("/node/stop", {}); }
-</script>
-</body>
-</html>
-"""
+        return build_local_panel_html()
 
     def _build_handler(self):
         service = self

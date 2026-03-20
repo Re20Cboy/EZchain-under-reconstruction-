@@ -5,17 +5,19 @@ Chinese README: `README.zh-CN.md`
 EZchain is a research-to-product codebase for a scale-out blockchain design.  
 This repository currently contains two lanes:
 
-- `EZ_V2`: the active local-development and acceptance lane
+- `EZ_V2`: the default implementation and validation lane
 - `V1` modules: frozen legacy/reference modules kept for comparison and compatibility
 
-The repository is in a transition stage. The recommended local path is now **V2**.
+The repository has now crossed the default-path transition gate: **V2 is the default project path**.
 
 ## Current Status
 
-- V2 local runtime, wallet flow, local service API, and local acceptance gate are runnable
+- V2 local runtime, wallet flow, local service API, local acceptance gate, adversarial gate, and readiness gate are runnable
 - V1 remains in the tree as a legacy lane and is being frozen instead of deleted immediately
 - Default local config template: `configs/ezchain.v2-localnet.yaml`
 - Recommended acceptance entry: `python3 run_ez_v2_acceptance.py`
+- Default official-testnet profile template: `configs/ezchain.official-testnet.yaml`
+- Project default-path readiness entry: `python3 scripts/v2_readiness.py`
 
 For the migration rule itself, see:
 - `EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
@@ -70,6 +72,7 @@ One-command V2 service demo:
 
 ### Legacy / frozen path
 
+- `EZ_V1/`
 - `EZ_VPB/`
 - `EZ_VPB_Validator/`
 - `EZ_Tx_Pool/`
@@ -77,10 +80,18 @@ One-command V2 service demo:
 - `EZ_Account/`
 - `EZ_Transaction/`
 
-These V1 modules are still present for reference and comparison, but new protocol work should go to `EZ_V2/`.
+These top-level V1 directories now primarily act as:
+
+- compatibility import surfaces
+- lightweight README signposts
+- pointers toward archived legacy material now grouped under `EZ_V1/`
+
+New protocol work should go to `EZ_V2/`.
 
 For a cleaner structural view, see:
 - `doc/PROJECT_STRUCTURE.md`
+- `doc/V1_LEGACY_STRUCTURE.md`
+- `doc/V1_PHYSICAL_MIGRATION_PLAN.md`
 
 ## Main Entry Points
 
@@ -113,7 +124,21 @@ Run the release gate:
 
 ```bash
 python3 scripts/release_gate.py --skip-slow
-python3 scripts/release_gate.py --skip-slow --with-stability
+python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial
+```
+
+Initialize an official-testnet trial record before external rehearsal:
+
+```bash
+python3 scripts/init_external_trial.py --executor your_name --os macos --install-path source
+python3 scripts/external_trial_gate.py --record doc/trials/official-testnet-YYYYMMDD-01.json --require-passed
+```
+
+Evaluate whether V2 is ready to remain the default path for the current RC:
+
+```bash
+python3 scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --official-allow-unreachable --external-trial-record doc/trials/official-testnet-YYYYMMDD-01.json
+python3 scripts/v2_readiness.py
 ```
 
 ## Documentation
@@ -121,6 +146,7 @@ python3 scripts/release_gate.py --skip-slow --with-stability
 - Docs hub: `doc/README.md`
 - Project structure: `doc/PROJECT_STRUCTURE.md`
 - V2 quickstart: `doc/EZchain-V2-quickstart.md`
+- Official testnet trial runbook: `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
 - Developer testing: `doc/DEV_TESTING.md`
 - Release checklist: `doc/RELEASE_CHECKLIST.md`
 - Runbook: `doc/MVP_RUNBOOK.md`
@@ -136,5 +162,6 @@ python3 scripts/release_gate.py --skip-slow --with-stability
 ## Notes
 
 - This repository is not yet a finished public-network V2 node stack.
-- The current stable path is the local V2 runtime/localnet path.
+- V2 is now the default project path for development, validation, RC evaluation, and local demonstrations.
+- A real reachable official-testnet environment is still recommended before treating a candidate as operationally ready without `--official-allow-unreachable`.
 - The repository is being cleaned up logically before any large-scale source deletion is attempted.

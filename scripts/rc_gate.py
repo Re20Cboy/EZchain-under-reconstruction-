@@ -20,7 +20,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
-    manifest_path = root / args.manifest
+    manifest_arg = Path(args.manifest)
+    manifest_path = manifest_arg if manifest_arg.is_absolute() else (root / manifest_arg)
     if not manifest_path.exists():
         print("[rc-gate] FAILED: missing manifest")
         return 1
@@ -41,6 +42,38 @@ def main() -> int:
     report_status = str(manifest.get("release_report_status", "missing"))
     if report_status != "passed":
         failures.append(f"release_report_status must be 'passed', got '{report_status}'")
+
+    v2_readiness_json = str(manifest.get("v2_readiness_json", ""))
+    if not v2_readiness_json:
+        failures.append("v2_readiness_json missing from release manifest")
+
+    external_trial_gate_status = str(manifest.get("external_trial_gate_status", "missing"))
+    if external_trial_gate_status not in {"passed", "missing", "not_run"}:
+        failures.append(
+            f"external_trial_gate_status must be 'passed', 'missing', or 'not_run', got '{external_trial_gate_status}'"
+        )
+    if external_trial_gate_status in {"missing", "not_run"}:
+        failures.append("external trial evidence missing from release manifest")
+
+    official_testnet_gate_status = str(manifest.get("official_testnet_gate_status", "missing"))
+    if official_testnet_gate_status not in {"passed", "missing", "not_run"}:
+        failures.append(
+            f"official_testnet_gate_status must be 'passed', 'missing', or 'not_run', got '{official_testnet_gate_status}'"
+        )
+
+    v2_adversarial_gate_status = str(manifest.get("v2_adversarial_gate_status", "missing"))
+    if v2_adversarial_gate_status not in {"passed", "missing", "not_run"}:
+        failures.append(
+            f"v2_adversarial_gate_status must be 'passed', 'missing', or 'not_run', got '{v2_adversarial_gate_status}'"
+        )
+
+    v2_ready_for_default = bool(manifest.get("v2_ready_for_default", False))
+    if not v2_ready_for_default:
+        blocking = manifest.get("v2_readiness_blocking_items", [])
+        if isinstance(blocking, list) and blocking:
+            failures.append(f"v2 readiness not satisfied: {len(blocking)} blocking item(s)")
+        else:
+            failures.append("v2 readiness not satisfied")
 
     if failures:
         print("[rc-gate] FAILED")

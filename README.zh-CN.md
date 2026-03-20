@@ -3,14 +3,16 @@
 > English README: `README.md`
 
 这个仓库现在处于 **V1 向 V2 迁移** 的阶段。  
-当前推荐使用的是 **V2 本地运行路径**，而不是旧的 V1 协议主路径。
+当前已经完成默认路径切换：**V2 是项目默认路径**，而不是旧的 V1 协议主路径。
 
 ## 当前状态
 
-- `EZ_V2` 已经可以支撑本地钱包、local runtime、localnet、service API 和 acceptance gate
+- `EZ_V2` 已经可以支撑本地钱包、local runtime、localnet、service API、acceptance gate、对抗测试门禁和 readiness 判断
 - `V1` 相关模块仍保留在仓库中，但已经进入 `legacy / freeze` 准备阶段
 - 推荐本地配置模板：`configs/ezchain.v2-localnet.yaml`
 - 推荐验收入口：`python3 run_ez_v2_acceptance.py`
+- 默认官方测试网配置模板：`configs/ezchain.official-testnet.yaml`
+- 项目默认化判断入口：`python3 scripts/v2_readiness.py`
 
 V1 freeze / V2 默认切换规则见：
 - `EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
@@ -121,7 +123,21 @@ python3 run_ez_v2_acceptance.py
 
 ```bash
 python3 scripts/release_gate.py --skip-slow
-python3 scripts/release_gate.py --skip-slow --with-stability
+python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial
+```
+
+开始官方测试网外部演练前，先初始化一份试用记录：
+
+```bash
+python3 scripts/init_external_trial.py --executor your_name --os macos --install-path source
+python3 scripts/external_trial_gate.py --record doc/trials/official-testnet-YYYYMMDD-01.json --require-passed
+```
+
+判断当前 RC 是否满足 V2 默认路径条件：
+
+```bash
+python3 scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --official-allow-unreachable --external-trial-record doc/trials/official-testnet-YYYYMMDD-01.json
+python3 scripts/v2_readiness.py
 ```
 
 ## 文档导航
@@ -129,6 +145,7 @@ python3 scripts/release_gate.py --skip-slow --with-stability
 - 文档总入口：`doc/README.md`
 - 项目结构：`doc/PROJECT_STRUCTURE.md`
 - V2 快速上手：`doc/EZchain-V2-quickstart.md`
+- 官方测试网试用手册：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
 - 开发测试：`doc/DEV_TESTING.md`
 - 发布检查：`doc/RELEASE_CHECKLIST.md`
 - 运行手册：`doc/MVP_RUNBOOK.md`
@@ -144,5 +161,6 @@ python3 scripts/release_gate.py --skip-slow --with-stability
 ## 说明
 
 - 这个仓库目前还不是完整的公网 V2 节点栈
-- 当前最稳定的路径是本地 V2 runtime / localnet 路径
-- 现在优先做的是“结构梳理 + 默认路径切换”，不是立即大规模删除 V1 代码
+- V2 现在已经是项目默认路径，用于开发、验证、RC 判断和本地演示
+- 在真实运营口径上，仍建议在可达的官方测试网环境再跑一轮不带 `--official-allow-unreachable` 的验证
+- 现在优先做的是“结构梳理 + 默认路径收口”，不是立即大规模删除 V1 代码

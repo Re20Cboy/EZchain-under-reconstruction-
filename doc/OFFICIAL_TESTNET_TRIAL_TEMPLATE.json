@@ -1,0 +1,28 @@
+{
+  "trial_id": "official-testnet-YYYYMMDD-01",
+  "executed_at": "2026-03-20T00:00:00Z",
+  "executor": "name-or-team",
+  "environment": {
+    "os": "macos|windows",
+    "install_path": "source|binary",
+    "config_path": "ezchain.yaml"
+  },
+  "profile": {
+    "name": "official-testnet",
+    "connectivity_checked": true,
+    "connectivity_result": "passed"
+  },
+  "workflow": {
+    "install": "pending",
+    "wallet_create_or_import": "pending",
+    "network_check": "pending",
+    "faucet": "pending",
+    "send": "pending",
+    "history_receipts_balance_match": "pending"
+  },
+  "status": "pending",
+  "issues": [],
+  "notes": [
+    "Record any operator-facing problems here."
+  ]
+}

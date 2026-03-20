@@ -39,7 +39,7 @@ def main() -> int:
     parser.add_argument("--startup-wait", type=float, default=1.5)
     parser.add_argument("--restart-cooldown", type=float, default=1.2)
     parser.add_argument("--request-timeout", type=float, default=5.0)
-    parser.add_argument("--jitter", type=float, default=0.0, help="Probe interval jitter ratio, e.g. 0.2 => +/-20%")
+    parser.add_argument("--jitter", type=float, default=0.0, help="Probe interval jitter ratio, e.g. 0.2 => +/-20%%")
     parser.add_argument("--burst-every", type=int, default=0, help="Run burst probes every N cycles; 0 disables")
     parser.add_argument("--burst-size", type=int, default=1, help="Probe count during burst cycle")
     parser.add_argument("--json-out", default="")

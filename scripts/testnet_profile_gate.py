@@ -6,6 +6,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from _bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
 from EZ_App.config import load_config
 from EZ_App.node_manager import NodeManager
 

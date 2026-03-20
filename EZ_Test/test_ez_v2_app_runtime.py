@@ -1,3 +1,4 @@
+from dataclasses import replace
 import tempfile
 import unittest
 from pathlib import Path
@@ -290,6 +291,210 @@ class EZV2AppRuntimeTest(unittest.TestCase):
 
             restarted = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
             self.assertEqual(restarted.checkpoints(bob_store, password="pw123")["items"], checkpoint_view["items"])
+
+    def test_invalid_mailbox_package_is_not_claimed_and_valid_package_still_syncs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            shared_backend = Path(td) / "shared_backend"
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+
+            alice_engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_engine = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_addr = bob_store.summary(protocol_version="v2").address
+
+            alice_engine.faucet(alice_store, password="pw123", amount=120)
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=40,
+                client_tx_id="cid-alice-bob-valid",
+            )
+
+            _, alice_session = alice_engine._open_v2_session(alice_store, "pw123")  # type: ignore[attr-defined]
+            _, bob_session = bob_engine._open_v2_session(bob_store, "pw123")  # type: ignore[attr-defined]
+            try:
+                pending_packages = bob_session.mailbox.list_pending_packages(bob_session.address)
+                self.assertEqual(len(pending_packages), 1)
+                package_hash, sender_addr, created_at, package = pending_packages[0]
+
+                tampered_package = replace(package, target_value=replace(package.target_value, end=package.target_value.end + 10))
+                bob_session.mailbox.enqueue_package(
+                    sender_addr=sender_addr,
+                    recipient_addr=bob_session.address,
+                    package=tampered_package,
+                    created_at=created_at - 1,
+                )
+
+                events = bob_session.sync_wallet_state()
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].target_value, package.target_value)
+                self.assertEqual(bob_session.mailbox.pending_count(bob_session.address), 1)
+            finally:
+                alice_session.close()
+                bob_session.close()
+
+    def test_conflicting_mailbox_packages_only_accept_valid_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            shared_backend = Path(td) / "shared_backend"
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+            carol_dir = Path(td) / "carol"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            carol_store = WalletStore(str(carol_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+            carol_store.create_wallet(password="pw123", name="carol")
+
+            alice_engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_engine = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            carol_addr = carol_store.summary(protocol_version="v2").address
+            bob_addr = bob_store.summary(protocol_version="v2").address
+
+            alice_engine.faucet(alice_store, password="pw123", amount=150)
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=40,
+                client_tx_id="cid-branching-1",
+            )
+
+            _, bob_session = bob_engine._open_v2_session(bob_store, "pw123")  # type: ignore[attr-defined]
+            try:
+                pending_packages = bob_session.mailbox.list_pending_packages(bob_session.address)
+                self.assertEqual(len(pending_packages), 1)
+                _, sender_addr, created_at, package = pending_packages[0]
+
+                wrong_recipient_package = replace(
+                    package,
+                    target_tx=replace(package.target_tx, recipient_addr=carol_addr),
+                )
+                expanded_value_package = replace(
+                    package,
+                    target_value=replace(package.target_value, end=package.target_value.end + 5),
+                )
+                bob_session.mailbox.enqueue_package(
+                    sender_addr=sender_addr,
+                    recipient_addr=bob_session.address,
+                    package=wrong_recipient_package,
+                    created_at=created_at - 2,
+                )
+                bob_session.mailbox.enqueue_package(
+                    sender_addr=sender_addr,
+                    recipient_addr=bob_session.address,
+                    package=expanded_value_package,
+                    created_at=created_at - 1,
+                )
+
+                events = bob_session.sync_wallet_state()
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0].recipient_addr, bob_addr)
+                self.assertEqual(events[0].target_value, package.target_value)
+                self.assertEqual(bob_session.mailbox.pending_count(bob_session.address), 2)
+                self.assertEqual(bob_session.wallet.available_balance(), 40)
+            finally:
+                bob_session.close()
+
+    def test_multi_round_mailbox_attack_does_not_break_honest_balances(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            shared_backend = Path(td) / "shared_backend"
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+            carol_dir = Path(td) / "carol"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            carol_store = WalletStore(str(carol_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+            carol_store.create_wallet(password="pw123", name="carol")
+
+            alice_engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_engine = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            carol_engine = TxEngine(str(carol_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+
+            bob_addr = bob_store.summary(protocol_version="v2").address
+            carol_addr = carol_store.summary(protocol_version="v2").address
+
+            alice_engine.faucet(alice_store, password="pw123", amount=180)
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=50,
+                client_tx_id="cid-attack-round-1",
+            )
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=30,
+                client_tx_id="cid-attack-round-2",
+            )
+
+            _, bob_session = bob_engine._open_v2_session(bob_store, "pw123")  # type: ignore[attr-defined]
+            try:
+                pending_packages = bob_session.mailbox.list_pending_packages(bob_session.address)
+                self.assertEqual(len(pending_packages), 2)
+                for package_hash, sender_addr, created_at, package in pending_packages:
+                    wrong_recipient_package = replace(
+                        package,
+                        target_tx=replace(package.target_tx, recipient_addr=carol_addr),
+                    )
+                    expanded_value_package = replace(
+                        package,
+                        target_value=replace(package.target_value, end=package.target_value.end + 9),
+                    )
+                    bob_session.mailbox.enqueue_package(
+                        sender_addr=sender_addr,
+                        recipient_addr=bob_session.address,
+                        package=wrong_recipient_package,
+                        created_at=created_at - 2,
+                    )
+                    bob_session.mailbox.enqueue_package(
+                        sender_addr=sender_addr,
+                        recipient_addr=bob_session.address,
+                        package=expanded_value_package,
+                        created_at=created_at - 1,
+                    )
+
+                events = bob_session.sync_wallet_state()
+                self.assertEqual(len(events), 2)
+                self.assertEqual(sorted(event.target_value.size for event in events), [30, 50])
+                self.assertEqual(bob_session.wallet.available_balance(), 80)
+                self.assertEqual(bob_session.mailbox.pending_count(bob_session.address), 4)
+            finally:
+                bob_session.close()
+
+            bob_send = bob_engine.send(
+                bob_store,
+                password="pw123",
+                recipient=carol_addr,
+                amount=60,
+                client_tx_id="cid-bob-honest-respend",
+            )
+            self.assertEqual(bob_send.receipt_height, 3)
+
+            bob_balance = bob_engine.balance(bob_store, password="pw123")
+            carol_balance = carol_engine.balance(carol_store, password="pw123")
+            alice_balance = alice_engine.balance(alice_store, password="pw123")
+
+            self.assertEqual(alice_balance["available_balance"], 100)
+            self.assertEqual(bob_balance["available_balance"], 20)
+            self.assertEqual(carol_balance["available_balance"], 60)
+            self.assertEqual(bob_balance["pending_incoming_transfer_count"], 4)
+            self.assertEqual(carol_balance["pending_incoming_transfer_count"], 0)
+            self.assertEqual(alice_balance["pending_bundle_count"], 0)
+            self.assertEqual(bob_balance["pending_bundle_count"], 0)
+            self.assertEqual(carol_balance["pending_bundle_count"], 0)
 
 
 if __name__ == "__main__":
