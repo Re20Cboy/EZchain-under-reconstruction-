@@ -23,6 +23,89 @@ class NodeManager:
         self._v2_process: subprocess.Popen[str] | None = None
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def _sanitize_mode_name(mode: str) -> str:
+        return str(mode).replace("/", "_").replace(":", "_")
+
+    def _startup_log_path(self, mode: str) -> Path:
+        return self.data_dir / f"{self._sanitize_mode_name(mode)}_startup.log"
+
+    def _prepare_startup_log(self, mode: str):
+        path = self._startup_log_path(mode)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+        return path, path.open("w", encoding="utf-8")
+
+    def _read_startup_log_tail(self, mode: str, *, max_chars: int = 600) -> str:
+        path = self._startup_log_path(mode)
+        if not path.exists():
+            return ""
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+        if not text:
+            return ""
+        if len(text) <= max_chars:
+            return text
+        return text[-max_chars:]
+
+    def _raise_startup_failure(self, mode: str, code: str, *, stderr_handle=None) -> None:
+        if stderr_handle is not None:
+            try:
+                stderr_handle.flush()
+            except Exception:
+                pass
+            try:
+                stderr_handle.close()
+            except Exception:
+                pass
+        detail = self._read_startup_log_tail(mode)
+        log_path = self._startup_log_path(mode)
+        if detail:
+            raise RuntimeError(f"{code}: {detail} (log: {log_path})")
+        raise RuntimeError(f"{code} (log: {log_path})")
+
+    @staticmethod
+    def _is_v2_mode(mode: str) -> bool:
+        return str(mode).startswith("v2-")
+
+    @staticmethod
+    def _normalize_mode(mode: str) -> str:
+        if str(mode) == "v2-consensus":
+            return "v2-tcp-consensus"
+        return str(mode)
+
+    @classmethod
+    def _mode_family(cls, mode: str) -> str:
+        normalized = cls._normalize_mode(mode)
+        if normalized == "v2-tcp-consensus":
+            return "v2-consensus"
+        return normalized
+
+    @classmethod
+    def _roles_for_mode(cls, mode: str) -> List[str]:
+        normalized = cls._normalize_mode(mode)
+        if normalized == "v2-localnet":
+            return ["account", "consensus"]
+        if normalized == "v2-tcp-consensus":
+            return ["consensus"]
+        if normalized == "v2-account":
+            return ["account"]
+        if normalized == "official-testnet":
+            return ["account"]
+        if normalized == "local":
+            return ["account", "consensus"]
+        return []
+
+    @classmethod
+    def _annotate_mode_payload(cls, payload: Dict[str, Any], mode: str) -> Dict[str, Any]:
+        annotated = dict(payload)
+        annotated["mode"] = cls._normalize_mode(mode)
+        annotated["mode_family"] = cls._mode_family(mode)
+        annotated["roles"] = cls._roles_for_mode(mode)
+        return annotated
+
     def _read_pid(self) -> int | None:
         if not self.pid_file.exists():
             return None
@@ -119,7 +202,7 @@ class NodeManager:
             return None
 
     def _clear_tracked_process(self, *, mode: str, pid: int | None = None) -> None:
-        if mode == "v2-localnet":
+        if self._is_v2_mode(mode):
             if self._v2_process is not None and (pid is None or self._v2_process.pid == pid):
                 self._v2_process = None
             return
@@ -140,7 +223,7 @@ class NodeManager:
         return True
 
     def _stop_pid(self, pid: int, *, mode: str) -> None:
-        tracked = self._v2_process if mode == "v2-localnet" else self._local_process
+        tracked = self._v2_process if self._is_v2_mode(mode) else self._local_process
         if self._stop_tracked_process(tracked, pid, mode=mode):
             return
         if not self._is_running(pid):
@@ -174,6 +257,7 @@ class NodeManager:
         bootstrap_nodes: List[str] | None = None,
         network_name: str = "testnet",
     ) -> Dict[str, Any]:
+        mode = self._normalize_mode(mode)
         bootstrap_nodes = bootstrap_nodes or []
 
         if mode == "official-testnet":
@@ -185,24 +269,29 @@ class NodeManager:
                 "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
             self._write_external_state(payload)
-            return {
-                "status": "started_external",
-                "mode": "official-testnet",
-                "network": network_name,
-                "bootstrap_probe": probe,
-            }
+            return self._annotate_mode_payload(
+                {
+                    "status": "started_external",
+                    "network": network_name,
+                    "bootstrap_probe": probe,
+                },
+                mode,
+            )
 
         if mode == "v2-localnet":
             existing_v2 = self._read_v2_pid()
             if existing_v2 and self._is_running(existing_v2):
-                return {
-                    "status": "already_running",
-                    "pid": str(existing_v2),
-                    "mode": "v2-localnet",
-                    "network": network_name,
-                    "backend": self._read_v2_backend_metadata(),
-                }
+                return self._annotate_mode_payload(
+                    {
+                        "status": "already_running",
+                        "pid": str(existing_v2),
+                        "network": network_name,
+                        "backend": self._read_v2_backend_metadata(),
+                    },
+                    mode,
+                )
             self._cleanup_v2_artifacts()
+            _, stderr_handle = self._prepare_startup_log(mode)
             cmd = [
                 sys.executable,
                 str(self.project_root / "run_ez_v2_localnet.py"),
@@ -218,7 +307,7 @@ class NodeManager:
                 cmd,
                 cwd=str(self.project_root),
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr_handle,
             )
             self._v2_process = proc
             self.v2_pid_file.write_text(str(proc.pid), encoding="utf-8")
@@ -226,24 +315,194 @@ class NodeManager:
             while time.time() < deadline:
                 state = self._read_v2_state()
                 if state is not None and state.get("pid") == proc.pid:
+                    try:
+                        stderr_handle.close()
+                    except Exception:
+                        pass
                     break
                 if proc.poll() is not None:
                     self._clear_tracked_process(mode="v2-localnet", pid=proc.pid)
                     self._cleanup_v2_artifacts()
-                    raise RuntimeError("v2_localnet_failed_to_start")
+                    self._raise_startup_failure(mode, "v2_localnet_failed_to_start", stderr_handle=stderr_handle)
                 time.sleep(0.05)
-            return {
+            else:
+                try:
+                    stderr_handle.close()
+                except Exception:
+                    pass
+            return self._annotate_mode_payload(
+                {
+                    "status": "started",
+                    "pid": str(proc.pid),
+                    "network": network_name,
+                    "backend_dir": str(self.data_dir / "v2_runtime"),
+                    "backend": self._read_v2_backend_metadata(),
+                },
+                mode,
+            )
+
+        if mode == "v2-tcp-consensus":
+            existing_v2 = self._read_v2_pid()
+            if existing_v2 and self._is_running(existing_v2):
+                state = self._read_v2_state() or {}
+                return self._annotate_mode_payload(
+                    {
+                        "status": "already_running",
+                        "pid": str(existing_v2),
+                        "network": network_name,
+                        "endpoint": state.get("endpoint", ""),
+                        "backend": self._read_v2_backend_metadata(),
+                    },
+                    str(state.get("mode", mode)),
+                )
+            self._cleanup_v2_artifacts()
+            endpoint = str((bootstrap_nodes or [f"127.0.0.1:{start_port}"])[0])
+            _, stderr_handle = self._prepare_startup_log(mode)
+            cmd = [
+                sys.executable,
+                str(self.project_root / "run_ez_v2_tcp_consensus.py"),
+                "--root-dir",
+                str(self.data_dir / "v2_runtime"),
+                "--state-file",
+                str(self.v2_state_file),
+                "--chain-id",
+                "1",
+                "--endpoint",
+                endpoint,
+            ]
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(self.project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_handle,
+            )
+            self._v2_process = proc
+            self.v2_pid_file.write_text(str(proc.pid), encoding="utf-8")
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                state = self._read_v2_state()
+                if state is not None and state.get("pid") == proc.pid:
+                    try:
+                        stderr_handle.close()
+                    except Exception:
+                        pass
+                    break
+                if proc.poll() is not None:
+                    self._clear_tracked_process(mode="v2-tcp-consensus", pid=proc.pid)
+                    self._cleanup_v2_artifacts()
+                    self._raise_startup_failure(mode, "v2_tcp_consensus_failed_to_start", stderr_handle=stderr_handle)
+                time.sleep(0.05)
+            else:
+                try:
+                    stderr_handle.close()
+                except Exception:
+                    pass
+            return self._annotate_mode_payload(
+                {
+                    "status": "started",
+                    "pid": str(proc.pid),
+                    "network": network_name,
+                    "endpoint": endpoint,
+                    "backend_dir": str(self.data_dir / "v2_runtime"),
+                    "backend": self._read_v2_backend_metadata(),
+                },
+                mode,
+            )
+
+        if mode == "v2-account":
+            existing_v2 = self._read_v2_pid()
+            if existing_v2 and self._is_running(existing_v2):
+                state = self._read_v2_state() or {}
+                return self._annotate_mode_payload(
+                    {
+                        "status": "already_running",
+                        "pid": str(existing_v2),
+                        "network": network_name,
+                        "endpoint": state.get("endpoint", ""),
+                        "consensus_endpoint": state.get("consensus_endpoint", ""),
+                        "address": state.get("address", ""),
+                    },
+                    str(state.get("mode", mode)),
+                )
+            if not bootstrap_nodes:
+                raise ValueError("v2_account_requires_consensus_endpoint")
+            self._cleanup_v2_artifacts()
+            endpoint = f"127.0.0.1:{start_port}"
+            consensus_endpoint = str(bootstrap_nodes[0])
+            _, stderr_handle = self._prepare_startup_log(mode)
+            cmd = [
+                sys.executable,
+                str(self.project_root / "run_ez_v2_tcp_account.py"),
+                "--root-dir",
+                str(self.data_dir / "v2_runtime"),
+                "--state-file",
+                str(self.v2_state_file),
+                "--chain-id",
+                "1",
+                "--endpoint",
+                endpoint,
+                "--consensus-endpoint",
+                consensus_endpoint,
+            ]
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(self.project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_handle,
+            )
+            self._v2_process = proc
+            self.v2_pid_file.write_text(str(proc.pid), encoding="utf-8")
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                state = self._read_v2_state()
+                if state is not None and state.get("pid") == proc.pid:
+                    try:
+                        stderr_handle.close()
+                    except Exception:
+                        pass
+                    break
+                if proc.poll() is not None:
+                    self._clear_tracked_process(mode="v2-account", pid=proc.pid)
+                    self._cleanup_v2_artifacts()
+                    self._raise_startup_failure(mode, "v2_account_failed_to_start", stderr_handle=stderr_handle)
+                time.sleep(0.05)
+            else:
+                try:
+                    stderr_handle.close()
+                except Exception:
+                    pass
+            state = self._read_v2_state() or {}
+            payload = {
                 "status": "started",
                 "pid": str(proc.pid),
-                "mode": "v2-localnet",
                 "network": network_name,
+                "endpoint": endpoint,
+                "consensus_endpoint": consensus_endpoint,
+                "address": state.get("address", ""),
                 "backend_dir": str(self.data_dir / "v2_runtime"),
-                "backend": self._read_v2_backend_metadata(),
             }
+            chain_cursor = state.get("chain_cursor")
+            if chain_cursor is not None:
+                payload["chain_cursor"] = chain_cursor
+            for key in (
+                "pending_bundle_count",
+                "receipt_count",
+                "pending_incoming_transfer_count",
+                "fetched_block_count",
+                "applied_receipts_last_sync",
+                "last_sync_at",
+                "last_sync_started_at",
+                "last_sync_duration_ms",
+                "last_sync_ok",
+                "last_sync_error",
+            ):
+                if key in state:
+                    payload[key] = state.get(key)
+            return self._annotate_mode_payload(payload, mode)
 
         existing = self._read_pid()
         if existing and self._is_running(existing):
-            return {"status": "already_running", "pid": str(existing), "mode": "local"}
+            return self._annotate_mode_payload({"status": "already_running", "pid": str(existing)}, mode)
 
         cmd = [
             sys.executable,
@@ -266,20 +525,21 @@ class NodeManager:
         )
         self._local_process = proc
         self.pid_file.write_text(str(proc.pid), encoding="utf-8")
-        return {"status": "started", "pid": str(proc.pid), "mode": "local"}
+        return self._annotate_mode_payload({"status": "started", "pid": str(proc.pid)}, mode)
 
     def stop(self) -> Dict[str, Any]:
         v2_pid = self._read_v2_pid()
         if v2_pid is not None:
-            mode = "v2-localnet"
+            state = self._read_v2_state() or {}
+            mode = str(state.get("mode", "v2-localnet"))
             self._stop_pid(v2_pid, mode=mode)
             self._cleanup_v2_artifacts()
-            return {"status": "stopped", "pid": str(v2_pid), "mode": mode}
+            return self._annotate_mode_payload({"status": "stopped", "pid": str(v2_pid)}, mode)
 
         external = self._read_external_state()
         if external:
             self.external_state_file.unlink(missing_ok=True)
-            return {"status": "stopped", "mode": external.get("mode", "external")}
+            return self._annotate_mode_payload({"status": "stopped"}, str(external.get("mode", "external")))
 
         pid = self._read_pid()
         if not pid:
@@ -292,40 +552,69 @@ class NodeManager:
 
         self._stop_pid(pid, mode="local")
         self.pid_file.unlink(missing_ok=True)
-        return {"status": "stopped", "pid": str(pid), "mode": "local"}
+        return self._annotate_mode_payload({"status": "stopped", "pid": str(pid)}, "local")
 
     def status(self, bootstrap_nodes: List[str] | None = None) -> Dict[str, Any]:
         v2_pid = self._read_v2_pid()
         if v2_pid is not None:
+            state = self._read_v2_state() or {}
+            mode = str(state.get("mode", "v2-localnet"))
             if not self._is_running(v2_pid):
                 self._cleanup_v2_artifacts()
-                return {"status": "stopped", "mode": "v2-localnet"}
-            state = self._read_v2_state() or {}
-            return {
+                return self._annotate_mode_payload({"status": "stopped"}, mode)
+            payload = {
                 "status": "running",
-                "mode": "v2-localnet",
                 "pid": str(v2_pid),
                 "started_at": state.get("started_at", ""),
                 "updated_at": state.get("updated_at", ""),
                 "backend": self._read_v2_backend_metadata(),
             }
+            endpoint = state.get("endpoint")
+            if endpoint:
+                payload["endpoint"] = endpoint
+            consensus_endpoint = state.get("consensus_endpoint")
+            if consensus_endpoint:
+                payload["consensus_endpoint"] = consensus_endpoint
+            address = state.get("address")
+            if address:
+                payload["address"] = address
+            chain_cursor = state.get("chain_cursor")
+            if chain_cursor is not None:
+                payload["chain_cursor"] = chain_cursor
+            for key in (
+                "pending_bundle_count",
+                "receipt_count",
+                "pending_incoming_transfer_count",
+                "fetched_block_count",
+                "applied_receipts_last_sync",
+                "last_sync_at",
+                "last_sync_started_at",
+                "last_sync_duration_ms",
+                "last_sync_ok",
+                "last_sync_error",
+            ):
+                if key in state:
+                    payload[key] = state.get(key)
+            return self._annotate_mode_payload(payload, mode)
 
         external = self._read_external_state()
         if external:
             nodes = bootstrap_nodes or external.get("bootstrap_nodes", [])
             probe = self.probe_bootstrap(nodes) if nodes else None
-            return {
-                "status": "running",
-                "mode": "official-testnet",
-                "network": external.get("network", "testnet"),
-                "started_at": external.get("started_at", ""),
-                "bootstrap_probe": probe,
-            }
+            return self._annotate_mode_payload(
+                {
+                    "status": "running",
+                    "network": external.get("network", "testnet"),
+                    "started_at": external.get("started_at", ""),
+                    "bootstrap_probe": probe,
+                },
+                "official-testnet",
+            )
 
         pid = self._read_pid()
         if not pid:
-            return {"status": "stopped", "mode": "local"}
+            return self._annotate_mode_payload({"status": "stopped"}, "local")
         running = self._is_running(pid)
         if not running:
             self._clear_tracked_process(mode="local", pid=pid)
-        return {"status": "running" if running else "stopped", "pid": str(pid), "mode": "local"}
+        return self._annotate_mode_payload({"status": "running" if running else "stopped", "pid": str(pid)}, "local")

@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from .control import read_backend_metadata
 from .localnet import SubmittedPayment, V2AccountNode, V2ConsensusNode
+from .runtime_v2 import ReceiptDeliveryResult
 from .transport import TransferMailboxStore
 from .types import OffChainTx, Receipt
 from .values import ValueRange
@@ -26,6 +27,16 @@ class V2ReceivedTransferEvent:
 class V2ConfirmedPayment:
     submitted: SubmittedPayment
     receipt: Receipt | None
+
+
+@dataclass(frozen=True, slots=True)
+class V2WalletRecovery:
+    receipt_results: tuple[ReceiptDeliveryResult, ...]
+    received_events: tuple[V2ReceivedTransferEvent, ...]
+    chain_height: int
+    pending_bundle_count: int
+    pending_incoming_transfer_count: int
+    receipt_count: int
 
 
 class V2LocalAppSession:
@@ -79,9 +90,10 @@ class V2LocalAppSession:
             finally:
                 self.consensus.close()
 
-    def sync_receipts(self) -> None:
+    def sync_receipts(self) -> tuple[ReceiptDeliveryResult, ...]:
         if self.wallet.list_pending_bundles():
-            self.account_node.sync_receipts()
+            return self.account_node.sync_receipts()
+        return ()
 
     def sync_incoming_transfers(self) -> tuple[V2ReceivedTransferEvent, ...]:
         pending_packages = list(self.mailbox.list_pending_packages(self.address))
@@ -112,9 +124,20 @@ class V2LocalAppSession:
                 self.mailbox.mark_claimed(package_hash, claimed_at=int(time.time()))
         return tuple(accepted_events)
 
+    def recover_wallet_state(self) -> V2WalletRecovery:
+        receipt_results = self.sync_receipts()
+        received_events = self.sync_incoming_transfers()
+        return V2WalletRecovery(
+            receipt_results=receipt_results,
+            received_events=received_events,
+            chain_height=self.consensus.chain.current_height,
+            pending_bundle_count=len(self.wallet.list_pending_bundles()),
+            pending_incoming_transfer_count=self.pending_incoming_transfer_count(),
+            receipt_count=len(self.wallet.list_receipts()),
+        )
+
     def sync_wallet_state(self) -> tuple[V2ReceivedTransferEvent, ...]:
-        self.sync_receipts()
-        return self.sync_incoming_transfers()
+        return self.recover_wallet_state().received_events
 
     def queue_outgoing_transfer_packages(self, target_tx: OffChainTx) -> None:
         for value in target_tx.value_list:

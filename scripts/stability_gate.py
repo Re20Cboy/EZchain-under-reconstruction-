@@ -33,6 +33,10 @@ def build_smoke_command(args: Namespace, out_path: Path) -> list[str]:
         str(args.max_failures),
         "--max-failure-rate",
         str(args.max_failure_rate),
+        "--max-consecutive-failures",
+        str(args.max_consecutive_failures),
+        "--max-restart-probe-failures",
+        str(args.max_restart_probe_failures),
         "--request-timeout",
         str(args.request_timeout),
         "--jitter",
@@ -57,6 +61,8 @@ def main() -> int:
     parser.add_argument("--restart-every", type=int, default=10)
     parser.add_argument("--max-failures", type=int, default=0)
     parser.add_argument("--max-failure-rate", type=float, default=0.0)
+    parser.add_argument("--max-consecutive-failures", type=int, default=0)
+    parser.add_argument("--max-restart-probe-failures", type=int, default=0)
     parser.add_argument("--request-timeout", type=float, default=5.0)
     parser.add_argument("--jitter", type=float, default=0.0)
     parser.add_argument("--burst-every", type=int, default=0)

@@ -1,166 +1,94 @@
 # EZchain 仓库说明
 
-> English README: `README.md`
+English README: `README.md`
 
-这个仓库现在处于 **V1 向 V2 迁移** 的阶段。  
-当前已经完成默认路径切换：**V2 是项目默认路径**，而不是旧的 V1 协议主路径。
+EZchain 是一个从研究原型走向工程化实现的区块链代码库。  
+当前默认路径：**V2**。
 
-## 当前状态
+现在仓库可以简单理解成三层：
 
-- `EZ_V2` 已经可以支撑本地钱包、local runtime、localnet、service API、acceptance gate、对抗测试门禁和 readiness 判断
-- `V1` 相关模块仍保留在仓库中，但已经进入 `legacy / freeze` 准备阶段
-- 推荐本地配置模板：`configs/ezchain.v2-localnet.yaml`
-- 推荐验收入口：`python3 run_ez_v2_acceptance.py`
-- 默认官方测试网配置模板：`configs/ezchain.official-testnet.yaml`
-- 项目默认化判断入口：`python3 scripts/v2_readiness.py`
+- `EZ_V2/`：V2 协议核心、runtime、localnet、wallet/storage
+- `EZ_App/`：CLI、本地 service API、节点生命周期管理
+- `EZ_V1/`：冻结的 V1 实现和历史归档
 
-V1 freeze / V2 默认切换规则见：
-- `EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
+顶层像 `EZ_VPB/`、`EZ_Account/`、`EZ_Transaction/` 这些 V1 目录目前主要是兼容入口，方便旧 import 不断。
 
-## 推荐快速开始
+## 快速开始
 
-先使用 V2 本地配置：
+先使用默认 V2 本地配置：
 
 ```bash
 cp configs/ezchain.v2-localnet.yaml ezchain.yaml
 ```
 
-创建钱包、领取本地测试值、发起一笔交易：
+创建钱包、领取本地测试值、发起交易：
 
 ```bash
 python3 ezchain_cli.py --config ezchain.yaml wallet create --password your_password --name default
 python3 ezchain_cli.py --config ezchain.yaml tx faucet --amount 1000 --password your_password
-python3 ezchain_cli.py --config ezchain.yaml wallet balance --password your_password
 python3 ezchain_cli.py --config ezchain.yaml tx send --recipient 0xabc123 --amount 100 --password your_password --client-tx-id cid-001
-python3 ezchain_cli.py --config ezchain.yaml tx receipts --password your_password
 ```
 
-启动本地 API：
+启动本地服务：
 
 ```bash
 python3 ezchain_cli.py --config ezchain.yaml serve
 ```
 
-查看本地 API token：
+可选：启动一个最小可运行的 V2 TCP 共识节点模式：
 
 ```bash
-python3 ezchain_cli.py --config ezchain.yaml auth show-token
+python3 ezchain_cli.py --config ezchain.yaml node start --mode v2-tcp-consensus
+python3 ezchain_cli.py --config ezchain.yaml node status
+python3 ezchain_cli.py --config ezchain.yaml node stop
 ```
 
-一键跑通 V2 service 演示：
+这个模式只启动一个轻量 V2 共识 daemon，默认绑定
+`network.bootstrap_nodes[0]`；如果没有配置 bootstrap endpoint，就回退到
+`127.0.0.1:<start_port>`。它是一个可选的开发/节点入口；默认的钱包和
+service 路径仍然走本地 V2 runtime。
 
-```bash
-./scripts/run_v2_service_quickstart.sh
-```
-
-## 仓库结构
-
-### 当前主路径
-
-- `EZ_V2/`
-  - V2 协议核心、钱包存储、validator、runtime、localnet、control plane
-- `EZ_App/`
-  - CLI、本地 HTTP API、运行时桥接、节点生命周期管理
-- `configs/`
-  - 配置模板
-- `scripts/`
-  - quickstart、发布门禁、运维工具
-- `EZ_Test/`
-  - 测试集，包含 V2 acceptance 和 runtime 测试
-- `doc/`
-  - 当前用户/开发/发布/运维文档
-- `EZchain-V2-design/`
-  - V2 设计文档、路线图、迁移与 freeze 文档
-
-### Legacy / 冻结路径
-
-- `EZ_VPB/`
-- `EZ_VPB_Validator/`
-- `EZ_Tx_Pool/`
-- `EZ_Main_Chain/`
-- `EZ_Account/`
-- `EZ_Transaction/`
-
-这些 V1 目录目前还保留，用于：
-
-- 历史参考
-- 行为对照
-- 兼容性比较
-
-但新的协议功能默认不应继续落到这些目录里。
-
-更清晰的结构图见：
-- `doc/PROJECT_STRUCTURE.md`
+当前还提供一个最小 `v2-account` 开发模式，用来把账户角色单独拉起来接入
+已有共识端点。`node status` 现在会直接显示模式归属、节点角色、共识端点、
+账户地址、基础同步计数，以及最近一次同步是否成功。如果这类 V2 节点一启动
+就退出，数据目录里还会留下对应的 `*_startup.log` 方便排查。
 
 ## 主要入口
 
-- CLI 入口：`ezchain_cli.py`
-- 应用运行时：`EZ_App/runtime.py`
+- CLI：`ezchain_cli.py`
 - 本地服务：`EZ_App/service.py`
-- 节点管理：`EZ_App/node_manager.py`
-- V2 本地运行时与 localnet：
-  - `EZ_V2/runtime_v2.py`
-  - `EZ_V2/localnet.py`
-  - `run_ez_v2_localnet.py`
-- V2 验收入口：`run_ez_v2_acceptance.py`
+- V2 本地运行时：`EZ_V2/runtime_v2.py`
+- V2 本地网络：`run_ez_v2_localnet.py`
+- 轻量 V2 TCP 共识节点：`run_ez_v2_tcp_consensus.py`
+- 验收入口：`run_ez_v2_acceptance.py`
 
-## 测试与门禁
+## 验证命令
 
-查看统一测试分组：
+推荐本地检查：
 
 ```bash
-python3 run_ezchain_tests.py --list
-```
-
-当前推荐本地回归：
-
-```bash
-python3 run_ezchain_tests.py --groups core transactions v2 --skip-slow
+python3 run_ezchain_tests.py --groups v2 --skip-slow
+python3 run_ezchain_tests.py --groups v2-adversarial --skip-slow
 python3 run_ez_v2_acceptance.py
 ```
 
-发布门禁：
+发布级门禁：
 
 ```bash
-python3 scripts/release_gate.py --skip-slow
 python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial
 ```
 
-开始官方测试网外部演练前，先初始化一份试用记录：
-
-```bash
-python3 scripts/init_external_trial.py --executor your_name --os macos --install-path source
-python3 scripts/external_trial_gate.py --record doc/trials/official-testnet-YYYYMMDD-01.json --require-passed
-```
-
-判断当前 RC 是否满足 V2 默认路径条件：
-
-```bash
-python3 scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --official-allow-unreachable --external-trial-record doc/trials/official-testnet-YYYYMMDD-01.json
-python3 scripts/v2_readiness.py
-```
-
-## 文档导航
+## 文档入口
 
 - 文档总入口：`doc/README.md`
 - 项目结构：`doc/PROJECT_STRUCTURE.md`
-- V2 快速上手：`doc/EZchain-V2-quickstart.md`
-- 官方测试网试用手册：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
+- 用户快速上手：`doc/USER_QUICKSTART.md`
 - 开发测试：`doc/DEV_TESTING.md`
 - 发布检查：`doc/RELEASE_CHECKLIST.md`
-- 运行手册：`doc/MVP_RUNBOOK.md`
-- V1 freeze / V2 切换：`EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
-- V2 路线图：`EZchain-V2-design/EZchain-V2-implementation-roadmap.md`
+- 官方测试网试用手册：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
 
-## 研究背景
+## 当前状态
 
-- 已发表论文（VWchain）：https://www.sciencedirect.com/science/article/abs/pii/S1383762126000512
-- 原始白皮书：https://arxiv.org/abs/2312.00281v1
-- 原型模拟器：https://github.com/Re20Cboy/Ezchain-py
-
-## 说明
-
-- 这个仓库目前还不是完整的公网 V2 节点栈
-- V2 现在已经是项目默认路径，用于开发、验证、RC 判断和本地演示
-- 在真实运营口径上，仍建议在可达的官方测试网环境再跑一轮不带 `--official-allow-unreachable` 的验证
-- 现在优先做的是“结构梳理 + 默认路径收口”，不是立即大规模删除 V1 代码
+- V2 已经是默认开发和验证路径
+- V1 保留用于兼容和历史参考
+- 仓库还不是完整的公网 V2 节点栈

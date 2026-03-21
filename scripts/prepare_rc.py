@@ -74,7 +74,7 @@ def main() -> int:
         "version": args.version,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_head": git_head,
-        "release_notes": str(notes_file.relative_to(root)),
+        "release_notes": _path_for_manifest(notes_file, root),
         "release_report_json": _path_for_manifest(report_path, root) if report_path.exists() else "",
         "release_report_status": report.get("overall_status", "missing"),
         "release_report_risks": report.get("risks", []),
@@ -83,6 +83,8 @@ def main() -> int:
         "v2_readiness_blocking_items": readiness.get("blocking_items", []),
         "external_trial_status": report.get("summary", {}).get("external_trial_status", "missing"),
         "external_trial_gate_status": report.get("summary", {}).get("external_trial_gate_status", "missing"),
+        "external_trial_remaining_steps": report.get("summary", {}).get("external_trial_remaining_steps", []),
+        "external_trial_failed_steps": report.get("summary", {}).get("external_trial_failed_steps", []),
         "official_testnet_gate_status": report.get("summary", {}).get("official_testnet_gate_status", "missing"),
         "v2_adversarial_gate_status": report.get("summary", {}).get("v2_adversarial_gate_status", "missing"),
     }

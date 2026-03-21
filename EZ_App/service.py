@@ -174,7 +174,17 @@ class LocalService:
         self.tx_engine = tx_engine
         self.api_token = api_token
         self.max_payload_bytes = max(1024, max_payload_bytes)
-        self.network_info = network_info or {"name": "testnet", "mode": "local", "bootstrap_nodes": []}
+        default_mode = "local"
+        self.network_info = network_info or {
+            "name": "testnet",
+            "mode": default_mode,
+            "mode_family": NodeManager._mode_family(default_mode),
+            "roles": NodeManager._roles_for_mode(default_mode),
+            "bootstrap_nodes": [],
+            "consensus_nodes": 1,
+            "account_nodes": 1,
+            "start_port": 19500,
+        }
         nonce_file = Path(wallet_store.base_dir) / "used_nonces.json"
         self.nonce_guard = NonceGuard(nonce_file=nonce_file, ttl_seconds=nonce_ttl_seconds)
         effective_log_dir = Path(log_dir) if log_dir else (Path(wallet_store.base_dir) / "logs")
@@ -402,7 +412,18 @@ class LocalService:
                         {
                             "network": service.network_info.get("name", "testnet"),
                             "mode": service.network_info.get("mode", "local"),
+                            "mode_family": service.network_info.get(
+                                "mode_family",
+                                NodeManager._mode_family(str(service.network_info.get("mode", "local"))),
+                            ),
+                            "roles": service.network_info.get(
+                                "roles",
+                                NodeManager._roles_for_mode(str(service.network_info.get("mode", "local"))),
+                            ),
                             "bootstrap_nodes": bootstrap_nodes,
+                            "consensus_nodes": int(service.network_info.get("consensus_nodes", 1)),
+                            "account_nodes": int(service.network_info.get("account_nodes", 1)),
+                            "start_port": int(service.network_info.get("start_port", 0)),
                             "bootstrap_probe": probe,
                         }
                     )

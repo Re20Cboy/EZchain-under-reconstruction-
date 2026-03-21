@@ -131,7 +131,8 @@ class TxEngine:
             session.close()
 
     def _record_v2_received_events(self, wallet_store: WalletStore, session: V2LocalAppSession) -> None:
-        for event in session.sync_wallet_state():
+        recovery = session.recover_wallet_state()
+        for event in recovery.received_events:
             wallet_store.append_history(
                 {
                     "tx_id": self._v2_tx_hash(event.target_tx),

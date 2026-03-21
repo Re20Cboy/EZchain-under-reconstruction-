@@ -53,6 +53,10 @@ def main() -> int:
                 "0",
                 "--max-failure-rate",
                 "0.0",
+                "--max-consecutive-failures",
+                "0",
+                "--max-restart-probe-failures",
+                "0",
             ]
             if args.allow_bind_restricted_skip:
                 stability_cmd.append("--allow-bind-restricted-skip")

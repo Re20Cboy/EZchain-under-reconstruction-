@@ -38,6 +38,10 @@ def _network_mode(cfg) -> str:
     return "local"
 
 
+def _mode_roles(mode: str) -> list[str]:
+    return NodeManager._roles_for_mode(mode)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="EZchain CLI")
     parser.add_argument("--config", default="ezchain.yaml")
@@ -85,6 +89,11 @@ def main(argv=None) -> int:
     n_start.add_argument("--consensus", type=int, default=None)
     n_start.add_argument("--accounts", type=int, default=None)
     n_start.add_argument("--start-port", type=int, default=None)
+    n_start.add_argument(
+        "--mode",
+        choices=["auto", "local", "v2-localnet", "v2-tcp-consensus", "v2-consensus", "v2-account", "official-testnet"],
+        default="auto",
+    )
     node_sub.add_parser("stop")
     node_sub.add_parser("status")
 
@@ -178,7 +187,7 @@ def main(argv=None) -> int:
             consensus = args.consensus if args.consensus is not None else cfg.network.consensus_nodes
             accounts = args.accounts if args.accounts is not None else cfg.network.account_nodes
             start_port = args.start_port if args.start_port is not None else cfg.network.start_port
-            mode = _network_mode(cfg)
+            mode = _network_mode(cfg) if args.mode == "auto" else args.mode
             print(
                 json.dumps(
                     node_manager.start(
@@ -208,6 +217,8 @@ def main(argv=None) -> int:
                 {
                     "network": cfg.network.name,
                     "mode": mode,
+                    "mode_family": NodeManager._mode_family(mode),
+                    "roles": _mode_roles(mode),
                     "bootstrap_nodes": cfg.network.bootstrap_nodes,
                     "consensus_nodes": cfg.network.consensus_nodes,
                     "account_nodes": cfg.network.account_nodes,
@@ -220,6 +231,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "network" and args.network_cmd == "check":
+        mode = _network_mode(cfg)
         probe = node_manager.probe_bootstrap(cfg.network.bootstrap_nodes) if cfg.network.bootstrap_nodes else {
             "total": 0,
             "reachable": 0,
@@ -228,7 +240,18 @@ def main(argv=None) -> int:
             "any_reachable": False,
             "checked": [],
         }
-        print(json.dumps({"network": cfg.network.name, "mode": _network_mode(cfg), "bootstrap_probe": probe}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "network": cfg.network.name,
+                    "mode": mode,
+                    "mode_family": NodeManager._mode_family(mode),
+                    "roles": _mode_roles(mode),
+                    "bootstrap_probe": probe,
+                },
+                indent=2,
+            )
+        )
         return 0
 
     if args.cmd == "network" and args.network_cmd == "list-profiles":
@@ -238,12 +261,16 @@ def main(argv=None) -> int:
     if args.cmd == "network" and args.network_cmd == "set-profile":
         updated_cfg = apply_network_profile(config_path=args.config, profile_name=args.name)
         ensure_directories(updated_cfg)
+        mode = _network_mode(updated_cfg)
         print(
             json.dumps(
                 {
                     "status": "updated",
                     "profile": args.name,
                     "network": updated_cfg.network.name,
+                    "mode": mode,
+                    "mode_family": NodeManager._mode_family(mode),
+                    "roles": _mode_roles(mode),
                     "bootstrap_nodes": updated_cfg.network.bootstrap_nodes,
                     "consensus_nodes": updated_cfg.network.consensus_nodes,
                     "account_nodes": updated_cfg.network.account_nodes,
@@ -276,7 +303,12 @@ def main(argv=None) -> int:
             network_info={
                 "name": cfg.network.name,
                 "mode": _network_mode(cfg),
+                "mode_family": NodeManager._mode_family(_network_mode(cfg)),
+                "roles": _mode_roles(_network_mode(cfg)),
                 "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
             },
         ).run()
         return 0

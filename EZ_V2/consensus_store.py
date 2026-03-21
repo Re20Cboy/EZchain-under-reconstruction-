@@ -31,7 +31,7 @@ class ConsensusStateStore:
         if db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
-        self._conn = sqlite3.connect(db_path)
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._init_schema()
 
@@ -105,6 +105,28 @@ class ConsensusStateStore:
             "SELECT block_json FROM blocks_v2 ORDER BY height"
         ).fetchall()
         return [loads_json(row["block_json"]) for row in rows]
+
+    def get_block_by_height(self, height: int) -> BlockV2 | None:
+        row = self._conn.execute(
+            """
+            SELECT block_json
+            FROM blocks_v2
+            WHERE height = ?
+            """,
+            (height,),
+        ).fetchone()
+        return loads_json(row["block_json"]) if row else None
+
+    def get_block_by_hash(self, block_hash: bytes) -> BlockV2 | None:
+        row = self._conn.execute(
+            """
+            SELECT block_json
+            FROM blocks_v2
+            WHERE block_hash = ?
+            """,
+            (sqlite3.Binary(block_hash),),
+        ).fetchone()
+        return loads_json(row["block_json"]) if row else None
 
     def save_applied_block(
         self,

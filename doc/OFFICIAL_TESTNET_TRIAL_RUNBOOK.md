@@ -36,8 +36,15 @@ python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step install \
   --step-status passed \
+  --auto-status \
   --note "source install completed on macOS"
 ```
+
+原因很简单：
+
+- 这份记录后面会被脚本校验
+- 顶层状态、每一步状态、连通性结果、系统类型这些字段如果填乱了，记录会直接失效
+- 用脚本更新比手改 JSON 更不容易出错
 
 ## 2. 安装或源码运行
 
@@ -68,7 +75,8 @@ pip install -r requirements.txt
 python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step install \
-  --step-status passed
+  --step-status passed \
+  --auto-status
 ```
 
 若失败，把原因写入：
@@ -104,6 +112,7 @@ python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step network_check \
   --step-status passed \
+  --auto-status \
   --connectivity-checked true \
   --connectivity-result passed
 ```
@@ -137,6 +146,7 @@ python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step wallet_create_or_import \
   --step-status passed \
+  --auto-status \
   --note "created wallet default and confirmed address output"
 ```
 
@@ -170,6 +180,7 @@ python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step faucet \
   --step-status passed \
+  --auto-status \
   --note "faucet 1000 confirmed by wallet balance"
 ```
 
@@ -210,12 +221,14 @@ python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step send \
   --step-status passed \
+  --auto-status \
   --note "send completed with receipt visible"
 
 python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
   --step history_receipts_balance_match \
   --step-status passed \
+  --auto-status \
   --note "history receipts and balance all matched expected values"
 ```
 
@@ -228,19 +241,26 @@ python scripts/update_external_trial.py \
 
 ## 7. 收尾并校验记录
 
-完成所有步骤后，把试用记录顶层状态更新为：
+完成所有步骤后，可以让脚本自动判断顶层状态：
 
-- 全部通过：`status = "passed"`
-- 有失败：`status = "failed"`
+- 全部通过会自动变成 `passed`
+- 只要有一步失败会自动变成 `failed`
+- 其他情况保持 `pending`
 
 例如：
 
 ```bash
 python scripts/update_external_trial.py \
   --record doc/trials/official-testnet-YYYYMMDD-01.json \
-  --status passed \
+  --auto-status \
   --clear-default-notes
 ```
+
+这条命令还会顺手输出：
+
+- 当前顶层状态
+- 建议状态
+- 还没完成的步骤列表
 
 然后执行校验：
 
@@ -249,6 +269,15 @@ python scripts/external_trial_gate.py --record doc/trials/official-testnet-YYYYM
 ```
 
 如果该命令失败，这份记录不能作为 RC 证据。
+
+常见会导致失败的情况包括：
+
+- `executed_at` 不是合法时间格式
+- `environment.os` 不是 `macos` 或 `windows`
+- `environment.install_path` 不是 `source` 或 `binary`
+- 顶层 `status = "passed"`，但某一步还是 `pending` 或 `failed`
+- `profile.connectivity_checked` 没有记成 `true`
+- `profile.connectivity_result` 不是 `passed`
 
 ## 8. 接入发布报告
 

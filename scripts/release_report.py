@@ -64,6 +64,51 @@ def _status_from_step(steps: List[Dict[str, Any]], name: str) -> str:
     return next((str(step["status"]) for step in steps if step["name"] == name), "not_run")
 
 
+def _external_trial_progress(record: Dict[str, Any]) -> Dict[str, Any]:
+    workflow = record.get("workflow")
+    profile = record.get("profile")
+    remaining: List[str] = []
+    failed: List[str] = []
+
+    if not isinstance(profile, dict):
+        remaining.extend(["profile.connectivity_checked", "profile.connectivity_result"])
+    else:
+        connectivity_checked = profile.get("connectivity_checked") is True
+        connectivity_result = str(profile.get("connectivity_result", "pending")).lower()
+        if connectivity_result == "failed":
+            failed.append("profile.connectivity_result")
+        else:
+            if not connectivity_checked:
+                remaining.append("profile.connectivity_checked")
+            if connectivity_result != "passed":
+                remaining.append("profile.connectivity_result")
+
+    workflow_keys = (
+        "install",
+        "wallet_create_or_import",
+        "network_check",
+        "faucet",
+        "send",
+        "history_receipts_balance_match",
+    )
+    if not isinstance(workflow, dict):
+        remaining.extend(f"workflow.{key}" for key in workflow_keys)
+    else:
+        for key in workflow_keys:
+            step_status = str(workflow.get(key, "pending")).lower()
+            if step_status == "failed":
+                failed.append(f"workflow.{key}")
+            elif step_status != "passed":
+                remaining.append(f"workflow.{key}")
+
+    return {
+        "remaining_steps": remaining,
+        "failed_steps": failed,
+        "remaining_steps_count": len(remaining),
+        "failed_steps_count": len(failed),
+    }
+
+
 def to_markdown(payload: Dict[str, Any]) -> str:
     lines = [
         "# EZchain Release Report",
@@ -179,6 +224,10 @@ def main() -> int:
                     "0",
                     "--max-failure-rate",
                     "0.0",
+                    "--max-consecutive-failures",
+                    "0",
+                    "--max-restart-probe-failures",
+                    "0",
                     "--json-out",
                     str(stability_out),
                 ]
@@ -267,8 +316,25 @@ def main() -> int:
             steps.append(run_step("external_trial_gate", trial_gate_cmd, cwd=root))
             summary["external_trial_status"] = str(trial_record.get("status", "unknown"))
             summary["external_trial_record"] = str(resolved_trial_path)
+            trial_progress = _external_trial_progress(trial_record)
+            summary["external_trial_remaining_steps"] = trial_progress["remaining_steps"]
+            summary["external_trial_failed_steps"] = trial_progress["failed_steps"]
+            summary["external_trial_remaining_steps_count"] = trial_progress["remaining_steps_count"]
+            summary["external_trial_failed_steps_count"] = trial_progress["failed_steps_count"]
             if _status_from_step(steps, "external_trial_gate") != "passed":
                 _append_risk(risks, "external trial record does not satisfy required official-testnet rehearsal checks")
+                if trial_progress["failed_steps"]:
+                    _append_risk(
+                        risks,
+                        "external trial record has failed steps: "
+                        + ", ".join(str(item) for item in trial_progress["failed_steps"]),
+                    )
+                if trial_progress["remaining_steps"]:
+                    _append_risk(
+                        risks,
+                        "external trial record is still incomplete: "
+                        + ", ".join(str(item) for item in trial_progress["remaining_steps"]),
+                    )
     else:
         _append_risk(
             risks,

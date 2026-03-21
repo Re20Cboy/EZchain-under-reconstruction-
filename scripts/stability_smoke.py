@@ -28,6 +28,54 @@ def compute_probe_sleep(interval_sec: float, jitter_ratio: float) -> float:
     return random.uniform(low, high)
 
 
+def build_summary(
+    *,
+    cycles: int,
+    checks: int,
+    failures: int,
+    max_failures: int,
+    max_failure_rate: float,
+    burst_every: int,
+    burst_size: int,
+    burst_checks: int,
+    jitter: float,
+    restarts: int,
+    max_consecutive_failures: int,
+    max_consecutive_failures_allowed: int,
+    restart_probe_failures: int,
+    max_restart_probe_failures: int,
+    duration_seconds: float,
+    skipped_bind_restricted: bool = False,
+) -> dict[str, float | int | bool]:
+    total = max(1, checks)
+    failure_rate = failures / total
+    return {
+        "ok": (
+            failures <= int(max_failures)
+            and failure_rate <= float(max_failure_rate)
+            and max_consecutive_failures <= int(max_consecutive_failures_allowed)
+            and restart_probe_failures <= int(max_restart_probe_failures)
+        ),
+        "skipped_bind_restricted": bool(skipped_bind_restricted),
+        "cycles": int(cycles),
+        "checks": total,
+        "failures": int(failures),
+        "failure_rate": round(failure_rate, 6),
+        "max_failures": int(max_failures),
+        "max_failure_rate": float(max_failure_rate),
+        "burst_every": int(burst_every),
+        "burst_size": int(burst_size),
+        "burst_checks": int(burst_checks),
+        "jitter": float(jitter),
+        "restarts": int(restarts),
+        "max_consecutive_failures": int(max_consecutive_failures),
+        "max_consecutive_failures_allowed": int(max_consecutive_failures_allowed),
+        "restart_probe_failures": int(restart_probe_failures),
+        "max_restart_probe_failures": int(max_restart_probe_failures),
+        "duration_seconds": round(duration_seconds, 3),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain local stability smoke")
     parser.add_argument("--cycles", type=int, default=20)
@@ -36,6 +84,8 @@ def main() -> int:
     parser.add_argument("--restart-every", type=int, default=0, help="Restart service every N cycles; 0 disables restart")
     parser.add_argument("--max-failures", type=int, default=0)
     parser.add_argument("--max-failure-rate", type=float, default=0.0)
+    parser.add_argument("--max-consecutive-failures", type=int, default=0)
+    parser.add_argument("--max-restart-probe-failures", type=int, default=0)
     parser.add_argument("--startup-wait", type=float, default=1.5)
     parser.add_argument("--restart-cooldown", type=float, default=1.2)
     parser.add_argument("--request-timeout", type=float, default=5.0)
@@ -84,28 +134,34 @@ def main() -> int:
     checks = 0
     burst_checks = 0
     restarts = 0
+    consecutive_failures = 0
+    max_seen_consecutive_failures = 0
+    restart_probe_failures = 0
+    awaiting_restart_probe = False
     started_at = time.time()
     try:
         time.sleep(max(0.1, args.startup_wait))
         if proc.poll() is not None:
             err = read_err(proc)
             bind_restricted = "PermissionError" in err and "Operation not permitted" in err
-            summary = {
-                "ok": bool(args.allow_bind_restricted_skip and bind_restricted),
-                "skipped_bind_restricted": bool(args.allow_bind_restricted_skip and bind_restricted),
-                "cycles": int(args.cycles),
-                "checks": int(args.cycles),
-                "failures": int(args.cycles),
-                "failure_rate": 1.0,
-                "max_failures": int(args.max_failures),
-                "max_failure_rate": float(args.max_failure_rate),
-                "burst_every": burst_every,
-                "burst_size": burst_size,
-                "burst_checks": 0,
-                "jitter": jitter_ratio,
-                "restarts": 0,
-                "duration_seconds": round(time.time() - started_at, 3),
-            }
+            summary = build_summary(
+                cycles=int(args.cycles),
+                checks=int(args.cycles),
+                failures=int(args.cycles),
+                max_failures=int(args.max_failures),
+                max_failure_rate=float(args.max_failure_rate),
+                burst_every=burst_every,
+                burst_size=burst_size,
+                burst_checks=0,
+                jitter=jitter_ratio,
+                restarts=0,
+                max_consecutive_failures=int(args.cycles),
+                max_consecutive_failures_allowed=int(args.max_consecutive_failures),
+                restart_probe_failures=0,
+                max_restart_probe_failures=int(args.max_restart_probe_failures),
+                duration_seconds=time.time() - started_at,
+                skipped_bind_restricted=bool(args.allow_bind_restricted_skip and bind_restricted),
+            )
             if args.json_out:
                 Path(args.json_out).write_text(json.dumps(summary, indent=2), encoding="utf-8")
             print(json.dumps(summary, indent=2))
@@ -124,14 +180,26 @@ def main() -> int:
             cycle_failures = 0
             for _ in range(cycle_probe_count):
                 checks += 1
+                probe_failed = False
                 try:
                     health = get_json("http://127.0.0.1:8787/health", timeout_sec=float(args.request_timeout))
                     if not health.get("ok"):
-                        failures += 1
-                        cycle_failures += 1
+                        probe_failed = True
                 except (URLError, TimeoutError, json.JSONDecodeError):
+                    probe_failed = True
+
+                if probe_failed:
                     failures += 1
                     cycle_failures += 1
+                    consecutive_failures += 1
+                    max_seen_consecutive_failures = max(max_seen_consecutive_failures, consecutive_failures)
+                else:
+                    consecutive_failures = 0
+
+                if awaiting_restart_probe:
+                    if probe_failed:
+                        restart_probe_failures += 1
+                    awaiting_restart_probe = False
             print(
                 f"cycle={i + 1}/{args.cycles} probes={cycle_probe_count} "
                 f"cycle_failures={cycle_failures} total_failures={failures}"
@@ -141,35 +209,41 @@ def main() -> int:
                 stop_proc(proc)
                 proc = start_proc()
                 restarts += 1
+                awaiting_restart_probe = True
                 time.sleep(max(0.1, args.restart_cooldown))
 
             time.sleep(compute_probe_sleep(float(args.interval), jitter_ratio))
     finally:
         stop_proc(proc)
 
-    total = max(1, checks)
-    failure_rate = failures / total
-    summary = {
-        "ok": failures <= int(args.max_failures) and failure_rate <= float(args.max_failure_rate),
-        "cycles": int(args.cycles),
-        "checks": total,
-        "failures": failures,
-        "failure_rate": round(failure_rate, 6),
-        "max_failures": int(args.max_failures),
-        "max_failure_rate": float(args.max_failure_rate),
-        "burst_every": burst_every,
-        "burst_size": burst_size,
-        "burst_checks": int(burst_checks),
-        "jitter": jitter_ratio,
-        "restarts": restarts,
-        "duration_seconds": round(time.time() - started_at, 3),
-    }
+    summary = build_summary(
+        cycles=int(args.cycles),
+        checks=int(checks),
+        failures=int(failures),
+        max_failures=int(args.max_failures),
+        max_failure_rate=float(args.max_failure_rate),
+        burst_every=burst_every,
+        burst_size=burst_size,
+        burst_checks=int(burst_checks),
+        jitter=jitter_ratio,
+        restarts=int(restarts),
+        max_consecutive_failures=int(max_seen_consecutive_failures),
+        max_consecutive_failures_allowed=int(args.max_consecutive_failures),
+        restart_probe_failures=int(restart_probe_failures),
+        max_restart_probe_failures=int(args.max_restart_probe_failures),
+        duration_seconds=time.time() - started_at,
+    )
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(json.dumps(summary, indent=2))
     if not summary["ok"]:
-        print(f"[stability-smoke] FAILED with {failures} failed checks ({failure_rate:.4f} rate)")
+        print(
+            "[stability-smoke] FAILED with "
+            f"{summary['failures']} failed checks ({float(summary['failure_rate']):.4f} rate), "
+            f"max_consecutive_failures={summary['max_consecutive_failures']}, "
+            f"restart_probe_failures={summary['restart_probe_failures']}"
+        )
         return 1
 
     print("[stability-smoke] PASSED")

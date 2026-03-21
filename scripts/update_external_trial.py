@@ -23,6 +23,43 @@ TOP_STATUSES = ("pending", "passed", "failed")
 CONNECTIVITY_RESULTS = ("pending", "passed", "failed")
 
 
+def _derive_status(payload: dict[str, Any]) -> str:
+    workflow = payload.get("workflow")
+    profile = payload.get("profile")
+    if not isinstance(workflow, dict) or not isinstance(profile, dict):
+        return "pending"
+
+    workflow_statuses = [str(workflow.get(key, "pending")).lower() for key in WORKFLOW_KEYS]
+    connectivity_checked = profile.get("connectivity_checked") is True
+    connectivity_result = str(profile.get("connectivity_result", "pending")).lower()
+
+    if connectivity_result == "failed" or any(status == "failed" for status in workflow_statuses):
+        return "failed"
+    if (
+        connectivity_checked
+        and connectivity_result == "passed"
+        and all(status == "passed" for status in workflow_statuses)
+    ):
+        return "passed"
+    return "pending"
+
+
+def _remaining_steps(payload: dict[str, Any]) -> list[str]:
+    workflow = payload.get("workflow")
+    profile = payload.get("profile")
+    remaining: list[str] = []
+    if not isinstance(profile, dict) or profile.get("connectivity_checked") is not True:
+        remaining.append("profile.connectivity_checked")
+    if not isinstance(profile, dict) or str(profile.get("connectivity_result", "pending")).lower() != "passed":
+        remaining.append("profile.connectivity_result")
+    if not isinstance(workflow, dict):
+        return ["workflow"]
+    for key in WORKFLOW_KEYS:
+        if str(workflow.get(key, "pending")).lower() != "passed":
+            remaining.append(f"workflow.{key}")
+    return remaining
+
+
 def _load_record(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -76,6 +113,7 @@ def main() -> int:
     parser.add_argument("--issue", action="append", default=[])
     parser.add_argument("--note", action="append", default=[])
     parser.add_argument("--clear-default-notes", action="store_true")
+    parser.add_argument("--auto-status", action="store_true")
     args = parser.parse_args()
 
     record_path = Path(args.record)
@@ -118,16 +156,24 @@ def main() -> int:
         for item in args.note:
             _append_unique(notes, item)
 
+        if args.auto_status:
+            payload["status"] = _derive_status(payload)
+
+        remaining_steps = _remaining_steps(payload)
+        suggested_status = _derive_status(payload)
+
         _atomic_write_json(record_path, payload)
     print(
         json.dumps(
             {
                 "record": str(record_path),
                 "status": payload.get("status", "unknown"),
+                "suggested_status": suggested_status,
                 "updated_step": args.step,
                 "updated_step_status": args.step_status,
                 "connectivity_checked": profile.get("connectivity_checked"),
                 "connectivity_result": profile.get("connectivity_result"),
+                "remaining_steps": remaining_steps,
                 "issues_count": len(issues),
                 "notes_count": len(notes),
             },

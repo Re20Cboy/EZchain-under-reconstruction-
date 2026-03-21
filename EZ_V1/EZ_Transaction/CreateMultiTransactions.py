@@ -92,16 +92,30 @@ class CreateMultiTransactions:
             # Calculate nonce for this transaction
             nonce = base_nonce + i
 
-            # Select values for this transaction (new interface: no change support)
-            selected_values, main_transaction = \
-                self.value_selector.pick_values_for_transaction(
-                    required_amount=amount,
-                    sender=self.sender_address,
-                    recipient=recipient,
-                    nonce=nonce,
-                    time=timestamp,
-                    checkpoint=request_checkpoint
+            # The legacy selector may return either:
+            # 1. (selected_values, main_transaction)
+            # 2. (selected_values, change_value, change_tx, main_transaction)
+            pick_result = self.value_selector.pick_values_for_transaction(
+                required_amount=amount,
+                sender=self.sender_address,
+                recipient=recipient,
+                nonce=nonce,
+                time=timestamp,
+                checkpoint=request_checkpoint
+            )
+            if not isinstance(pick_result, tuple):
+                raise ValueError("pick_values_for_transaction must return a tuple")
+            if len(pick_result) == 2:
+                selected_values, main_transaction = pick_result
+            elif len(pick_result) == 4:
+                selected_values, _, _, main_transaction = pick_result
+            else:
+                raise ValueError(
+                    "pick_values_for_transaction returned unsupported tuple size: "
+                    f"{len(pick_result)}"
                 )
+            if main_transaction is None:
+                raise ValueError("pick_values_for_transaction did not return a main transaction")
 
             # Sign the main transaction
             main_transaction.sig_txn(private_key_pem)

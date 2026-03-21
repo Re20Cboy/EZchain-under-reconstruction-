@@ -4,7 +4,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from scripts.stability_gate import build_smoke_command
-from scripts.stability_smoke import compute_probe_sleep
+from scripts.stability_smoke import build_summary, compute_probe_sleep
 
 
 def test_compute_probe_sleep_without_jitter():
@@ -26,6 +26,8 @@ def test_build_smoke_command_includes_new_stability_args():
         restart_every=10,
         max_failures=0,
         max_failure_rate=0.0,
+        max_consecutive_failures=0,
+        max_restart_probe_failures=0,
         request_timeout=2.5,
         jitter=0.2,
         burst_every=5,
@@ -37,8 +39,57 @@ def test_build_smoke_command_includes_new_stability_args():
     joined = " ".join(cmd)
 
     assert "scripts/stability_smoke.py" in joined
+    assert "--max-consecutive-failures 0" in joined
+    assert "--max-restart-probe-failures 0" in joined
     assert "--request-timeout 2.5" in joined
     assert "--jitter 0.2" in joined
     assert "--burst-every 5" in joined
     assert "--burst-size 3" in joined
     assert "--allow-bind-restricted-skip" in joined
+
+
+def test_build_summary_fails_when_new_red_lines_are_crossed():
+    summary = build_summary(
+        cycles=10,
+        checks=10,
+        failures=1,
+        max_failures=2,
+        max_failure_rate=0.2,
+        burst_every=5,
+        burst_size=2,
+        burst_checks=4,
+        jitter=0.2,
+        restarts=1,
+        max_consecutive_failures=2,
+        max_consecutive_failures_allowed=1,
+        restart_probe_failures=1,
+        max_restart_probe_failures=0,
+        duration_seconds=12.5,
+    )
+
+    assert summary["ok"] is False
+    assert summary["max_consecutive_failures"] == 2
+    assert summary["restart_probe_failures"] == 1
+
+
+def test_build_summary_passes_when_all_red_lines_hold():
+    summary = build_summary(
+        cycles=10,
+        checks=10,
+        failures=0,
+        max_failures=0,
+        max_failure_rate=0.0,
+        burst_every=0,
+        burst_size=1,
+        burst_checks=0,
+        jitter=0.0,
+        restarts=1,
+        max_consecutive_failures=0,
+        max_consecutive_failures_allowed=0,
+        restart_probe_failures=0,
+        max_restart_probe_failures=0,
+        duration_seconds=8.0,
+    )
+
+    assert summary["ok"] is True
+    assert summary["failure_rate"] == 0.0

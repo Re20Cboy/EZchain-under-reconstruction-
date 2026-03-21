@@ -216,6 +216,9 @@ yarn-error.log*
 .claude/logs/
 .claude/tmp/
 
+# Local Codex helper copies
+codex-skills/
+
 # Demo files and test data
 EZ_Test/demo_*.py
 EZ_Test/demo_refactored_block_index_list.py

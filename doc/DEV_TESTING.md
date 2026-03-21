@@ -67,6 +67,8 @@ python scripts/stability_gate.py \
   --burst-size 3 \
   --max-failures 0 \
   --max-failure-rate 0.0 \
+  --max-consecutive-failures 0 \
+  --max-restart-probe-failures 0 \
   --allow-bind-restricted-skip
 ```
 
@@ -126,7 +128,7 @@ CI 当前固定执行：
   - `run_ezchain_tests.py --groups v2-adversarial --skip-slow`
   - 或 `scripts/release_gate.py --skip-slow --with-v2-adversarial`
 - nightly stability workflow
-  - `scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --jitter 0.2 --burst-every 5 --burst-size 3 --max-failures 0 --max-failure-rate 0.0`
+  - `scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --jitter 0.2 --burst-every 5 --burst-size 3 --max-failures 0 --max-failure-rate 0.0 --max-consecutive-failures 0 --max-restart-probe-failures 0`
   - `run_ezchain_tests.py --groups v2-adversarial --skip-slow`
 
 本地请至少覆盖同等范围，避免“本地通过/CI 失败”。

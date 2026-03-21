@@ -30,6 +30,13 @@ from .types import (
     WitnessV2,
 )
 from .values import LocalValueRecord, LocalValueStatus, ValueRange
+from .networking import (
+    ChainSyncCursor,
+    NetworkEnvelope,
+    PeerInfo,
+    ReceiptSyncCursor,
+    TransferMailboxEvent,
+)
 
 
 _DATACLASS_REGISTRY = {
@@ -55,8 +62,13 @@ _DATACLASS_REGISTRY = {
         PriorWitnessLink,
         Receipt,
         ReceiptResponse,
+        ReceiptSyncCursor,
         SparseMerkleProof,
         TransferPackage,
+        TransferMailboxEvent,
+        ChainSyncCursor,
+        PeerInfo,
+        NetworkEnvelope,
         ValueRange,
         WitnessV2,
     )

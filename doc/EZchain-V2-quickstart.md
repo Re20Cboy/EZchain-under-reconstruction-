@@ -90,7 +90,27 @@ python3 ezchain_cli.py --config ezchain.yaml auth show-token
 ./scripts/run_v2_service_quickstart.sh /tmp/ezchain_v2_demo
 ```
 
-## 5. 开发验证入口
+## 5. 轻量 TCP 共识节点模式（可选）
+
+如果你要跑最小真实 TCP 节点入口，而不是本地 shared localnet，可直接用：
+
+```bash
+python3 ezchain_cli.py --config ezchain.yaml node start --mode v2-consensus
+python3 ezchain_cli.py --config ezchain.yaml node status
+python3 ezchain_cli.py --config ezchain.yaml node stop
+```
+
+说明：
+
+- 这是当前最小的 network-backed V2 节点模式，只启动单个共识 daemon
+- 钱包和 HTTP service 路径不变，仍然走 `python3 ezchain_cli.py --config ezchain.yaml serve`
+- 默认监听 `network.bootstrap_nodes[0]`；如果配置为空，则回退到 `127.0.0.1:<start_port>`
+- 当前故意保持静态 endpoint、单节点、最小状态面，优先减少传输、存储和验证开销，适合作为消费级主机上的 V2 节点验证入口
+- `node status` 现在会直接告诉你当前模式归属和节点角色；如果是 `v2-account`，还会显示它连接的共识端点、账户地址、几项最基础的同步计数，以及最近一次同步是否成功
+- 如果 `v2-account` 或 `v2-consensus` 一启动就退出，App 层现在会把启动报错留到数据目录里的 `*_startup.log` 文件里，并把最后几行错误直接带进返回信息，方便第一时间排查
+- 如果你想验证“账户角色”和“共识角色”分离，当前还提供一个最小 `v2-account` 开发骨架模式；它主要用于角色拆分验证，不是默认用户钱包入口
+
+## 6. 开发验证入口
 
 本地 smoke：
 

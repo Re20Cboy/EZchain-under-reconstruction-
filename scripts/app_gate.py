@@ -17,6 +17,8 @@ APP_GATE_TESTS = (
     "EZ_Test/test_profile_config_script.py",
     "EZ_Test/test_stability_scripts.py",
     "EZ_Test/test_canary_scripts.py",
+    "EZ_Test/test_external_trial_scripts.py",
+    "EZ_Test/test_release_report_scripts.py",
 )
 
 

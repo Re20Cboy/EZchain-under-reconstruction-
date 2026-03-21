@@ -226,6 +226,12 @@ def test_service_auth_and_tx_flow():
             assert status == 200
             assert body["ok"] is True
             assert body["data"]["network"] == "testnet"
+            assert body["data"]["mode"] == "local"
+            assert body["data"]["mode_family"] == "local"
+            assert body["data"]["roles"] == ["account", "consensus"]
+            assert body["data"]["consensus_nodes"] == 1
+            assert body["data"]["account_nodes"] == 1
+            assert body["data"]["start_port"] == 19500
             assert "bootstrap_probe" in body["data"]
 
             status, body = _request(

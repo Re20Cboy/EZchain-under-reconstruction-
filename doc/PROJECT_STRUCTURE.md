@@ -82,6 +82,8 @@ trees, see:
   - `EZ_V2/runtime_v2.py`
   - `EZ_V2/localnet.py`
   - `run_ez_v2_localnet.py`
+- Optional lightweight TCP-backed V2 node:
+  - `run_ez_v2_tcp_consensus.py`
 
 ### Recommended Config
 
@@ -115,8 +117,21 @@ trees, see:
 - `EZ_V2/localnet.py`
 - `EZ_V2/consensus_store.py`
 - `EZ_V2/transport.py`
+- `EZ_V2/network_host.py`
+- `EZ_V2/network_transport.py`
+- `EZ_V2/transport_peer.py`
 - `EZ_V2/control.py`
 - `EZ_V2/app_client.py`
+
+角色分层原则：
+
+- `EZ_V2` 放节点角色内部逻辑
+  - 例如共识节点宿主、账户节点宿主、网络消息、同步逻辑
+- `EZ_App` 放运行模式与进程编排
+  - 例如 CLI、配置解释、node start/stop/status
+
+也就是说，未来“只跑共识节点”或“只跑账户节点”的选择主要在 `EZ_App` 完成，
+但角色真正干活的代码仍属于 `EZ_V2`。
 
 ## 4. Application Layer Structure
 

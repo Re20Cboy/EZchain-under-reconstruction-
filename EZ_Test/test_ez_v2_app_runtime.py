@@ -146,6 +146,87 @@ class EZV2AppRuntimeTest(unittest.TestCase):
             self.assertEqual(restarted.pending(store, password="pw123")["items"], [])
             self.assertEqual(len(restarted.receipts(store, password="pw123")["items"]), 1)
 
+    def test_v2_local_app_session_recover_wallet_state_summarizes_incoming_and_receipt_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            shared_backend = Path(td) / "shared_backend"
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+
+            alice_engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_engine = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            alice_addr = alice_store.summary(protocol_version="v2").address
+            bob_addr = bob_store.summary(protocol_version="v2").address
+
+            alice_engine.faucet(alice_store, password="pw123", amount=200)
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=50,
+                client_tx_id="cid-session-recover-1",
+            )
+
+            _, bob_session = bob_engine._open_v2_session(bob_store, "pw123")  # type: ignore[attr-defined]
+            try:
+                first_recovery = bob_session.recover_wallet_state()
+                self.assertEqual(len(first_recovery.receipt_results), 0)
+                self.assertEqual(len(first_recovery.received_events), 1)
+                self.assertEqual(first_recovery.received_events[0].recipient_addr, bob_addr)
+                self.assertEqual(first_recovery.chain_height, 1)
+                self.assertEqual(first_recovery.pending_bundle_count, 0)
+                self.assertEqual(first_recovery.pending_incoming_transfer_count, 0)
+                self.assertEqual(first_recovery.receipt_count, 0)
+                self.assertEqual(bob_session.wallet.available_balance(), 50)
+            finally:
+                bob_session.close()
+
+            wallet_identity, account, consensus, _ = bob_engine._open_v2_backend(  # type: ignore[attr-defined]
+                bob_store,
+                "pw123",
+                auto_confirm_receipts=False,
+            )
+            try:
+                account_node = V2AccountNode(
+                    name=wallet_identity.get("name", "bob"),
+                    private_key_pem=wallet_identity["private_key_pem"].encode("utf-8"),
+                    public_key_pem=wallet_identity["public_key_pem"].encode("utf-8"),
+                    wallet=account,
+                    chain_id=bob_engine.v2_chain_id,
+                    consensus=consensus,
+                )
+                account_node.submit_payment(
+                    alice_addr,
+                    amount=20,
+                    fee=0,
+                    expiry_height=bob_engine.v2_expiry_height,
+                    anti_spam_nonce=78,
+                    tx_time=2,
+                )
+                produced = consensus.produce_block(timestamp=3)
+                self.assertFalse(produced.deliveries[account.address].applied)
+                self.assertEqual(len(account.list_pending_bundles()), 1)
+            finally:
+                bob_engine._close_v2_backend(account, consensus)  # type: ignore[attr-defined]
+
+            _, bob_session = bob_engine._open_v2_session(bob_store, "pw123")  # type: ignore[attr-defined]
+            try:
+                second_recovery = bob_session.recover_wallet_state()
+                self.assertEqual(len(second_recovery.receipt_results), 1)
+                self.assertTrue(second_recovery.receipt_results[0].applied)
+                self.assertEqual(len(second_recovery.received_events), 0)
+                self.assertEqual(second_recovery.chain_height, 2)
+                self.assertEqual(second_recovery.pending_bundle_count, 0)
+                self.assertEqual(second_recovery.pending_incoming_transfer_count, 0)
+                self.assertEqual(second_recovery.receipt_count, 1)
+                self.assertEqual(bob_session.wallet.available_balance(), 30)
+            finally:
+                bob_session.close()
+
     def test_v2_multi_wallet_mailbox_sync_supports_receive_then_respend_without_manual_steps(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             shared_backend = Path(td) / "shared_backend"

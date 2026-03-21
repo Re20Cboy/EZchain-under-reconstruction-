@@ -16,6 +16,8 @@
 - `EZchain-V2-protocol-draft.md`
 - `EZchain-V2-module-migration-checklist.md`
 - `EZchain-V2-small-scale-simulation.md`
+- `EZchain-V2-network-and-transport-plan.md`
+- `EZchain-V2-node-role-and-app-boundary.md`
 
 ---
 

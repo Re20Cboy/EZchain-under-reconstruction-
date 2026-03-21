@@ -1,16 +1,20 @@
+meta:
+  config_version: 1
+
 network:
-  name: testnet
+  name: "testnet-v2-local"
   bootstrap_nodes: ["127.0.0.1:19500"]
   consensus_nodes: 1
   account_nodes: 1
   start_port: 19500
 
 app:
-  data_dir: .ezchain
-  log_dir: .ezchain/logs
-  api_host: 127.0.0.1
+  data_dir: ".ezchain_v2"
+  log_dir: ".ezchain_v2/logs"
+  api_host: "127.0.0.1"
   api_port: 8787
-  api_token_file: .ezchain/api.token
+  api_token_file: ".ezchain_v2/api.token"
+  protocol_version: "v2"
 
 security:
   max_payload_bytes: 65536

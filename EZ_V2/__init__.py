@@ -46,8 +46,32 @@ from .validator import V2TransferValidator, ValidationContext, ValidationResult
 from .values import LocalValueStatus, LocalValueRecord, ValueRange
 from .storage import LocalWalletDB
 from .consensus_store import ConsensusStateMetadata, ConsensusStateStore
-from .app_client import V2ConfirmedPayment, V2LocalAppClient, V2LocalAppSession, V2ReceivedTransferEvent
+from .app_client import (
+    V2ConfirmedPayment,
+    V2LocalAppClient,
+    V2LocalAppSession,
+    V2ReceivedTransferEvent,
+    V2WalletRecovery,
+)
 from .localnet import LocalParticipant, SubmittedPayment, V2AccountNode, V2ConsensusNode, V2LocalNetwork
+from .network_host import (
+    LocalCommitAdapter,
+    StaticPeerNetwork,
+    V2AccountHost,
+    V2ConsensusHost,
+    V2NetworkPayment,
+    V2NetworkRecovery,
+)
+from .network_transport import NetworkTransport, TCPNetworkTransport, decode_envelope, encode_envelope
+from .transport_peer import TransportPeerNetwork
+from .networking import (
+    ChainSyncCursor,
+    ConsensusAdapter,
+    NetworkEnvelope,
+    PeerInfo,
+    ReceiptSyncCursor,
+    TransferMailboxEvent,
+)
 from .runtime_v2 import (
     ApplyBlockResult,
     BundleSubmitResult,
@@ -70,19 +94,25 @@ __all__ = [
     "ChainStateV2",
     "Checkpoint",
     "CheckpointAnchor",
+    "ChainSyncCursor",
     "ConfirmedBundleUnit",
+    "ConsensusAdapter",
     "ConsensusStateMetadata",
     "ConsensusStateStore",
     "DiffEntry",
     "DiffPackage",
     "HeaderLite",
     "LocalParticipant",
+    "LocalCommitAdapter",
     "LocalWalletDB",
     "LocalValueRecord",
     "LocalValueStatus",
+    "NetworkEnvelope",
+    "NetworkTransport",
     "OffChainTx",
     "ApplyBlockResult",
     "PendingBundleContext",
+    "PeerInfo",
     "PriorWitnessLink",
     "ProduceBlockResult",
     "Receipt",
@@ -92,16 +122,26 @@ __all__ = [
     "SparseMerkleProof",
     "SubmittedPayment",
     "TransferDeliveryResult",
+    "TransferMailboxEvent",
     "TransferPackage",
+    "TCPNetworkTransport",
+    "TransportPeerNetwork",
     "ValidationContext",
     "ValidationResult",
+    "ReceiptSyncCursor",
+    "StaticPeerNetwork",
+    "V2AccountHost",
     "V2AccountNode",
     "V2ConfirmedPayment",
+    "V2ConsensusHost",
     "V2ConsensusNode",
     "V2LocalAppClient",
     "V2LocalAppSession",
     "V2LocalNetwork",
+    "V2NetworkPayment",
+    "V2NetworkRecovery",
     "V2ReceivedTransferEvent",
+    "V2WalletRecovery",
     "V2Runtime",
     "V2TransferValidator",
     "ValueRange",
@@ -119,4 +159,6 @@ __all__ = [
     "reconstructed_leaf",
     "sign_digest_secp256k1",
     "verify_digest_secp256k1",
+    "decode_envelope",
+    "encode_envelope",
 ]

@@ -34,6 +34,14 @@ python ezchain_cli.py network check
 python scripts/init_external_trial.py --executor your_name --os macos --install-path source
 ```
 
+后续每做完一步，都可以用：
+
+```bash
+python scripts/update_external_trial.py --record <trial-record.json> --auto-status
+```
+
+它会直接告诉你这份记录现在是通过、失败，还是还没做完，以及还差哪几步。
+
 ## 3. 创建钱包
 ```bash
 python ezchain_cli.py wallet create --password your_password --name default
