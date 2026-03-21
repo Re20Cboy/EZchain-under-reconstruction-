@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
 
+from EZ_App.contact_card import build_contact_card, contact_entry_from_card, fetch_contact_card, load_contact_card
 from EZ_App.node_manager import NodeManager
 from EZ_App.runtime import TxEngine
 from EZ_App.ui_panel import build_local_panel_html
@@ -288,6 +289,62 @@ class LocalService:
                     return False
                 return True
 
+            def _tx_path_ready(self) -> bool:
+                return bool(service.network_info.get("tx_path_ready", True))
+
+            def _tx_path_note(self) -> str:
+                return str(
+                    service.network_info.get(
+                        "tx_path_note",
+                        "Tx commands run through the local runtime.",
+                    )
+                )
+
+            def _err_tx_path_not_ready(self, action: str) -> None:
+                self._err(501, "tx_path_not_ready", f"{action} is not available on this profile yet. {self._tx_path_note()}")
+
+            def _remote_read_state(self):
+                state = service.node_manager.account_status(
+                    bootstrap_nodes=service.network_info.get("bootstrap_nodes", []),
+                )
+                if not isinstance(state, dict):
+                    return None
+                if state.get("status") != "running":
+                    return None
+                if state.get("mode_family") != "v2-account":
+                    return None
+                if not str(state.get("wallet_db_path", "")).strip():
+                    return None
+                return state
+
+            def _contact_address_from_path(self) -> str | None:
+                prefix = "/contacts/"
+                if not self.path.startswith(prefix):
+                    return None
+                address = self.path[len(prefix):].strip()
+                if not address:
+                    return None
+                return address
+
+            def _set_contact_from_payload(self, body: Dict[str, Any]):
+                address = str(body.get("address", "")).strip()
+                endpoint = str(body.get("endpoint", "")).strip()
+                if not address:
+                    self._err(400, "address_required", "address is required")
+                    return None
+                if not endpoint:
+                    self._err(400, "endpoint_required", "endpoint is required")
+                    return None
+                return service.wallet_store.set_contact(
+                    address=address,
+                    endpoint=endpoint,
+                    network=str(body.get("network", "") or "").strip() or None,
+                    mode_family=str(body.get("mode_family", "") or "").strip() or None,
+                    consensus_endpoint=str(body.get("consensus_endpoint", "") or "").strip() or None,
+                    source=str(body.get("source", "") or "").strip() or "service_api",
+                    fetched_from=str(body.get("fetched_from", "") or "").strip() or None,
+                )
+
             def log_message(self, fmt: str, *args):
                 return
 
@@ -309,12 +366,20 @@ class LocalService:
                     if not self._auth_ok():
                         self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
                         return
+                    if not self._tx_path_ready():
+                        remote_state = self._remote_read_state()
+                        if remote_state is None:
+                            self._err_tx_path_not_ready("wallet balance")
+                            return
                     password = self.headers.get("X-EZ-Password", "")
                     if not password:
                         self._err(400, "password_required", "Missing X-EZ-Password header")
                         return
                     try:
-                        data = service.tx_engine.balance(service.wallet_store, password=password)
+                        if not self._tx_path_ready():
+                            data = service.tx_engine.remote_balance(service.wallet_store, password=password, state=remote_state)
+                        else:
+                            data = service.tx_engine.balance(service.wallet_store, password=password)
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
@@ -327,12 +392,20 @@ class LocalService:
                     if not self._auth_ok():
                         self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
                         return
+                    if not self._tx_path_ready():
+                        remote_state = self._remote_read_state()
+                        if remote_state is None:
+                            self._err_tx_path_not_ready("wallet checkpoints")
+                            return
                     password = self.headers.get("X-EZ-Password", "")
                     if not password:
                         self._err(400, "password_required", "Missing X-EZ-Password header")
                         return
                     try:
-                        data = service.tx_engine.checkpoints(service.wallet_store, password=password)
+                        if not self._tx_path_ready():
+                            data = service.tx_engine.remote_checkpoints(service.wallet_store, password=password, state=remote_state)
+                        else:
+                            data = service.tx_engine.checkpoints(service.wallet_store, password=password)
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
@@ -345,18 +418,29 @@ class LocalService:
                     self._ok(data)
                     return
                 if self.path == "/tx/history":
+                    if not self._tx_path_ready():
+                        self._err_tx_path_not_ready("tx history")
+                        return
                     self._ok({"items": service.wallet_store.get_history()})
                     return
                 if self.path == "/tx/pending":
                     if not self._auth_ok():
                         self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
                         return
+                    if not self._tx_path_ready():
+                        remote_state = self._remote_read_state()
+                        if remote_state is None:
+                            self._err_tx_path_not_ready("tx pending")
+                            return
                     password = self.headers.get("X-EZ-Password", "")
                     if not password:
                         self._err(400, "password_required", "Missing X-EZ-Password header")
                         return
                     try:
-                        data = service.tx_engine.pending(service.wallet_store, password=password)
+                        if not self._tx_path_ready():
+                            data = service.tx_engine.remote_pending(service.wallet_store, password=password, state=remote_state)
+                        else:
+                            data = service.tx_engine.pending(service.wallet_store, password=password)
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
@@ -372,12 +456,20 @@ class LocalService:
                     if not self._auth_ok():
                         self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
                         return
+                    if not self._tx_path_ready():
+                        remote_state = self._remote_read_state()
+                        if remote_state is None:
+                            self._err_tx_path_not_ready("tx receipts")
+                            return
                     password = self.headers.get("X-EZ-Password", "")
                     if not password:
                         self._err(400, "password_required", "Missing X-EZ-Password header")
                         return
                     try:
-                        data = service.tx_engine.receipts(service.wallet_store, password=password)
+                        if not self._tx_path_ready():
+                            data = service.tx_engine.remote_receipts(service.wallet_store, password=password, state=remote_state)
+                        else:
+                            data = service.tx_engine.receipts(service.wallet_store, password=password)
                     except FileNotFoundError:
                         self._err(404, "wallet_not_found", "Wallet not found")
                         return
@@ -393,6 +485,39 @@ class LocalService:
                     node_status = service.node_manager.status()
                     service.metrics.record_node_status(node_status.get("status", "stopped"))
                     self._ok(node_status)
+                    return
+                if self.path == "/node/account-status":
+                    self._ok(service.node_manager.account_status())
+                    return
+                if self.path == "/node/contact-card":
+                    try:
+                        card = build_contact_card(
+                            service.node_manager.account_status(
+                                bootstrap_nodes=service.network_info.get("bootstrap_nodes", []),
+                            ),
+                            network_name=str(service.network_info.get("name", "testnet")),
+                        )
+                    except ValueError as exc:
+                        self._err(409, "contact_card_unavailable", str(exc))
+                        return
+                    self._ok(card)
+                    return
+                if self.path == "/contacts":
+                    if not self._auth_ok():
+                        self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                        return
+                    self._ok({"items": service.wallet_store.list_contacts()})
+                    return
+                contact_address = self._contact_address_from_path()
+                if contact_address is not None:
+                    if not self._auth_ok():
+                        self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                        return
+                    item = service.wallet_store.get_contact(contact_address)
+                    if item is None:
+                        self._err(404, "contact_not_found", "Contact not found")
+                        return
+                    self._ok(item)
                     return
                 if self.path == "/metrics":
                     node_status = service.node_manager.status().get("status", "stopped")
@@ -425,6 +550,12 @@ class LocalService:
                             "account_nodes": int(service.network_info.get("account_nodes", 1)),
                             "start_port": int(service.network_info.get("start_port", 0)),
                             "bootstrap_probe": probe,
+                            "tx_path": service.network_info.get("tx_path", "legacy_local_runtime"),
+                            "tx_path_ready": bool(service.network_info.get("tx_path_ready", True)),
+                            "tx_path_note": service.network_info.get(
+                                "tx_path_note",
+                                "Tx commands run through the local runtime.",
+                            ),
                         }
                     )
                     return
@@ -468,6 +599,9 @@ class LocalService:
                     return
 
                 if self.path == "/tx/faucet":
+                    if not self._tx_path_ready():
+                        self._err_tx_path_not_ready("tx faucet")
+                        return
                     password = body.get("password", "")
                     try:
                         amount = int(body.get("amount", 0))
@@ -498,6 +632,9 @@ class LocalService:
                         return
 
                     recipient = body.get("recipient", "")
+                    recipient_endpoint = str(body.get("recipient_endpoint", "") or "").strip()
+                    if not recipient_endpoint and isinstance(recipient, str):
+                        recipient_endpoint = str(service.wallet_store.get_contact_endpoint(recipient) or "").strip()
                     password = body.get("password", "")
                     client_tx_id = body.get("client_tx_id") or uuid.uuid4().hex
                     if not self._validate_send_fields(recipient=recipient, password=password, client_tx_id=client_tx_id):
@@ -509,6 +646,14 @@ class LocalService:
                         self._err(400, "invalid_request", "amount must be an integer")
                         return
 
+                    remote_state = None
+                    if not self._tx_path_ready():
+                        remote_state = self._remote_read_state()
+                        if remote_state is None or not recipient_endpoint:
+                            service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="tx_path_not_ready")
+                            self._err_tx_path_not_ready("tx send")
+                            return
+
                     try:
                         result = service.tx_engine.send(
                             service.wallet_store,
@@ -516,6 +661,8 @@ class LocalService:
                             recipient=recipient,
                             amount=amount,
                             client_tx_id=client_tx_id,
+                            state=remote_state,
+                            recipient_endpoint=recipient_endpoint or None,
                         )
                     except FileNotFoundError:
                         service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="wallet_not_found")
@@ -567,11 +714,62 @@ class LocalService:
                     )
                     return
 
+                if self.path == "/contacts":
+                    saved = self._set_contact_from_payload(body)
+                    if saved is None:
+                        return
+                    self._ok(saved)
+                    return
+
+                if self.path == "/contacts/import-card":
+                    file_path = str(body.get("file", "") or "").strip()
+                    if not file_path:
+                        self._err(400, "file_required", "file is required")
+                        return
+                    try:
+                        card = load_contact_card(file_path)
+                        saved = service.wallet_store.set_contact(**contact_entry_from_card(card, source="contact_card_file"))
+                    except Exception as exc:
+                        self._err(400, "invalid_contact_card", str(exc))
+                        return
+                    self._ok({"contact": saved, "card": card})
+                    return
+
+                if self.path == "/contacts/fetch-card":
+                    url = str(body.get("url", "") or "").strip()
+                    if not url:
+                        self._err(400, "url_required", "url is required")
+                        return
+                    try:
+                        card = fetch_contact_card(url)
+                        saved = service.wallet_store.set_contact(
+                            **contact_entry_from_card(card, source="service_fetch", fetched_from=url)
+                        )
+                    except Exception as exc:
+                        self._err(400, "contact_fetch_failed", str(exc))
+                        return
+                    self._ok({"contact": saved, "card": card, "source_url": url})
+                    return
+
                 if self.path == "/node/stop":
                     self._ok(service.node_manager.stop())
                     return
 
                 self._err(404, "not_found", "Route not found")
+
+            def do_DELETE(self):
+                if not self._auth_ok():
+                    self._err(401, "unauthorized", "Missing or invalid X-EZ-Token")
+                    return
+                contact_address = self._contact_address_from_path()
+                if contact_address is None:
+                    self._err(404, "not_found", "Route not found")
+                    return
+                removed = service.wallet_store.remove_contact(contact_address)
+                if not removed:
+                    self._err(404, "contact_not_found", "Contact not found")
+                    return
+                self._ok({"removed": True, "address": contact_address})
 
         return Handler
 

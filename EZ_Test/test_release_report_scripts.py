@@ -6,7 +6,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from scripts.release_report import _external_trial_progress
+from scripts.release_report import (
+    _external_trial_contact_card,
+    _external_trial_network_environment,
+    _external_trial_progress,
+)
+from scripts.v2_readiness import _evaluate
 
 
 def _trial_record(*, status: str = "passed", send_status: str = "passed", connectivity_result: str = "passed", connectivity_checked: bool = True) -> dict:
@@ -17,6 +22,7 @@ def _trial_record(*, status: str = "passed", send_status: str = "passed", connec
         "environment": {
             "os": "macos",
             "install_path": "source",
+            "network_environment": "real-external",
             "config_path": "ezchain.yaml",
         },
         "profile": {
@@ -31,6 +37,15 @@ def _trial_record(*, status: str = "passed", send_status: str = "passed", connec
             "faucet": "passed",
             "send": send_status,
             "history_receipts_balance_match": "passed",
+        },
+        "evidence": {
+            "contact_card": {
+                "path": "",
+                "address": "",
+                "endpoint": "",
+                "imported": False,
+                "used_for_send": False,
+            }
         },
         "status": status,
         "issues": [],
@@ -78,6 +93,9 @@ def test_prepare_rc_carries_external_trial_progress_fields():
                         "external_trial_failed_steps": [],
                         "official_testnet_gate_status": "passed",
                         "v2_adversarial_gate_status": "passed",
+                        "v2_account_recovery_gate_status": "passed",
+                        "v2_account_recovery_final_sync_health": "healthy",
+                        "v2_account_recovery_blocking_reasons": [],
                     },
                 },
                 indent=2,
@@ -119,3 +137,100 @@ def test_prepare_rc_carries_external_trial_progress_fields():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert manifest["external_trial_remaining_steps"] == ["workflow.send"]
         assert manifest["external_trial_failed_steps"] == []
+        assert manifest["v2_account_recovery_gate_status"] == "passed"
+        assert manifest["v2_account_recovery_final_sync_health"] == "healthy"
+        assert manifest["v2_account_recovery_blocking_reasons"] == []
+
+
+def test_external_trial_contact_card_summary_reads_contact_card_evidence():
+    record = _trial_record()
+    record["evidence"]["contact_card"] = {
+        "path": "bob-contact.json",
+        "address": "0xb0b123",
+        "endpoint": "192.168.1.20:19500",
+        "imported": True,
+        "used_for_send": True,
+    }
+
+    summary = _external_trial_contact_card(record)
+
+    assert summary["present"] is True
+    assert summary["path"] == "bob-contact.json"
+    assert summary["address"] == "0xb0b123"
+    assert summary["endpoint"] == "192.168.1.20:19500"
+    assert summary["imported"] is True
+    assert summary["used_for_send"] is True
+
+
+def test_external_trial_network_environment_reads_environment_flag():
+    record = _trial_record()
+    assert _external_trial_network_environment(record) == "real-external"
+
+    record["environment"]["network_environment"] = "single-host-rehearsal"
+    assert _external_trial_network_environment(record) == "single-host-rehearsal"
+
+    del record["environment"]["network_environment"]
+    assert _external_trial_network_environment(record) == "unknown"
+
+
+def test_release_report_summary_can_carry_stability_cycle_details():
+    stability_summary = {
+        "failure_cycles": [3, 4],
+        "restart_failure_cycles": [4],
+        "first_failure_cycle": 3,
+        "last_failure_cycle": 4,
+        "max_failed_cycle_streak": 2,
+        "max_failed_cycle_streak_start": 3,
+        "max_failed_cycle_streak_end": 4,
+        "blocking_reasons": ["restart_probe_failures>0"],
+    }
+
+    assert stability_summary["failure_cycles"] == [3, 4]
+    assert stability_summary["restart_failure_cycles"] == [4]
+    assert stability_summary["max_failed_cycle_streak"] == 2
+    assert stability_summary["max_failed_cycle_streak_start"] == 3
+    assert stability_summary["max_failed_cycle_streak_end"] == 4
+    assert stability_summary["blocking_reasons"] == ["restart_probe_failures>0"]
+
+
+def test_release_report_summary_can_carry_v2_account_recovery_details():
+    recovery_summary = {
+        "flaps_requested": 2,
+        "flaps_completed": 2,
+        "degraded_rounds": [1, 2],
+        "recovered_rounds": [1, 2],
+        "steady_rounds": [1, 2],
+        "final_sync_health": "healthy",
+        "final_sync_health_reason": "stable_after_recovery",
+        "final_recovery_count": 2,
+        "blocking_reasons": [],
+    }
+
+    assert recovery_summary["flaps_requested"] == 2
+    assert recovery_summary["flaps_completed"] == 2
+    assert recovery_summary["degraded_rounds"] == [1, 2]
+    assert recovery_summary["recovered_rounds"] == [1, 2]
+    assert recovery_summary["steady_rounds"] == [1, 2]
+    assert recovery_summary["final_sync_health"] == "healthy"
+    assert recovery_summary["final_sync_health_reason"] == "stable_after_recovery"
+    assert recovery_summary["final_recovery_count"] == 2
+    assert recovery_summary["blocking_reasons"] == []
+
+
+def test_v2_readiness_blocks_when_v2_account_recovery_gate_is_missing():
+    payload = _evaluate(
+        {
+            "overall_status": "passed",
+            "risks": [],
+            "summary": {
+                "v2_gate_status": "passed",
+                "v2_adversarial_gate_status": "passed",
+                "stability_gate_status": "passed",
+                "official_testnet_gate_status": "passed",
+                "external_trial_gate_status": "passed",
+            },
+        }
+    )
+
+    assert payload["ready_for_v2_default"] is False
+    assert any(item["name"] == "v2_account_recovery_gate" for item in payload["blocking_items"])

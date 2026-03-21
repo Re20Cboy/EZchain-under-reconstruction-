@@ -5,6 +5,7 @@
   "environment": {
     "os": "macos|windows",
     "install_path": "source|binary",
+    "network_environment": "real-external|single-host-rehearsal",
     "config_path": "ezchain.yaml"
   },
   "profile": {
@@ -19,6 +20,15 @@
     "faucet": "pending",
     "send": "pending",
     "history_receipts_balance_match": "pending"
+  },
+  "evidence": {
+    "contact_card": {
+      "path": "",
+      "address": "",
+      "endpoint": "",
+      "imported": false,
+      "used_for_send": false
+    }
   },
   "status": "pending",
   "issues": [],

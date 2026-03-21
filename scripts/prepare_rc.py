@@ -87,6 +87,13 @@ def main() -> int:
         "external_trial_failed_steps": report.get("summary", {}).get("external_trial_failed_steps", []),
         "official_testnet_gate_status": report.get("summary", {}).get("official_testnet_gate_status", "missing"),
         "v2_adversarial_gate_status": report.get("summary", {}).get("v2_adversarial_gate_status", "missing"),
+        "v2_account_recovery_gate_status": report.get("summary", {}).get("v2_account_recovery_gate_status", "missing"),
+        "v2_account_recovery_final_sync_health": report.get("summary", {}).get(
+            "v2_account_recovery_final_sync_health", ""
+        ),
+        "v2_account_recovery_blocking_reasons": report.get("summary", {}).get(
+            "v2_account_recovery_blocking_reasons", []
+        ),
     }
 
     manifest_out = root / args.manifest_out

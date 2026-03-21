@@ -34,6 +34,9 @@ python scripts/security_gate.py
 ```bash
 python3 run_ez_v2_network_smoke.py
 python3 run_ez_v2_tcp_network_smoke.py --allow-bind-restricted-skip
+python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip
+python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip --seed 915 --failover-round 2
+python3 scripts/v2_account_recovery_smoke.py --allow-bind-restricted-skip
 ```
 
 ## 3. 发布前门禁（推荐）
@@ -59,7 +62,7 @@ python scripts/release_gate.py --skip-slow --with-stability --with-v2-adversaria
 
 5. 生成包含 V2 对抗状态的发布报告：
 ```bash
-python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --allow-bind-restricted-skip
+python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip
 ```
 
 6. 触发网络抖动 + 重复请求压力路径（建议 nightly）：
@@ -78,6 +81,34 @@ python scripts/stability_gate.py \
   --allow-bind-restricted-skip
 ```
 
+现在稳定性结果里会直接带这些排查字段：
+
+- `failure_cycles`
+- `restart_failure_cycles`
+- `first_failure_cycle`
+- `last_failure_cycle`
+- `max_failed_cycle_streak`
+- `blocking_reasons`
+
+这样看到失败时，可以直接知道问题集中在哪几轮，以及是不是重启后第一轮就失败。
+
+如果你想单独演练“共识端抖一下，账户节点能不能自己恢复”，现在还可以直接跑：
+
+```bash
+python3 scripts/v2_account_recovery_smoke.py \
+  --flaps 2 \
+  --allow-bind-restricted-skip
+```
+
+结果会直接给出：
+
+- 每一轮有没有进入降级
+- 每一轮有没有恢复
+- 每一轮恢复后有没有重新稳定
+- 最终 `sync_health`
+- 最终 `recovery_count`
+- 失败原因
+
 7. 生成发布报告：
 ```bash
 python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip
@@ -93,6 +124,7 @@ python3 scripts/v2_readiness.py
 python scripts/release_report.py \
   --run-gates \
   --with-stability \
+  --with-v2-account-recovery \
   --allow-bind-restricted-skip \
   --require-official-testnet \
   --official-config configs/ezchain.official-testnet.yaml \
@@ -115,6 +147,23 @@ python scripts/testnet_profile_gate.py --config ezchain.yaml
 ```bash
 python scripts/testnet_profile_gate.py --config ezchain.yaml --check-connectivity
 ```
+
+如果你只有一台开发机，想先做“单机伪远端”验证，可用：
+
+```bash
+python scripts/single_host_testnet_config.py --out ezchain.yaml
+python3 run_ez_v2_tcp_consensus.py \
+  --root-dir .ezchain_remote_consensus \
+  --state-file .ezchain_remote_consensus/state.json \
+  --chain-id 1 \
+  --endpoint 0.0.0.0:19500
+python ezchain_cli.py --config ezchain.yaml network check
+python scripts/testnet_profile_gate.py --config ezchain.yaml --check-connectivity
+python ezchain_cli.py --config ezchain.yaml node start --mode v2-account
+python ezchain_cli.py --config ezchain.yaml node account-status
+```
+
+这能先验证配置、局域网 IP 连通性和账户节点接入是否正常，但不能替代真正两机环境。
 
 ## 5. RC 产物流程
 ```bash

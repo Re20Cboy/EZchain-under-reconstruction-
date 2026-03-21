@@ -11,15 +11,17 @@
    - RC/nightly recommended stronger form: `python scripts/release_gate.py --skip-slow --with-v2-adversarial`
 3. `python scripts/security_gate.py`
 4. `python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0 --max-consecutive-failures 0 --max-restart-probe-failures 0`
+   - result now includes `failure_cycles`, `restart_failure_cycles`, `max_failed_cycle_streak`, and `blocking_reasons`
 5. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
-6. `python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --allow-bind-restricted-skip --run-metrics`
+6. `python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip --run-metrics`
    - recommended: `--require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --external-trial-record <trial-record.json>`
    - initialize trial record: `python scripts/init_external_trial.py --executor <name> --os macos --install-path source`
    - optional precheck: `python scripts/external_trial_gate.py --record <trial-record.json> --require-passed`
    - if the trial record is incomplete, the report now shows exactly which steps are still missing or already failed
+   - if the recovery gate is enabled, the report also shows whether `v2-account` could recover after repeated consensus flaps
 7. `python scripts/prepare_rc.py --version v0.1.0-rc1`
 8. `python scripts/rc_gate.py`
-9. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --with-v2-adversarial --allow-bind-restricted-skip --target none`
+9. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip --target none`
    - recommended: `--require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --external-trial-record <trial-record.json>`
 10. `python3 scripts/v2_readiness.py`
    - used to decide whether V2 can be treated as the default project path instead of only the default local/dev path

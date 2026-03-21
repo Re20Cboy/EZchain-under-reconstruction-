@@ -19,6 +19,7 @@ def main() -> int:
     parser.add_argument("--skip-slow", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
     parser.add_argument("--with-v2-adversarial", action="store_true")
+    parser.add_argument("--with-v2-account-recovery", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     parser.add_argument("--skip-v2-acceptance", action="store_true")
     args = parser.parse_args()
@@ -61,6 +62,16 @@ def main() -> int:
             if args.allow_bind_restricted_skip:
                 stability_cmd.append("--allow-bind-restricted-skip")
             run(stability_cmd, cwd=root)
+        if args.with_v2_account_recovery:
+            recovery_cmd = [
+                sys.executable,
+                "scripts/v2_account_recovery_smoke.py",
+                "--flaps",
+                "2",
+            ]
+            if args.allow_bind_restricted_skip:
+                recovery_cmd.append("--allow-bind-restricted-skip")
+            run(recovery_cmd, cwd=root)
     except RuntimeError as exc:
         print(f"[release-gate] FAILED: {exc}")
         return 1

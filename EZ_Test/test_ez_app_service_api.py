@@ -5,11 +5,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest import mock
 import pytest
 
 from EZ_App.config import ensure_directories, load_api_token, load_config
 from EZ_App.node_manager import NodeManager
-from EZ_App.runtime import TxEngine
+from EZ_App.runtime import TxEngine, TxResult
 from EZ_App.service import LocalService, NonceGuard
 from EZ_App.wallet_store import WalletStore
 
@@ -232,7 +233,15 @@ def test_service_auth_and_tx_flow():
             assert body["data"]["consensus_nodes"] == 1
             assert body["data"]["account_nodes"] == 1
             assert body["data"]["start_port"] == 19500
+            assert body["data"]["tx_path"] == "legacy_local_runtime"
+            assert body["data"]["tx_path_ready"] is True
             assert "bootstrap_probe" in body["data"]
+
+            status, body = _request(port, "GET", "/node/account-status")
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["status"] == "not_running"
+            assert body["data"]["reason"] == "v2_account_not_running"
 
             status, body = _request(
                 port,
@@ -382,6 +391,670 @@ def test_service_v2_local_backend_flow():
             assert status == 200
             assert body["data"]["mode"] == "v2-localnet"
             assert body["data"]["backend"]["height"] == 1
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_contacts_list_and_lookup_require_auth_and_return_saved_contacts():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_contacts"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        wallet_store = WalletStore(cfg.app.data_dir)
+        wallet_store.set_contact(address="0xpeer100", endpoint="127.0.0.1:19660")
+        wallet_store.set_contact(address="0xpeer200", endpoint="127.0.0.1:19661")
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=wallet_store,
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir, protocol_version="v2"),
+            api_token=token,
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            status, body = _request(port, "GET", "/contacts")
+            assert status == 401
+            assert body["error"]["code"] == "unauthorized"
+
+            status, body = _request(port, "GET", "/contacts", headers={"X-EZ-Token": token})
+            assert status == 200
+            assert body["ok"] is True
+            assert len(body["data"]["items"]) == 2
+            assert body["data"]["items"][0]["address"] == "0xpeer100"
+
+            status, body = _request(port, "GET", "/contacts/0xpeer200", headers={"X-EZ-Token": token})
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["address"] == "0xpeer200"
+            assert body["data"]["endpoint"] == "127.0.0.1:19661"
+
+            status, body = _request(port, "GET", "/contacts/0xmissing", headers={"X-EZ-Token": token})
+            assert status == 404
+            assert body["error"]["code"] == "contact_not_found"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_contacts_write_import_fetch_and_delete_paths():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_contacts_write"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir, protocol_version="v2"),
+            api_token=token,
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            auth = {"X-EZ-Token": token}
+            status, body = _request(
+                port,
+                "POST",
+                "/contacts",
+                {
+                    "address": "0xpeer500",
+                    "endpoint": "127.0.0.1:19680",
+                    "network": "official-testnet",
+                    "mode_family": "v2-account",
+                    "consensus_endpoint": "192.168.1.9:19500",
+                    "source": "service_api",
+                },
+                auth,
+            )
+            assert status == 200
+            assert body["data"]["address"] == "0xpeer500"
+            assert body["data"]["network"] == "official-testnet"
+
+            card_path = Path(td) / "peer501.json"
+            card_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "ezchain-contact-card/v1",
+                        "address": "0xpeer501",
+                        "endpoint": "127.0.0.1:19681",
+                        "network": "official-testnet",
+                        "mode_family": "v2-account",
+                        "consensus_endpoint": "192.168.1.9:19500",
+                        "exported_at": "2026-03-21T00:00:00Z",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            status, body = _request(port, "POST", "/contacts/import-card", {"file": str(card_path)}, auth)
+            assert status == 200
+            assert body["data"]["contact"]["address"] == "0xpeer501"
+            assert body["data"]["contact"]["source"] == "contact_card_file"
+
+            fetched_card = {
+                "kind": "ezchain-contact-card/v1",
+                "address": "0xpeer502",
+                "endpoint": "127.0.0.1:19682",
+                "network": "official-testnet",
+                "mode_family": "v2-account",
+                "consensus_endpoint": "192.168.1.9:19500",
+                "exported_at": "2026-03-21T00:00:00Z",
+            }
+            with mock.patch("EZ_App.service.fetch_contact_card", return_value=fetched_card):
+                status, body = _request(
+                    port,
+                    "POST",
+                    "/contacts/fetch-card",
+                    {"url": "http://192.168.1.20:8787"},
+                    auth,
+                )
+            assert status == 200
+            assert body["data"]["contact"]["address"] == "0xpeer502"
+            assert body["data"]["contact"]["source"] == "service_fetch"
+            assert body["data"]["contact"]["fetched_from"] == "http://192.168.1.20:8787"
+
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+            conn.request("DELETE", "/contacts/0xpeer500", headers=auth)
+            resp = conn.getresponse()
+            payload = json.loads(resp.read().decode("utf-8"))
+            conn.close()
+            assert resp.status == 200
+            assert payload["data"]["removed"] is True
+
+            status, body = _request(port, "GET", "/contacts/0xpeer500", headers=auth)
+            assert status == 404
+            assert body["error"]["code"] == "contact_not_found"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_blocks_remote_v2_tx_routes_until_tx_path_is_ready():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_remote"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent)),
+            tx_engine=TxEngine(cfg.app.data_dir, protocol_version="v2"),
+            api_token=token,
+            network_info={
+                "name": cfg.network.name,
+                "mode": "official-testnet",
+                "mode_family": "official-testnet",
+                "roles": ["account"],
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
+                "tx_path": "local_v2_runtime",
+                "tx_path_ready": False,
+                "tx_path_note": "V2 tx commands still use the local runtime; remote account-node tx submission is not wired yet.",
+            },
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            status, body = _request(port, "GET", "/network/info")
+            assert status == 200
+            assert body["data"]["mode"] == "official-testnet"
+            assert body["data"]["tx_path_ready"] is False
+
+            auth_headers = {"X-EZ-Token": token, "X-EZ-Password": "pw123"}
+            status, body = _request(port, "GET", "/wallet/balance", headers=auth_headers)
+            assert status == 501
+            assert body["error"]["code"] == "tx_path_not_ready"
+
+            status, body = _request(port, "POST", "/tx/faucet", {"password": "pw123", "amount": 100}, {"X-EZ-Token": token})
+            assert status == 501
+            assert body["error"]["code"] == "tx_path_not_ready"
+
+            status, body = _request(
+                port,
+                "POST",
+                "/tx/send",
+                {"password": "pw123", "recipient": "0xabc123", "amount": 10, "client_tx_id": "cid-remote-1"},
+                {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-remote-0001"},
+            )
+            assert status == 501
+            assert body["error"]["code"] == "tx_path_not_ready"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_remote_v2_wallet_balance_reads_shared_account_wallet_db():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_remote_read"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+
+        wallet_store = WalletStore(cfg.app.data_dir)
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        tx_engine = TxEngine(cfg.app.data_dir, protocol_version="v2")
+        tx_engine.faucet(wallet_store, password="pw123", amount=180)
+
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "wallet_db_path": str(Path(cfg.app.data_dir) / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 0, "block_hash_hex": "00" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=wallet_store,
+            node_manager=node_manager,
+            tx_engine=tx_engine,
+            api_token=token,
+            network_info={
+                "name": cfg.network.name,
+                "mode": "official-testnet",
+                "mode_family": "official-testnet",
+                "roles": ["account"],
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
+                "tx_path": "local_v2_runtime",
+                "tx_path_ready": False,
+                "tx_path_note": "V2 tx commands still use the local runtime; remote account-node tx submission is not wired yet.",
+            },
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            with mock.patch.object(node_manager, "account_status", return_value=remote_state):
+                status, body = _request(
+                    port,
+                    "GET",
+                    "/wallet/balance",
+                    headers={"X-EZ-Token": token, "X-EZ-Password": "pw123"},
+                )
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["address"] == address
+            assert body["data"]["available_balance"] == 180
+            assert body["data"]["protocol_version"] == "v2"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_remote_v2_tx_send_uses_remote_account_path_when_recipient_endpoint_is_given():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_remote_send"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        wallet_store = WalletStore(cfg.app.data_dir)
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(Path(cfg.app.data_dir) / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+        tx_engine = TxEngine(cfg.app.data_dir, protocol_version="v2")
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=wallet_store,
+            node_manager=node_manager,
+            tx_engine=tx_engine,
+            api_token=token,
+            network_info={
+                "name": cfg.network.name,
+                "mode": "official-testnet",
+                "mode_family": "official-testnet",
+                "roles": ["account"],
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
+                "tx_path": "local_v2_runtime",
+                "tx_path_ready": False,
+                "tx_path_note": "Remote official-testnet still does not have the full tx path. Read-only queries work through the shared account wallet DB, and tx send needs either recipient_endpoint or a saved contact endpoint.",
+            },
+        )
+
+        send_result = TxResult(
+            tx_hash="0xremotehash",
+            submit_hash="0xremotesubmit",
+            amount=55,
+            recipient="0xabc12345",
+            status="confirmed",
+            client_tx_id="cid-remote-2",
+            receipt_height=3,
+            receipt_block_hash="33" * 32,
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            with mock.patch.object(node_manager, "account_status", return_value=remote_state):
+                with mock.patch.object(tx_engine, "send", return_value=send_result) as send_mock:
+                    status, body = _request(
+                        port,
+                        "POST",
+                        "/tx/send",
+                        {
+                            "password": "pw123",
+                            "recipient": "0xabc12345",
+                            "recipient_endpoint": "127.0.0.1:19660",
+                            "amount": 55,
+                            "client_tx_id": "cid-remote-2",
+                        },
+                        {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-remote-send-0001"},
+                    )
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["status"] == "confirmed"
+            assert body["data"]["receipt_height"] == 3
+            send_mock.assert_called_once()
+            kwargs = send_mock.call_args.kwargs
+            assert kwargs["state"] == remote_state
+            assert kwargs["recipient_endpoint"] == "127.0.0.1:19660"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_remote_v2_tx_send_reuses_saved_contact_endpoint_when_body_omits_it():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_remote_send"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        wallet_store = WalletStore(cfg.app.data_dir)
+        wallet_store.create_wallet(password="pw123", name="demo")
+        wallet_store.set_contact(address="0xpeer100", endpoint="127.0.0.1:19660")
+        address = wallet_store.summary(protocol_version="v2").address
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(Path(cfg.app.data_dir) / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+        tx_engine = TxEngine(cfg.app.data_dir, protocol_version="v2")
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=wallet_store,
+            node_manager=node_manager,
+            tx_engine=tx_engine,
+            api_token=token,
+            network_info={
+                "name": cfg.network.name,
+                "mode": "official-testnet",
+                "mode_family": "official-testnet",
+                "roles": ["account"],
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
+                "tx_path": "local_v2_runtime",
+                "tx_path_ready": False,
+                "tx_path_note": "Remote official-testnet still does not have the full tx path. Read-only queries work through the shared account wallet DB, and tx send needs either recipient_endpoint or a saved contact endpoint.",
+            },
+        )
+
+        send_result = TxResult(
+            tx_hash="0xremotehash3",
+            submit_hash="0xremotesubmit3",
+            amount=25,
+            recipient="0xpeer100",
+            status="confirmed",
+            client_tx_id="cid-remote-4",
+            receipt_height=4,
+            receipt_block_hash="44" * 32,
+        )
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            with mock.patch.object(node_manager, "account_status", return_value=remote_state):
+                with mock.patch.object(tx_engine, "send", return_value=send_result) as send_mock:
+                    status, body = _request(
+                        port,
+                        "POST",
+                        "/tx/send",
+                        {
+                            "password": "pw123",
+                            "recipient": "0xpeer100",
+                            "amount": 25,
+                            "client_tx_id": "cid-remote-4",
+                        },
+                        {"X-EZ-Token": token, "X-EZ-Nonce": "nonce-remote-send-0002"},
+                    )
+            assert status == 200
+            assert body["ok"] is True
+            kwargs = send_mock.call_args.kwargs
+            assert kwargs["recipient_endpoint"] == "127.0.0.1:19660"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_node_contact_card_returns_current_account_card():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc_card"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "official-testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=node_manager,
+            tx_engine=TxEngine(cfg.app.data_dir, protocol_version="v2"),
+            api_token=token,
+            network_info={
+                "name": cfg.network.name,
+                "mode": "official-testnet",
+                "mode_family": "official-testnet",
+                "roles": ["account"],
+                "bootstrap_nodes": cfg.network.bootstrap_nodes,
+                "consensus_nodes": cfg.network.consensus_nodes,
+                "account_nodes": cfg.network.account_nodes,
+                "start_port": cfg.network.start_port,
+            },
+        )
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": "0xb0b123",
+            "endpoint": "192.168.1.20:19500",
+            "consensus_endpoint": "192.168.1.9:19500",
+        }
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            with mock.patch.object(node_manager, "account_status", return_value=remote_state):
+                status, body = _request(port, "GET", "/node/contact-card")
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["address"] == "0xb0b123"
+            assert body["data"]["endpoint"] == "192.168.1.20:19500"
+            assert body["data"]["network"] == "official-testnet"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+
+def test_service_node_account_status_keeps_sync_health_fields():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezsvc"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 0\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(cfg_path)
+        ensure_directories(cfg)
+        token = load_api_token(cfg)
+        node_manager = NodeManager(data_dir=cfg.app.data_dir, project_root=str(Path(__file__).resolve().parent.parent))
+        service = LocalService(
+            host="127.0.0.1",
+            port=0,
+            wallet_store=WalletStore(cfg.app.data_dir),
+            node_manager=node_manager,
+            tx_engine=TxEngine(cfg.app.data_dir, protocol_version="v2"),
+            api_token=token,
+        )
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": "0xabc123",
+            "endpoint": "127.0.0.1:19600",
+            "consensus_endpoint": "127.0.0.1:19500",
+            "sync_health": "recovered",
+            "sync_health_reason": "recovered_after_consensus_loss",
+            "recovery_count": 1,
+        }
+
+        server, port, thread = _start_server_or_skip(service)
+        try:
+            with mock.patch.object(node_manager, "account_status", return_value=remote_state):
+                status, body = _request(port, "GET", "/node/account-status")
+            assert status == 200
+            assert body["ok"] is True
+            assert body["data"]["sync_health"] == "recovered"
+            assert body["data"]["sync_health_reason"] == "recovered_after_consensus_loss"
+            assert body["data"]["recovery_count"] == 1
         finally:
             server.shutdown()
             server.server_close()

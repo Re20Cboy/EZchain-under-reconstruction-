@@ -104,7 +104,35 @@ class NodeManager:
         annotated["mode"] = cls._normalize_mode(mode)
         annotated["mode_family"] = cls._mode_family(mode)
         annotated["roles"] = cls._roles_for_mode(mode)
+        cls._annotate_account_sync_health(annotated)
         return annotated
+
+    @staticmethod
+    def _annotate_account_sync_health(payload: Dict[str, Any]) -> None:
+        if payload.get("mode_family") != "v2-account":
+            return
+        if payload.get("status") != "running":
+            return
+        if "last_sync_ok" not in payload:
+            return
+
+        last_sync_ok = payload.get("last_sync_ok") is True
+        last_sync_recovered = payload.get("last_sync_recovered") is True
+        recovery_count = int(payload.get("recovery_count", 0) or 0)
+        consecutive_failures = int(payload.get("consecutive_sync_failures", 0) or 0)
+
+        if not last_sync_ok:
+            payload["sync_health"] = "degraded"
+            payload["sync_health_reason"] = "consensus_sync_failed"
+        elif last_sync_recovered:
+            payload["sync_health"] = "recovered"
+            payload["sync_health_reason"] = "recovered_after_consensus_loss"
+        elif recovery_count > 0 and consecutive_failures == 0:
+            payload["sync_health"] = "healthy"
+            payload["sync_health_reason"] = "stable_after_recovery"
+        else:
+            payload["sync_health"] = "healthy"
+            payload["sync_health_reason"] = "steady"
 
     def _read_pid(self) -> int | None:
         if not self.pid_file.exists():
@@ -443,6 +471,8 @@ class NodeManager:
                 endpoint,
                 "--consensus-endpoint",
                 consensus_endpoint,
+                "--wallet-file",
+                str(self.data_dir / "wallet.json"),
             ]
             proc = subprocess.Popen(
                 cmd,
@@ -481,6 +511,10 @@ class NodeManager:
                 "address": state.get("address", ""),
                 "backend_dir": str(self.data_dir / "v2_runtime"),
             }
+            if "identity_source" in state:
+                payload["identity_source"] = state.get("identity_source")
+            if "wallet_db_path" in state:
+                payload["wallet_db_path"] = state.get("wallet_db_path")
             chain_cursor = state.get("chain_cursor")
             if chain_cursor is not None:
                 payload["chain_cursor"] = chain_cursor
@@ -495,6 +529,12 @@ class NodeManager:
                 "last_sync_duration_ms",
                 "last_sync_ok",
                 "last_sync_error",
+                "last_sync_recovered",
+                "consecutive_sync_failures",
+                "max_consecutive_sync_failures",
+                "recovery_count",
+                "last_successful_sync_at",
+                "last_recovered_at",
             ):
                 if key in state:
                     payload[key] = state.get(key)
@@ -578,6 +618,12 @@ class NodeManager:
             address = state.get("address")
             if address:
                 payload["address"] = address
+            identity_source = state.get("identity_source")
+            if identity_source:
+                payload["identity_source"] = identity_source
+            wallet_db_path = state.get("wallet_db_path")
+            if wallet_db_path:
+                payload["wallet_db_path"] = wallet_db_path
             chain_cursor = state.get("chain_cursor")
             if chain_cursor is not None:
                 payload["chain_cursor"] = chain_cursor
@@ -592,6 +638,12 @@ class NodeManager:
                 "last_sync_duration_ms",
                 "last_sync_ok",
                 "last_sync_error",
+                "last_sync_recovered",
+                "consecutive_sync_failures",
+                "max_consecutive_sync_failures",
+                "recovery_count",
+                "last_successful_sync_at",
+                "last_recovered_at",
             ):
                 if key in state:
                     payload[key] = state.get(key)
@@ -618,3 +670,26 @@ class NodeManager:
         if not running:
             self._clear_tracked_process(mode="local", pid=pid)
         return self._annotate_mode_payload({"status": "running" if running else "stopped", "pid": str(pid)}, "local")
+
+    def account_status(self, bootstrap_nodes: List[str] | None = None) -> Dict[str, Any]:
+        current = self.status(bootstrap_nodes=bootstrap_nodes)
+        if current.get("mode_family") == "v2-account" and current.get("status") == "running":
+            return current
+        if current.get("status") in {"stopped", "not_running"}:
+            return self._annotate_mode_payload(
+                {
+                    "status": "not_running",
+                    "reason": "v2_account_not_running",
+                },
+                "v2-account",
+            )
+        return self._annotate_mode_payload(
+            {
+                "status": "unavailable",
+                "reason": "account_role_not_running_in_current_mode",
+                "current_mode": current.get("mode", ""),
+                "current_mode_family": current.get("mode_family", ""),
+                "current_roles": current.get("roles", []),
+            },
+            "v2-account",
+        )

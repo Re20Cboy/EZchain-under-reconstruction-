@@ -19,6 +19,7 @@ APP_GATE_TESTS = (
     "EZ_Test/test_canary_scripts.py",
     "EZ_Test/test_external_trial_scripts.py",
     "EZ_Test/test_release_report_scripts.py",
+    "EZ_Test/test_v2_account_recovery_smoke.py",
 )
 
 

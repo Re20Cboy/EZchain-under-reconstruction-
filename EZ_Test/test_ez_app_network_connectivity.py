@@ -109,3 +109,36 @@ def test_cli_network_check_output(capsys):
         assert payload["network"] == "testnet"
         assert "bootstrap_probe" in payload
         assert payload["bootstrap_probe"]["total"] == 1
+
+
+def test_cli_network_info_reports_official_testnet_mode_for_remote_v2_profile(capsys):
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezchain"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "  start_port: 19500\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        code = main(["--config", str(cfg_path), "network", "info"])
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["mode"] == "official-testnet"
+        assert payload["mode_family"] == "official-testnet"
+        assert payload["roles"] == ["account"]
+        assert payload["tx_path"] == "local_v2_runtime"
+        assert payload["tx_path_ready"] is False

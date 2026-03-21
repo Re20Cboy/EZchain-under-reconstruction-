@@ -36,6 +36,7 @@ def test_profile_config_writes_official_template():
         text = out.read_text(encoding="utf-8")
         assert 'consensus_nodes: 3' in text
         assert 'bootstrap_nodes: ["bootstrap.ezchain.test:19500"]' in text
+        assert 'protocol_version: "v2"' in text
 
 
 def test_profile_config_refuses_overwrite_without_force():
@@ -74,3 +75,33 @@ def test_profile_config_refuses_overwrite_without_force():
         assert code == 0
         payload = json.loads(stdout)
         assert payload["overwritten"] is True
+
+
+def test_single_host_testnet_config_writes_v2_pseudo_remote_profile():
+    repo_root = Path(__file__).resolve().parent.parent
+
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "single-host.yaml"
+        code, stdout, _ = _run(
+            [
+                sys.executable,
+                "scripts/single_host_testnet_config.py",
+                "--out",
+                str(out),
+                "--host-ip",
+                "192.168.31.25",
+                "--data-dir",
+                ".ezchain_single_host_testnet",
+            ],
+            cwd=repo_root,
+        )
+        assert code == 0
+        payload = json.loads(stdout)
+        assert payload["mode"] == "single-host-pseudo-remote"
+        assert payload["bootstrap_endpoint"] == "192.168.31.25:19500"
+        assert payload["protocol_version"] == "v2"
+
+        text = out.read_text(encoding="utf-8")
+        assert 'bootstrap_nodes: ["192.168.31.25:19500"]' in text
+        assert 'protocol_version: "v2"' in text
+        assert 'data_dir: ".ezchain_single_host_testnet"' in text

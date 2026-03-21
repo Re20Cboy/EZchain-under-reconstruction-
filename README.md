@@ -57,6 +57,80 @@ account address, a few basic sync counters, and whether the last account sync
 round succeeded for that developer path. If one of these V2 node modes exits
 immediately during startup, the data directory now keeps a matching
 `*_startup.log` file to show the early error.
+For `v2-account`, the status view also keeps the recovery side of the story:
+how many sync failures are currently in a row, the worst streak seen so far,
+when the last successful sync happened, and how many times the daemon has
+recovered after losing the consensus endpoint.
+To make that easier to read at a glance, the account status now also derives
+`sync_health` and `sync_health_reason`, for example `healthy`, `degraded`, or
+`recovered`.
+If a local wallet already exists before `v2-account` starts, the account daemon
+now reuses that wallet's V2 address instead of generating a separate one.
+When that wallet file is present, the account daemon also reuses the matching
+`wallet_state_v2/<address>/wallet_v2.db` path so later remote-path work can
+build on the same persisted V2 wallet state.
+When `v2-account` is the active mode, you can also inspect the dedicated
+account-node view directly:
+
+```bash
+python3 ezchain_cli.py --config ezchain.yaml node account-status
+```
+
+For `official-testnet + v2`, the current state is more limited and more honest:
+
+- read-only queries such as `wallet balance`, `wallet checkpoints`,
+  `tx pending`, and `tx receipts` can read from the shared account wallet DB
+- `tx send` can now use the remote account path when you explicitly pass the
+  recipient account-node endpoint, or when you saved that endpoint locally in advance
+- `tx faucet` and `tx history` are still not wired for the remote path
+
+Example:
+
+```bash
+python3 ezchain_cli.py --config ezchain.yaml contacts set \
+  --address 0xabc123 \
+  --endpoint 192.168.1.20:19500
+
+python3 ezchain_cli.py --config ezchain.yaml tx send \
+  --recipient 0xabc123 \
+  --amount 100 \
+  --password your_password \
+  --client-tx-id cid-remote-001
+```
+
+If the other side already has a running `v2-account`, they can export a contact
+card instead of sending the address and endpoint by hand:
+
+```bash
+python3 ezchain_cli.py --config ezchain.yaml contacts export-self --out bob-contact.json
+python3 ezchain_cli.py --config ezchain.yaml contacts import-card --file bob-contact.json
+```
+
+If they already expose the local service, you can also fetch the card directly
+from the service URL and import it in one step:
+
+```bash
+python3 ezchain_cli.py --config ezchain.yaml contacts fetch-card \
+  --url http://192.168.1.20:8787 \
+  --out bob-contact.json \
+  --import-to-contacts
+```
+
+To inspect which recipient nodes are already saved locally, the service now
+also exposes two read-only endpoints:
+
+- `GET /contacts`
+- `GET /contacts/<address>`
+
+The address-book path is now a full small loop:
+
+- manual add: `contacts set`
+- show one: `contacts show`
+- list all: `contacts list` or `GET /contacts`
+- export self: `contacts export-self`
+- import from file: `contacts import-card`
+- fetch from service: `contacts fetch-card`
+- service-side write/import/fetch/delete: `POST /contacts`, `POST /contacts/import-card`, `POST /contacts/fetch-card`, `DELETE /contacts/<address>`
 
 ## Main Entry Points
 
@@ -95,5 +169,7 @@ python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversari
 ## Status
 
 - V2 is the default development and validation path
+- Whether V2 is ready for default formal delivery is still gated by readiness
+  and final confirmation on a reachable official testnet
 - V1 remains for compatibility and historical reference
 - This repository is not yet a finished public-network V2 node stack

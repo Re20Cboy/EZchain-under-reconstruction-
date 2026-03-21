@@ -1,8 +1,14 @@
 import tempfile
+import json
 from pathlib import Path
+from io import StringIO
+from contextlib import redirect_stdout
+from unittest import mock
 
 from EZ_App.cli import main
 from EZ_App.config import CONFIG_SCHEMA_VERSION, load_api_token, load_config
+from EZ_App.runtime import TxEngine, TxResult
+from EZ_App.wallet_store import WalletStore
 
 
 def test_load_config_yaml_subset():
@@ -73,3 +79,500 @@ def test_cli_config_migrate_legacy_file():
 
         backups = list(Path(td).glob("ezchain.yaml.bak.*"))
         assert len(backups) == 1
+
+
+def test_cli_node_account_status_reports_not_running():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+            ),
+            encoding="utf-8",
+        )
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--config", str(cfg_path), "node", "account-status"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["status"] == "not_running"
+        assert payload["reason"] == "v2_account_not_running"
+        assert payload["mode_family"] == "v2-account"
+
+
+def test_cli_node_account_status_keeps_sync_health_fields():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n  name: testnet\napp:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": "0xabc123",
+            "consensus_endpoint": "127.0.0.1:19500",
+            "last_sync_ok": False,
+            "sync_health": "degraded",
+            "sync_health_reason": "consensus_sync_failed",
+            "consecutive_sync_failures": 2,
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with redirect_stdout(out):
+                code = main(["--config", str(cfg_path), "node", "account-status"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["sync_health"] == "degraded"
+        assert payload["sync_health_reason"] == "consensus_sync_failed"
+        assert payload["consecutive_sync_failures"] == 2
+
+
+def test_cli_blocks_remote_v2_tx_commands_until_tx_path_is_ready():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--config", str(cfg_path), "tx", "faucet", "--password", "pw123", "--amount", "100"])
+        assert code == 2
+        payload = json.loads(out.getvalue())
+        assert payload["error"]["code"] == "tx_path_not_ready"
+        assert payload["mode"] == "official-testnet"
+        assert payload["tx_path_ready"] is False
+
+
+def test_cli_remote_v2_wallet_balance_reads_shared_account_wallet_db():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        engine = TxEngine(str(data_dir), protocol_version="v2")
+        engine.faucet(wallet_store, password="pw123", amount=120)
+
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 0, "block_hash_hex": "00" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with redirect_stdout(out):
+                code = main(["--config", str(cfg_path), "wallet", "balance", "--password", "pw123"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["address"] == address
+        assert payload["available_balance"] == 120
+        assert payload["protocol_version"] == "v2"
+
+
+def test_cli_remote_v2_tx_send_uses_remote_account_path_when_recipient_endpoint_is_given():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+        send_result = TxResult(
+            tx_hash="0xremotehash",
+            submit_hash="0xremotesubmit",
+            amount=45,
+            recipient="0xabc12345",
+            status="confirmed",
+            client_tx_id="cid-remote-1",
+            receipt_height=2,
+            receipt_block_hash="22" * 32,
+        )
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with mock.patch("EZ_App.cli.TxEngine.send", return_value=send_result) as send_mock:
+                with redirect_stdout(out):
+                    code = main(
+                        [
+                            "--config",
+                            str(cfg_path),
+                            "tx",
+                            "send",
+                            "--recipient",
+                            "0xabc12345",
+                            "--amount",
+                            "45",
+                            "--password",
+                            "pw123",
+                            "--client-tx-id",
+                            "cid-remote-1",
+                            "--recipient-endpoint",
+                            "127.0.0.1:19660",
+                        ]
+                    )
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["status"] == "confirmed"
+        assert payload["receipt_height"] == 2
+        send_mock.assert_called_once()
+        kwargs = send_mock.call_args.kwargs
+        assert kwargs["state"] == remote_state
+        assert kwargs["recipient_endpoint"] == "127.0.0.1:19660"
+
+
+def test_cli_contacts_set_list_remove_and_remote_send_can_reuse_saved_endpoint():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(
+                [
+                    "--config",
+                    str(cfg_path),
+                    "contacts",
+                    "set",
+                    "--address",
+                    "0xpeer100",
+                    "--endpoint",
+                    "127.0.0.1:19660",
+                ]
+            )
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["address"] == "0xpeer100"
+        assert payload["endpoint"] == "127.0.0.1:19660"
+        assert payload["source"] == "manual"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--config", str(cfg_path), "contacts", "list"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["items"][0]["address"] == "0xpeer100"
+
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+        send_result = TxResult(
+            tx_hash="0xremotehash2",
+            submit_hash="0xremotesubmit2",
+            amount=30,
+            recipient="0xpeer100",
+            status="confirmed",
+            client_tx_id="cid-remote-3",
+            receipt_height=2,
+            receipt_block_hash="22" * 32,
+        )
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with mock.patch("EZ_App.cli.TxEngine.send", return_value=send_result) as send_mock:
+                with redirect_stdout(out):
+                    code = main(
+                        [
+                            "--config",
+                            str(cfg_path),
+                            "tx",
+                            "send",
+                            "--recipient",
+                            "0xpeer100",
+                            "--amount",
+                            "30",
+                            "--password",
+                            "pw123",
+                            "--client-tx-id",
+                            "cid-remote-3",
+                        ]
+                    )
+        assert code == 0
+        kwargs = send_mock.call_args.kwargs
+        assert kwargs["recipient_endpoint"] == "127.0.0.1:19660"
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--config", str(cfg_path), "contacts", "remove", "--address", "0xpeer100"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["removed"] is True
+
+
+def test_cli_contacts_export_self_and_import_card():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "official-testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        card_path = Path(td) / "bob-contact.json"
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": "0xb0b123",
+            "endpoint": "192.168.1.20:19500",
+            "consensus_endpoint": "192.168.1.9:19500",
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "--config",
+                        str(cfg_path),
+                        "contacts",
+                        "export-self",
+                        "--out",
+                        str(card_path),
+                    ]
+                )
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["written"] is True
+        assert card_path.exists()
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(
+                [
+                    "--config",
+                    str(cfg_path),
+                    "contacts",
+                    "import-card",
+                    "--file",
+                    str(card_path),
+                ]
+            )
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["imported"] is True
+        assert payload["contact"]["address"] == "0xb0b123"
+        assert payload["contact"]["endpoint"] == "192.168.1.20:19500"
+
+
+def test_cli_contacts_fetch_card_can_write_and_import():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "official-testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        fetched_card = {
+            "kind": "ezchain-contact-card/v1",
+            "address": "0xcafe123",
+            "endpoint": "192.168.1.30:19500",
+            "network": "official-testnet",
+            "mode_family": "v2-account",
+            "exported_at": "2026-03-21T00:00:00Z",
+        }
+        out_path = Path(td) / "carol-contact.json"
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.fetch_contact_card", return_value=fetched_card):
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "--config",
+                        str(cfg_path),
+                        "contacts",
+                        "fetch-card",
+                        "--url",
+                        "http://192.168.1.30:8787",
+                        "--out",
+                        str(out_path),
+                        "--import-to-contacts",
+                    ]
+                )
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["fetched"] is True
+        assert payload["written"] is True
+        assert payload["imported"] is True
+        assert payload["contact"]["address"] == "0xcafe123"
+        assert payload["contact"]["source"] == "service_fetch"
+        assert out_path.exists()
+
+
+def test_cli_contacts_show_returns_saved_contact_with_metadata():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "official-testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(
+                [
+                    "--config",
+                    str(cfg_path),
+                    "contacts",
+                    "set",
+                    "--address",
+                    "0xpeer300",
+                    "--endpoint",
+                    "127.0.0.1:19670",
+                    "--network",
+                    "official-testnet",
+                    "--mode-family",
+                    "v2-account",
+                    "--consensus-endpoint",
+                    "192.168.1.9:19500",
+                    "--source",
+                    "manual",
+                ]
+            )
+        assert code == 0
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--config", str(cfg_path), "contacts", "show", "--address", "0xpeer300"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["address"] == "0xpeer300"
+        assert payload["network"] == "official-testnet"
+        assert payload["mode_family"] == "v2-account"
+        assert payload["consensus_endpoint"] == "192.168.1.9:19500"

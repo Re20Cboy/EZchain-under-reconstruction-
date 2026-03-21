@@ -60,6 +60,13 @@ Generate a fresh config from template on a clean machine:
 python scripts/profile_config.py --profile official-testnet --out ezchain.yaml
 ```
 
+If you only have one Mac and want a closer-to-real network check before you get a
+second device, you can also generate a single-host pseudo-remote config:
+
+```bash
+python scripts/single_host_testnet_config.py --out ezchain.yaml
+```
+
 If this installation is part of a formal official-testnet rehearsal, continue with:
 
 ```bash

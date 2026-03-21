@@ -1,0 +1,33 @@
+{
+  "trial_id": "official-testnet-20260321-01",
+  "executed_at": "2026-03-21T11:27:04.114860+00:00",
+  "executor": "codex",
+  "environment": {
+    "os": "macos",
+    "install_path": "source",
+    "config_path": "/tmp/ezchain-single-host-demo/ezchain.yaml"
+  },
+  "profile": {
+    "name": "official-testnet",
+    "connectivity_checked": true,
+    "connectivity_result": "passed"
+  },
+  "workflow": {
+    "install": "passed",
+    "wallet_create_or_import": "passed",
+    "network_check": "passed",
+    "faucet": "pending",
+    "send": "pending",
+    "history_receipts_balance_match": "pending"
+  },
+  "status": "pending",
+  "issues": [],
+  "notes": [
+    "existing source checkout was already runnable on macOS for this single-host pseudo-remote rehearsal",
+    "single-host pseudo-remote config: /tmp/ezchain-single-host-demo/ezchain.yaml",
+    "consensus endpoint 192.168.1.9:19650 was reachable and testnet_profile_gate passed",
+    "node account-status reported running with last_sync_ok=true against the pseudo-remote consensus endpoint",
+    "wallet create and wallet show both succeeded sequentially under protocol_version=v2 with address 0x247d55f3b5ae4c8c838290375e278426b1b47a06",
+    "faucet/send/history are intentionally still pending here because this is a single-host substitute rehearsal, not a final two-machine official-testnet proof"
+  ]
+}

@@ -32,6 +32,7 @@ def main() -> int:
     parser.add_argument("--config", default="ezchain.yaml")
     parser.add_argument("--with-stability", action="store_true")
     parser.add_argument("--with-v2-adversarial", action="store_true")
+    parser.add_argument("--with-v2-account-recovery", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     parser.add_argument("--require-official-testnet", action="store_true")
     parser.add_argument("--official-config", default="configs/ezchain.official-testnet.yaml")
@@ -72,6 +73,8 @@ def main() -> int:
         report_cmd.append("--with-stability")
     if args.with_v2_adversarial:
         report_cmd.append("--with-v2-adversarial")
+    if args.with_v2_account_recovery:
+        report_cmd.append("--with-v2-account-recovery")
     if args.allow_bind_restricted_skip:
         report_cmd.append("--allow-bind-restricted-skip")
     if args.run_metrics:

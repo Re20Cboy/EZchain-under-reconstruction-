@@ -14,6 +14,7 @@ REQUIRED_TOP_LEVEL_KEYS = (
     "environment",
     "profile",
     "workflow",
+    "evidence",
     "status",
     "issues",
     "notes",
@@ -33,6 +34,7 @@ VALID_TOP_STATUSES = {"pending", "passed", "failed"}
 VALID_OS_VALUES = {"macos", "windows"}
 VALID_INSTALL_PATHS = {"source", "binary"}
 VALID_CONNECTIVITY_RESULTS = {"pending", "passed", "failed"}
+VALID_NETWORK_ENVIRONMENTS = {"real-external", "single-host-rehearsal"}
 
 
 def _is_non_empty_string(value: object) -> bool:
@@ -49,7 +51,17 @@ def _is_valid_iso8601(value: object) -> bool:
     return True
 
 
-def validate_trial_record(record: dict, require_passed: bool) -> list[str]:
+def trial_network_environment(record: dict) -> str:
+    environment = record.get("environment")
+    if not isinstance(environment, dict):
+        return "unknown"
+    raw = str(environment.get("network_environment", "")).strip().lower()
+    if raw in VALID_NETWORK_ENVIRONMENTS:
+        return raw
+    return "unknown"
+
+
+def validate_trial_record(record: dict, require_passed: bool, require_real_external: bool = False) -> list[str]:
     failures: list[str] = []
     for key in REQUIRED_TOP_LEVEL_KEYS:
         if key not in record:
@@ -101,6 +113,10 @@ def validate_trial_record(record: dict, require_passed: bool) -> list[str]:
         install_path = str(environment.get("install_path", "")).lower()
         if install_path not in VALID_INSTALL_PATHS:
             failures.append("environment.install_path must be 'source' or 'binary'")
+        if "network_environment" in environment and trial_network_environment(record) == "unknown":
+            failures.append(
+                "environment.network_environment must be 'real-external' or 'single-host-rehearsal'"
+            )
         if not _is_non_empty_string(environment.get("config_path")):
             failures.append("environment.config_path must be a non-empty string")
 
@@ -111,6 +127,36 @@ def validate_trial_record(record: dict, require_passed: bool) -> list[str]:
     notes = record.get("notes")
     if not isinstance(notes, list):
         failures.append("notes must be a list")
+
+    evidence = record.get("evidence")
+    if not isinstance(evidence, dict):
+        failures.append("evidence must be an object")
+    else:
+        contact_card = evidence.get("contact_card")
+        if not isinstance(contact_card, dict):
+            failures.append("evidence.contact_card must be an object")
+        else:
+            path = contact_card.get("path", "")
+            address = contact_card.get("address", "")
+            endpoint = contact_card.get("endpoint", "")
+            imported = contact_card.get("imported", False)
+            used_for_send = contact_card.get("used_for_send", False)
+            if path != "" and not _is_non_empty_string(path):
+                failures.append("evidence.contact_card.path must be an empty string or a non-empty string")
+            if address != "" and not _is_non_empty_string(address):
+                failures.append("evidence.contact_card.address must be an empty string or a non-empty string")
+            if endpoint != "" and not _is_non_empty_string(endpoint):
+                failures.append("evidence.contact_card.endpoint must be an empty string or a non-empty string")
+            if not isinstance(imported, bool):
+                failures.append("evidence.contact_card.imported must be true or false")
+            if not isinstance(used_for_send, bool):
+                failures.append("evidence.contact_card.used_for_send must be true or false")
+            if used_for_send and imported is not True:
+                failures.append("evidence.contact_card.imported must be true when used_for_send is true")
+            if used_for_send and not _is_non_empty_string(address):
+                failures.append("evidence.contact_card.address must be set when used_for_send is true")
+            if used_for_send and not _is_non_empty_string(endpoint):
+                failures.append("evidence.contact_card.endpoint must be set when used_for_send is true")
 
     status = str(record.get("status", "")).lower()
     if status not in VALID_TOP_STATUSES:
@@ -128,6 +174,8 @@ def validate_trial_record(record: dict, require_passed: bool) -> list[str]:
             failures.append("profile.connectivity_checked must be true for a passed trial record")
         if str(profile.get("connectivity_result", "")).lower() != "passed":
             failures.append("profile.connectivity_result must be 'passed' for a passed trial record")
+    if require_real_external and trial_network_environment(record) != "real-external":
+        failures.append("environment.network_environment must be 'real-external' for a formal passed trial record")
 
     return failures
 
@@ -136,6 +184,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate external official-testnet trial record")
     parser.add_argument("--record", required=True)
     parser.add_argument("--require-passed", action="store_true")
+    parser.add_argument("--require-real-external", action="store_true")
     args = parser.parse_args()
 
     record_path = Path(args.record)
@@ -166,12 +215,17 @@ def main() -> int:
         print("[external-trial-gate] FAILED")
         return 1
 
-    failures = validate_trial_record(record, require_passed=bool(args.require_passed))
+    failures = validate_trial_record(
+        record,
+        require_passed=bool(args.require_passed),
+        require_real_external=bool(args.require_real_external),
+    )
     payload = {
         "ok": len(failures) == 0,
         "record": str(record_path),
         "status": record.get("status", "unknown"),
         "trial_id": record.get("trial_id", ""),
+        "network_environment": trial_network_environment(record),
         "failures": failures,
     }
     print(json.dumps(payload, indent=2))

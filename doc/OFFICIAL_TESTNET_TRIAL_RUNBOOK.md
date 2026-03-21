@@ -18,7 +18,8 @@
 python scripts/init_external_trial.py \
   --executor your_name \
   --os macos \
-  --install-path source
+  --install-path source \
+  --network-environment real-external
 ```
 
 默认会生成到：
@@ -92,12 +93,163 @@ python scripts/update_external_trial.py \
 python scripts/profile_config.py --profile official-testnet --out ezchain.yaml
 ```
 
+如果你手头没有第二台机器，只有一台 Mac，也可以先走“单机伪远端”替代路径：
+
+```bash
+python scripts/single_host_testnet_config.py --out ezchain.yaml
+python run_ez_v2_tcp_consensus.py \
+  --root-dir .ezchain_remote_consensus \
+  --state-file .ezchain_remote_consensus/state.json \
+  --chain-id 1 \
+  --endpoint 0.0.0.0:19500
+python ezchain_cli.py --config ezchain.yaml node start --mode v2-account
+python ezchain_cli.py --config ezchain.yaml node account-status
+```
+
+如果你用的是这条单机替代路径，初始化试用记录时要明确写成：
+
+```bash
+python scripts/init_external_trial.py \
+  --executor your_name \
+  --os macos \
+  --install-path source \
+  --network-environment single-host-rehearsal
+```
+
+这条替代路径会自动把配置里的 `bootstrap_nodes` 改成你这台机器的局域网 IP，
+同时固定 `protocol_version: "v2"`。它适合先验证：
+
+- 端口是否真的监听成功
+- 本机是否能通过局域网 IP 连到这个节点
+- `official-testnet` profile 是否写对
+- `v2-account` 是否能接上共识节点并报出同步状态
+
+建议顺序：
+
+1. 先 `wallet create` 或 `wallet import`
+2. 再启动 `node start --mode v2-account`
+
+这样账户节点会优先复用当前钱包的 V2 地址，不会再额外生成一套独立地址。
+如果钱包文件存在，它现在也会优先复用对应的
+`wallet_state_v2/<address>/wallet_v2.db`，减少 CLI 和账户节点各写各的状态。
+
+但要注意：
+
+- 这只能证明“单机模拟远端”是通的
+- 还不能替代真正两台机器或公网环境的最终确认
+- 这类记录现在只算 `single-host-rehearsal`，不能当成 release/readiness 的最终外部证明
+- 仅凭这一步，不建议把 `workflow.send` 或 `workflow.history_receipts_balance_match` 直接记成正式通过
+
 检查配置：
 
 ```bash
 python ezchain_cli.py network info
 python ezchain_cli.py network check
+python scripts/testnet_profile_gate.py --config ezchain.yaml --check-connectivity
 ```
+
+如果这是单机伪远端或真实远端 profile，`network info` 现在会更直白地告诉你两件事：
+
+- 当前模式是 `official-testnet`
+- `tx_path_ready` 还是 `false`
+
+这表示：
+
+- 网络连通性检查已经在走远端 profile
+- 但完整远端交易路径还没有全部接完
+
+现在 CLI 和 service 在这种情况下会直接拦下这些交易相关命令，并返回
+`tx_path_not_ready`，避免你误把本地结果当成远端测试网结果。
+
+不过，如果 `v2-account` 已经在跑，而且它复用了当前钱包对应的
+`wallet_state_v2/<address>/wallet_v2.db`，下面这些只读查询现在已经可以先用：
+
+- `wallet balance`
+- `wallet checkpoints`
+- `tx pending`
+- `tx receipts`
+
+另外，`tx send` 现在也开放了一条最小可用路，但条件必须满足：
+
+- `v2-account` 已经在运行
+- 你明确知道收款方账户节点地址，或者已经提前把它记进本地地址簿
+- 如果没有保存过，就在命令里显式传入 `--recipient-endpoint`
+
+示例：
+
+```bash
+python ezchain_cli.py contacts set \
+  --address 0xabc123 \
+  --endpoint 192.168.1.20:19500
+
+python ezchain_cli.py tx send \
+  --recipient 0xabc123 \
+  --amount 100 \
+  --password your_password
+```
+
+如果你既拿不到收款方账户节点地址，也没有保存过它，那这一步就先不要记成通过。
+
+如果对方已经跑着 `v2-account`，建议直接让对方导出联系卡，再导入本地地址簿：
+
+```bash
+python ezchain_cli.py contacts export-self --out bob-contact.json
+python ezchain_cli.py contacts import-card --file bob-contact.json
+```
+
+这样试用记录里也更容易留下明确证据：你导入的到底是哪一个地址、哪一个端点。
+
+如果对方已经开了服务，也可以直接从服务地址抓联系卡：
+
+```bash
+python ezchain_cli.py contacts fetch-card \
+  --url http://192.168.1.20:8787 \
+  --out bob-contact.json \
+  --import-to-contacts
+```
+
+为了避免试用时搞混本地已经记住了哪些收款节点，现在也可以直接查：
+
+- `GET /contacts`
+- `GET /contacts/<address>`
+
+如果你想在终端里核对，也可以直接用：
+
+- `python ezchain_cli.py contacts list`
+- `python ezchain_cli.py contacts show --address 0xabc123`
+
+建议把这部分也直接写进试用记录：
+
+```bash
+python scripts/update_external_trial.py \
+  --record doc/trials/official-testnet-YYYYMMDD-01.json \
+  --contact-card-file bob-contact.json \
+  --contact-card-imported true \
+  --contact-card-used-for-send true \
+  --auto-status
+```
+
+这样记录里会留下一个单独的 `evidence.contact_card` 证据块，后面的发布报告也能直接读出来。
+
+如果你想把“导入联系卡 + 发交易 + 更新试用记录”一次做完，现在也可以直接用收尾脚本：
+
+```bash
+python scripts/official_testnet_send_rehearsal.py \
+  --config ezchain.yaml \
+  --record doc/trials/official-testnet-YYYYMMDD-01.json \
+  --password your_password \
+  --contact-card-file bob-contact.json \
+  --amount 100 \
+  --client-tx-id cid-trial-send-001
+```
+
+这条命令会自动做三件事：
+
+- 把联系卡导入本地地址簿
+- 用这张联系卡发起一次远端发送
+- 把发送结果和联系卡证据写回试用记录
+
+它们会直接读共享的 V2 钱包库，不再走本地假结果。
 
 若 `network check` 成功：
 
@@ -124,6 +276,13 @@ python scripts/update_external_trial.py \
 - `workflow.network_check = "failed"`
 
 并把可见错误写入 `issues` / `notes`。
+
+如果你走的是上面的“单机伪远端”替代路径，建议：
+
+- `workflow.install` 和 `workflow.network_check` 可以照实记录
+- 在 `notes` 里明确写明这是单机演练，不是真两机环境
+- `workflow.faucet`、`workflow.send`、`workflow.history_receipts_balance_match` 先保持 `pending`
+- 等后面有真实可达环境，再补完整试用记录
 
 ## 4. 创建或导入钱包
 

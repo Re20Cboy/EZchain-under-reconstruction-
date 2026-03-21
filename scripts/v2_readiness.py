@@ -40,6 +40,12 @@ def _evaluate(report: dict[str, Any]) -> dict[str, Any]:
             "detail": f"v2_adversarial_gate_status={summary.get('v2_adversarial_gate_status', 'missing')}",
         },
         {
+            "name": "v2_account_recovery_gate",
+            "required": True,
+            "status": "passed" if summary.get("v2_account_recovery_gate_status") == "passed" else "failed",
+            "detail": f"v2_account_recovery_gate_status={summary.get('v2_account_recovery_gate_status', 'missing')}",
+        },
+        {
             "name": "stability_gate",
             "required": True,
             "status": "passed" if summary.get("stability_gate_status") == "passed" else "failed",

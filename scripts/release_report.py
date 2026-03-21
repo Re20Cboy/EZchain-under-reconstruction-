@@ -109,6 +109,52 @@ def _external_trial_progress(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _external_trial_contact_card(record: Dict[str, Any]) -> Dict[str, Any]:
+    evidence = record.get("evidence")
+    if not isinstance(evidence, dict):
+        return {
+            "present": False,
+            "path": "",
+            "address": "",
+            "endpoint": "",
+            "imported": False,
+            "used_for_send": False,
+        }
+    contact_card = evidence.get("contact_card")
+    if not isinstance(contact_card, dict):
+        return {
+            "present": False,
+            "path": "",
+            "address": "",
+            "endpoint": "",
+            "imported": False,
+            "used_for_send": False,
+        }
+    path = str(contact_card.get("path", "") or "").strip()
+    address = str(contact_card.get("address", "") or "").strip()
+    endpoint = str(contact_card.get("endpoint", "") or "").strip()
+    imported = bool(contact_card.get("imported", False))
+    used_for_send = bool(contact_card.get("used_for_send", False))
+    return {
+        "present": bool(path or address or endpoint or imported or used_for_send),
+        "path": path,
+        "address": address,
+        "endpoint": endpoint,
+        "imported": imported,
+        "used_for_send": used_for_send,
+    }
+
+
+def _external_trial_network_environment(record: Dict[str, Any]) -> str:
+    environment = record.get("environment")
+    if not isinstance(environment, dict):
+        return "unknown"
+    raw = str(environment.get("network_environment", "") or "").strip().lower()
+    if raw in {"real-external", "single-host-rehearsal"}:
+        return raw
+    return "unknown"
+
+
 def to_markdown(payload: Dict[str, Any]) -> str:
     lines = [
         "# EZchain Release Report",
@@ -162,6 +208,7 @@ def main() -> int:
     parser.add_argument("--run-gates", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
     parser.add_argument("--with-v2-adversarial", action="store_true")
+    parser.add_argument("--with-v2-account-recovery", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
     parser.add_argument("--run-metrics", action="store_true")
     parser.add_argument("--metrics-url", default="http://127.0.0.1:8787/metrics")
@@ -239,6 +286,25 @@ def main() -> int:
                     step["summary"] = stability_summary
                 steps.append(step)
 
+        if args.with_v2_account_recovery:
+            with tempfile.TemporaryDirectory(prefix="ez_release_report_recovery_") as td:
+                recovery_out = Path(td) / "v2_account_recovery.json"
+                recovery_cmd = [
+                    sys.executable,
+                    "scripts/v2_account_recovery_smoke.py",
+                    "--flaps",
+                    "2",
+                    "--json-out",
+                    str(recovery_out),
+                ]
+                if args.allow_bind_restricted_skip:
+                    recovery_cmd.append("--allow-bind-restricted-skip")
+                step = run_step("v2_account_recovery_gate", recovery_cmd, cwd=root)
+                recovery_summary = _load_json_if_exists(recovery_out)
+                if recovery_summary is not None:
+                    step["summary"] = recovery_summary
+                steps.append(step)
+
     if args.run_metrics:
         metrics_cmd = [
             sys.executable,
@@ -312,15 +378,25 @@ def main() -> int:
                 "--record",
                 str(resolved_trial_path),
                 "--require-passed",
+                "--require-real-external",
             ]
             steps.append(run_step("external_trial_gate", trial_gate_cmd, cwd=root))
             summary["external_trial_status"] = str(trial_record.get("status", "unknown"))
             summary["external_trial_record"] = str(resolved_trial_path)
             trial_progress = _external_trial_progress(trial_record)
+            contact_card = _external_trial_contact_card(trial_record)
+            network_environment = _external_trial_network_environment(trial_record)
             summary["external_trial_remaining_steps"] = trial_progress["remaining_steps"]
             summary["external_trial_failed_steps"] = trial_progress["failed_steps"]
             summary["external_trial_remaining_steps_count"] = trial_progress["remaining_steps_count"]
             summary["external_trial_failed_steps_count"] = trial_progress["failed_steps_count"]
+            summary["external_trial_network_environment"] = network_environment
+            summary["external_trial_real_external"] = network_environment == "real-external"
+            summary["external_trial_contact_card_present"] = contact_card["present"]
+            summary["external_trial_contact_card_imported"] = contact_card["imported"]
+            summary["external_trial_contact_card_used_for_send"] = contact_card["used_for_send"]
+            summary["external_trial_contact_card_address"] = contact_card["address"]
+            summary["external_trial_contact_card_endpoint"] = contact_card["endpoint"]
             if _status_from_step(steps, "external_trial_gate") != "passed":
                 _append_risk(risks, "external trial record does not satisfy required official-testnet rehearsal checks")
                 if trial_progress["failed_steps"]:
@@ -335,6 +411,33 @@ def main() -> int:
                         "external trial record is still incomplete: "
                         + ", ".join(str(item) for item in trial_progress["remaining_steps"]),
                     )
+                if network_environment == "single-host-rehearsal":
+                    _append_risk(
+                        risks,
+                        "external trial record is only a single-host rehearsal and does not count as final external proof",
+                    )
+                elif network_environment == "unknown":
+                    _append_risk(
+                        risks,
+                        "external trial record is missing a clear network_environment classification",
+                    )
+            workflow = trial_record.get("workflow")
+            send_passed = isinstance(workflow, dict) and str(workflow.get("send", "pending")).lower() == "passed"
+            if send_passed and not contact_card["present"]:
+                _append_risk(
+                    risks,
+                    "external trial send passed without contact-card evidence; recipient endpoint proof is missing",
+                )
+            elif send_passed and not contact_card["used_for_send"]:
+                _append_risk(
+                    risks,
+                    "external trial send passed but contact-card evidence does not say it was used for the send step",
+                )
+            if send_passed and network_environment != "real-external":
+                _append_risk(
+                    risks,
+                    "external trial send passed but the record is not marked as real-external environment",
+                )
     else:
         _append_risk(
             risks,
@@ -357,6 +460,7 @@ def main() -> int:
     summary.setdefault("steps_failed", failed_steps)
     summary.setdefault("v2_gate_status", _status_from_step(steps, "release_gate"))
     summary.setdefault("v2_adversarial_gate_status", _status_from_step(steps, "v2_adversarial_gate"))
+    summary.setdefault("v2_account_recovery_gate_status", _status_from_step(steps, "v2_account_recovery_gate"))
     summary.setdefault("official_testnet_gate_status", _status_from_step(steps, "official_testnet_gate"))
     summary.setdefault("external_trial_gate_status", _status_from_step(steps, "external_trial_gate"))
     if args.with_v2_adversarial:
@@ -364,6 +468,36 @@ def main() -> int:
             _append_risk(risks, "V2 adversarial gate did not pass")
     else:
         _append_risk(risks, "V2 adversarial gate not run for this report")
+    recovery_step = next((step for step in steps if step["name"] == "v2_account_recovery_gate"), None)
+    if recovery_step is None:
+        _append_risk(risks, "v2-account recovery gate not run for this report")
+    else:
+        recovery_summary = recovery_step.get("summary")
+        if isinstance(recovery_summary, dict):
+            summary["v2_account_recovery_skipped_bind_restricted"] = bool(
+                recovery_summary.get("skipped_bind_restricted", False)
+            )
+            summary["v2_account_recovery_flaps_requested"] = recovery_summary.get("flaps_requested")
+            summary["v2_account_recovery_flaps_completed"] = recovery_summary.get("flaps_completed")
+            summary["v2_account_recovery_degraded_rounds"] = recovery_summary.get("degraded_rounds", [])
+            summary["v2_account_recovery_recovered_rounds"] = recovery_summary.get("recovered_rounds", [])
+            summary["v2_account_recovery_steady_rounds"] = recovery_summary.get("steady_rounds", [])
+            summary["v2_account_recovery_final_sync_health"] = recovery_summary.get("final_sync_health", "")
+            summary["v2_account_recovery_final_sync_health_reason"] = recovery_summary.get(
+                "final_sync_health_reason", ""
+            )
+            summary["v2_account_recovery_final_recovery_count"] = recovery_summary.get("final_recovery_count", 0)
+            summary["v2_account_recovery_blocking_reasons"] = recovery_summary.get("blocking_reasons", [])
+            for reason in recovery_summary.get("blocking_reasons", []):
+                _append_risk(risks, f"v2-account recovery gate blocking reason: {reason}")
+            if not recovery_summary.get("skipped_bind_restricted", False):
+                if recovery_summary.get("flaps_completed", 0) <= 0:
+                    _append_risk(risks, "v2-account recovery run did not complete any recovery flap")
+                if str(recovery_summary.get("final_sync_health", "")) not in {"healthy", "recovered"}:
+                    _append_risk(
+                        risks,
+                        "v2-account recovery run ended without a healthy account sync state",
+                    )
     stability_step = next((step for step in steps if step["name"] == "stability_gate"), None)
     if stability_step is None:
         summary.setdefault("stability_gate_status", "not_run")
@@ -381,10 +515,24 @@ def main() -> int:
                 summary["stability_failure_rate"] = stability_summary.get("failure_rate")
             summary["stability_restarts"] = stability_summary.get("restarts")
             summary["stability_burst_checks"] = stability_summary.get("burst_checks")
+            summary["stability_failure_cycles"] = stability_summary.get("failure_cycles", [])
+            summary["stability_restart_failure_cycles"] = stability_summary.get("restart_failure_cycles", [])
+            summary["stability_first_failure_cycle"] = stability_summary.get("first_failure_cycle", 0)
+            summary["stability_last_failure_cycle"] = stability_summary.get("last_failure_cycle", 0)
+            summary["stability_max_failed_cycle_streak"] = stability_summary.get("max_failed_cycle_streak", 0)
+            summary["stability_max_failed_cycle_streak_start"] = stability_summary.get(
+                "max_failed_cycle_streak_start", 0
+            )
+            summary["stability_max_failed_cycle_streak_end"] = stability_summary.get(
+                "max_failed_cycle_streak_end", 0
+            )
+            summary["stability_blocking_reasons"] = stability_summary.get("blocking_reasons", [])
             if stability_summary.get("restarts", 0) <= 0 and not stability_summary.get("skipped_bind_restricted", False):
                 _append_risk(risks, "stability run did not exercise restart recovery")
             if stability_summary.get("burst_checks", 0) <= 0 and not stability_summary.get("skipped_bind_restricted", False):
                 _append_risk(risks, "stability run did not exercise burst probe coverage")
+            for reason in stability_summary.get("blocking_reasons", []):
+                _append_risk(risks, f"stability gate blocking reason: {reason}")
 
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Dict
 
-from EZ_App.config import CONFIG_SCHEMA_VERSION, EZAppConfig, load_config
+from EZ_App.config import _to_yaml, load_config
 
 
 PROFILE_TEMPLATES: Dict[str, str] = {
@@ -29,32 +28,11 @@ DEFAULT_NETWORK_SETTINGS: Dict[str, Dict[str, object]] = {
     },
 }
 
-
-def _to_yaml(cfg: EZAppConfig) -> str:
-    lines = [
-        "meta:",
-        f"  config_version: {int(getattr(cfg, 'config_version', CONFIG_SCHEMA_VERSION))}",
-        "",
-        "network:",
-        f'  name: "{cfg.network.name}"',
-        f"  bootstrap_nodes: {json.dumps(cfg.network.bootstrap_nodes)}",
-        f"  consensus_nodes: {int(cfg.network.consensus_nodes)}",
-        f"  account_nodes: {int(cfg.network.account_nodes)}",
-        f"  start_port: {int(cfg.network.start_port)}",
-        "",
-        "app:",
-        f'  data_dir: "{cfg.app.data_dir}"',
-        f'  log_dir: "{cfg.app.log_dir}"',
-        f'  api_host: "{cfg.app.api_host}"',
-        f"  api_port: {int(cfg.app.api_port)}",
-        f'  api_token_file: "{cfg.app.api_token_file}"',
-        "",
-        "security:",
-        f"  max_payload_bytes: {int(cfg.security.max_payload_bytes)}",
-        f"  max_tx_amount: {int(cfg.security.max_tx_amount)}",
-        f"  nonce_ttl_seconds: {int(cfg.security.nonce_ttl_seconds)}",
-    ]
-    return "\n".join(lines) + "\n"
+PROFILE_APP_OVERRIDES: Dict[str, Dict[str, object]] = {
+    "official-testnet": {
+        "protocol_version": "v2",
+    },
+}
 
 
 def list_profiles() -> list[str]:
@@ -113,6 +91,8 @@ def apply_network_profile(config_path: str | Path, profile_name: str) -> EZAppCo
     cfg = load_config(config_path)
     for key, value in _profile_network_settings(profile_name).items():
         setattr(cfg.network, key, value)
+    for key, value in PROFILE_APP_OVERRIDES.get(profile_name, {}).items():
+        setattr(cfg.app, key, value)
 
     path = Path(config_path)
     path.write_text(_to_yaml(cfg), encoding="utf-8")

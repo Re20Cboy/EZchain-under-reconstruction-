@@ -1,0 +1,36 @@
+{
+  "trial_id": "official-testnet-20260321-01",
+  "executed_at": "2026-03-21T11:24:01.084372+00:00",
+  "executor": "codex",
+  "environment": {
+    "os": "macos",
+    "install_path": "source",
+    "config_path": "ezchain.yaml"
+  },
+  "profile": {
+    "name": "official-testnet",
+    "connectivity_checked": true,
+    "connectivity_result": "passed"
+  },
+  "workflow": {
+    "install": "passed",
+    "wallet_create_or_import": "passed",
+    "network_check": "passed",
+    "faucet": "failed",
+    "send": "pending",
+    "history_receipts_balance_match": "pending"
+  },
+  "status": "failed",
+  "issues": [
+    "wallet create returned a V2 address and mnemonic, but wallet show immediately failed with FileNotFoundError: wallet not found",
+    "tx faucet reported available_balance=100 but immediate wallet balance still returned 0 under the pseudo-remote official-testnet rehearsal"
+  ],
+  "notes": [
+    "network check passed against pseudo-remote consensus endpoint 192.168.1.9:19650",
+    "existing source checkout was already runnable on macOS; no reinstall was needed for this rehearsal",
+    "single-host pseudo-remote rehearsal used /tmp/ezchain-single-host-demo/ezchain.yaml against local LAN address 192.168.1.9:19650",
+    "wallet create returned address 0x247d55f3b5ae4c8c838290375e278426b1b47a06 before the follow-up wallet show check failed",
+    "wallet show succeeded on retry and reported V2 address 0x247d55f3b5ae4c8c838290375e278426b1b47a06",
+    "faucet command returned 100 on protocol_version=v2, but follow-up wallet balance remained 0 and account-node sync state stayed at height 0"
+  ]
+}

@@ -45,17 +45,28 @@ def build_summary(
     restart_probe_failures: int,
     max_restart_probe_failures: int,
     duration_seconds: float,
+    failure_cycles: list[int] | None = None,
+    restart_failure_cycles: list[int] | None = None,
+    max_failed_cycle_streak: int = 0,
+    max_failed_cycle_streak_start: int = 0,
+    max_failed_cycle_streak_end: int = 0,
     skipped_bind_restricted: bool = False,
-) -> dict[str, float | int | bool]:
+) -> dict[str, float | int | bool | list[str]]:
     total = max(1, checks)
     failure_rate = failures / total
+    failure_cycles = list(failure_cycles or [])
+    restart_failure_cycles = list(restart_failure_cycles or [])
+    blocking_reasons: list[str] = []
+    if failures > int(max_failures):
+        blocking_reasons.append(f"failures>{int(max_failures)}")
+    if failure_rate > float(max_failure_rate):
+        blocking_reasons.append(f"failure_rate>{float(max_failure_rate)}")
+    if max_consecutive_failures > int(max_consecutive_failures_allowed):
+        blocking_reasons.append(f"max_consecutive_failures>{int(max_consecutive_failures_allowed)}")
+    if restart_probe_failures > int(max_restart_probe_failures):
+        blocking_reasons.append(f"restart_probe_failures>{int(max_restart_probe_failures)}")
     return {
-        "ok": (
-            failures <= int(max_failures)
-            and failure_rate <= float(max_failure_rate)
-            and max_consecutive_failures <= int(max_consecutive_failures_allowed)
-            and restart_probe_failures <= int(max_restart_probe_failures)
-        ),
+        "ok": not blocking_reasons,
         "skipped_bind_restricted": bool(skipped_bind_restricted),
         "cycles": int(cycles),
         "checks": total,
@@ -68,10 +79,18 @@ def build_summary(
         "burst_checks": int(burst_checks),
         "jitter": float(jitter),
         "restarts": int(restarts),
+        "failure_cycles": failure_cycles,
+        "first_failure_cycle": (failure_cycles[0] if failure_cycles else 0),
+        "last_failure_cycle": (failure_cycles[-1] if failure_cycles else 0),
         "max_consecutive_failures": int(max_consecutive_failures),
         "max_consecutive_failures_allowed": int(max_consecutive_failures_allowed),
+        "max_failed_cycle_streak": int(max_failed_cycle_streak),
+        "max_failed_cycle_streak_start": int(max_failed_cycle_streak_start),
+        "max_failed_cycle_streak_end": int(max_failed_cycle_streak_end),
         "restart_probe_failures": int(restart_probe_failures),
         "max_restart_probe_failures": int(max_restart_probe_failures),
+        "restart_failure_cycles": restart_failure_cycles,
+        "blocking_reasons": blocking_reasons,
         "duration_seconds": round(duration_seconds, 3),
     }
 
@@ -137,6 +156,13 @@ def main() -> int:
     consecutive_failures = 0
     max_seen_consecutive_failures = 0
     restart_probe_failures = 0
+    failure_cycles: list[int] = []
+    restart_failure_cycles: list[int] = []
+    failed_cycle_streak = 0
+    failed_cycle_streak_start = 0
+    max_failed_cycle_streak = 0
+    max_failed_cycle_streak_start = 0
+    max_failed_cycle_streak_end = 0
     awaiting_restart_probe = False
     started_at = time.time()
     try:
@@ -160,6 +186,11 @@ def main() -> int:
                 restart_probe_failures=0,
                 max_restart_probe_failures=int(args.max_restart_probe_failures),
                 duration_seconds=time.time() - started_at,
+                failure_cycles=list(range(1, int(args.cycles) + 1)),
+                restart_failure_cycles=[],
+                max_failed_cycle_streak=int(args.cycles),
+                max_failed_cycle_streak_start=1 if int(args.cycles) > 0 else 0,
+                max_failed_cycle_streak_end=int(args.cycles),
                 skipped_bind_restricted=bool(args.allow_bind_restricted_skip and bind_restricted),
             )
             if args.json_out:
@@ -199,7 +230,20 @@ def main() -> int:
                 if awaiting_restart_probe:
                     if probe_failed:
                         restart_probe_failures += 1
+                        restart_failure_cycles.append(i + 1)
                     awaiting_restart_probe = False
+            if cycle_failures > 0:
+                failure_cycles.append(i + 1)
+                if failed_cycle_streak == 0:
+                    failed_cycle_streak_start = i + 1
+                failed_cycle_streak += 1
+                if failed_cycle_streak > max_failed_cycle_streak:
+                    max_failed_cycle_streak = failed_cycle_streak
+                    max_failed_cycle_streak_start = failed_cycle_streak_start
+                    max_failed_cycle_streak_end = i + 1
+            else:
+                failed_cycle_streak = 0
+                failed_cycle_streak_start = 0
             print(
                 f"cycle={i + 1}/{args.cycles} probes={cycle_probe_count} "
                 f"cycle_failures={cycle_failures} total_failures={failures}"
@@ -232,6 +276,11 @@ def main() -> int:
         restart_probe_failures=int(restart_probe_failures),
         max_restart_probe_failures=int(args.max_restart_probe_failures),
         duration_seconds=time.time() - started_at,
+        failure_cycles=failure_cycles,
+        restart_failure_cycles=restart_failure_cycles,
+        max_failed_cycle_streak=max_failed_cycle_streak,
+        max_failed_cycle_streak_start=max_failed_cycle_streak_start,
+        max_failed_cycle_streak_end=max_failed_cycle_streak_end,
     )
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(summary, indent=2), encoding="utf-8")

@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from EZ_V2.app_client import V2LocalAppClient, V2LocalAppSession
 from EZ_V2.crypto import keccak256
 from EZ_V2.encoding import canonical_encode
+from EZ_V2.network_host import V2AccountHost
+from EZ_V2.network_transport import TCPNetworkTransport
+from EZ_V2.networking import PeerInfo
+from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import LocalValueStatus, ValueRange
+from EZ_V2.wallet import WalletAccountV2
 
 from EZ_App.wallet_store import WalletStore
 
@@ -176,6 +181,139 @@ class TxEngine:
     def _v2_submit_hash(self, envelope: Any) -> str:
         return keccak256(b"EZCHAIN_APP_V2_SUBMISSION" + canonical_encode(envelope)).hex()
 
+    def _remote_v2_wallet_db_path(self, wallet_address: str, state: Dict[str, Any]) -> str:
+        path = str(state.get("wallet_db_path", "")).strip()
+        if path:
+            return path
+        return str(self.data_dir / "wallet_state_v2" / wallet_address / "wallet_v2.db")
+
+    @staticmethod
+    def _remote_v2_chain_height(state: Dict[str, Any]) -> int:
+        cursor = state.get("chain_cursor")
+        if isinstance(cursor, dict):
+            try:
+                return int(cursor.get("height", 0))
+            except Exception:
+                return 0
+        return 0
+
+    @staticmethod
+    def _parse_endpoint(endpoint: str) -> tuple[str, int]:
+        host, port_s = endpoint.rsplit(":", 1)
+        return host.strip(), int(port_s)
+
+    @staticmethod
+    def _peer_id_for_address(address: str) -> str:
+        return f"account-{str(address).lower()[-8:]}"
+
+    def _open_remote_v2_wallet(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> WalletAccountV2:
+        wallet = wallet_store.load_v2_wallet(password=password)
+        remote_address = str(state.get("address", "")).strip()
+        if remote_address and remote_address != wallet["address"]:
+            raise ValueError("wallet_address_mismatch_with_account_node")
+        db_path = self._remote_v2_wallet_db_path(wallet["address"], state)
+        return WalletAccountV2(
+            address=wallet["address"],
+            genesis_block_hash=self.v2_genesis_block_hash,
+            db_path=db_path,
+        )
+
+    @staticmethod
+    def _v2_balance_payload(account: WalletAccountV2, *, chain_height: int, pending_incoming_transfer_count: int) -> Dict[str, Any]:
+        breakdown = {
+            status.value: amount
+            for status, amount in account.balance_breakdown().items()
+        }
+        return {
+            "address": account.address,
+            "protocol_version": "v2",
+            "available_balance": account.available_balance(),
+            "total_balance": account.total_balance(),
+            "unspent_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
+            "pending_balance": account.pending_balance(),
+            "onchain_balance": 0,
+            "confirmed_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
+            "pending_bundle_count": len(account.list_pending_bundles()),
+            "pending_incoming_transfer_count": pending_incoming_transfer_count,
+            "v2_status_breakdown": breakdown,
+            "chain_height": chain_height,
+        }
+
+    @staticmethod
+    def _v2_pending_payload(account: WalletAccountV2, *, chain_height: int) -> Dict[str, Any]:
+        items = [
+            {
+                "seq": context.seq,
+                "bundle_hash": context.bundle_hash.hex(),
+                "created_at": context.created_at,
+                "outgoing_values": [
+                    {"begin": value.begin, "end": value.end}
+                    for value in context.outgoing_values
+                ],
+            }
+            for context in account.list_pending_bundles()
+        ]
+        return {
+            "address": account.address,
+            "protocol_version": "v2",
+            "chain_height": chain_height,
+            "items": items,
+        }
+
+    @staticmethod
+    def _v2_receipts_payload(account: WalletAccountV2, *, chain_height: int) -> Dict[str, Any]:
+        items = [
+            {
+                "seq": receipt.seq,
+                "height": receipt.header_lite.height,
+                "block_hash": receipt.header_lite.block_hash.hex(),
+                "state_root": receipt.header_lite.state_root.hex(),
+                "prev_ref": (
+                    None
+                    if receipt.prev_ref is None
+                    else {
+                        "height": receipt.prev_ref.height,
+                        "block_hash": receipt.prev_ref.block_hash.hex(),
+                        "bundle_hash": receipt.prev_ref.bundle_hash.hex(),
+                        "seq": receipt.prev_ref.seq,
+                    }
+                ),
+            }
+            for receipt in account.list_receipts()
+        ]
+        return {
+            "address": account.address,
+            "protocol_version": "v2",
+            "chain_height": chain_height,
+            "items": items,
+        }
+
+    @staticmethod
+    def _v2_checkpoints_payload(
+        account: WalletAccountV2,
+        *,
+        chain_height: int,
+        pending_incoming_transfer_count: int,
+    ) -> Dict[str, Any]:
+        items = [
+            {
+                "value_begin": checkpoint.value_begin,
+                "value_end": checkpoint.value_end,
+                "owner_addr": checkpoint.owner_addr,
+                "checkpoint_height": checkpoint.checkpoint_height,
+                "checkpoint_block_hash": checkpoint.checkpoint_block_hash.hex(),
+                "checkpoint_bundle_hash": checkpoint.checkpoint_bundle_hash.hex(),
+            }
+            for checkpoint in account.list_checkpoints()
+        ]
+        return {
+            "address": account.address,
+            "protocol_version": "v2",
+            "chain_height": chain_height,
+            "items": items,
+            "pending_incoming_transfer_count": pending_incoming_transfer_count,
+        }
+
     def _submit_transaction_v2(
         self,
         wallet_store: WalletStore,
@@ -298,6 +436,9 @@ class TxEngine:
         recipient: str,
         amount: int,
         client_tx_id: Optional[str] = None,
+        *,
+        state: Optional[Dict[str, Any]] = None,
+        recipient_endpoint: Optional[str] = None,
     ) -> TxResult:
         if amount <= 0:
             raise ValueError("amount_must_be_positive")
@@ -315,13 +456,24 @@ class TxEngine:
                 if idem_key in idempotency:
                     raise ValueError("duplicate_transaction")
                 if self.protocol_version == "v2":
-                    result = self._submit_transaction_v2(
-                        wallet_store=wallet_store,
-                        password=password,
-                        recipient=recipient,
-                        amount=amount,
-                        client_tx_id=client_tx_id,
-                    )
+                    if state is not None:
+                        result = self.remote_send(
+                            wallet_store=wallet_store,
+                            password=password,
+                            recipient=recipient,
+                            amount=amount,
+                            recipient_endpoint=recipient_endpoint or "",
+                            state=state,
+                            client_tx_id=client_tx_id,
+                        )
+                    else:
+                        result = self._submit_transaction_v2(
+                            wallet_store=wallet_store,
+                            password=password,
+                            recipient=recipient,
+                            amount=amount,
+                            client_tx_id=client_tx_id,
+                        )
                 else:
                     account = self._build_account(wallet_store, password)
                     result = self._submit_transaction(
@@ -341,6 +493,16 @@ class TxEngine:
                 return result
 
         if self.protocol_version == "v2":
+            if state is not None:
+                return self.remote_send(
+                    wallet_store=wallet_store,
+                    password=password,
+                    recipient=recipient,
+                    amount=amount,
+                    recipient_endpoint=recipient_endpoint or "",
+                    state=state,
+                    client_tx_id=client_tx_id,
+                )
             return self._submit_transaction_v2(
                 wallet_store=wallet_store,
                 password=password,
@@ -393,27 +555,11 @@ class TxEngine:
                 _, session = self._open_v2_session(wallet_store, password)
                 try:
                     self._record_v2_received_events(wallet_store, session)
-                    account = session.wallet
-                    consensus = session.consensus
-                    pending_incoming_transfer_count = session.pending_incoming_transfer_count()
-                    breakdown = {
-                        status.value: amount
-                        for status, amount in account.balance_breakdown().items()
-                    }
-                    return {
-                        "address": account.address,
-                        "protocol_version": "v2",
-                        "available_balance": account.available_balance(),
-                        "total_balance": account.total_balance(),
-                        "unspent_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
-                        "pending_balance": account.pending_balance(),
-                        "onchain_balance": 0,
-                        "confirmed_balance": account.get_balance(LocalValueStatus.VERIFIED_SPENDABLE),
-                        "pending_bundle_count": len(account.list_pending_bundles()),
-                        "pending_incoming_transfer_count": pending_incoming_transfer_count,
-                        "v2_status_breakdown": breakdown,
-                        "chain_height": consensus.chain.current_height,
-                    }
+                    return self._v2_balance_payload(
+                        session.wallet,
+                        chain_height=session.consensus.chain.current_height,
+                        pending_incoming_transfer_count=session.pending_incoming_transfer_count(),
+                    )
                 finally:
                     session.close()
         from EZ_VPB.values.Value import ValueState
@@ -436,26 +582,10 @@ class TxEngine:
             _, session = self._open_v2_session(wallet_store, password)
             try:
                 self._record_v2_received_events(wallet_store, session)
-                account = session.wallet
-                consensus = session.consensus
-                items = [
-                    {
-                        "seq": context.seq,
-                        "bundle_hash": context.bundle_hash.hex(),
-                        "created_at": context.created_at,
-                        "outgoing_values": [
-                            {"begin": value.begin, "end": value.end}
-                            for value in context.outgoing_values
-                        ],
-                    }
-                    for context in account.list_pending_bundles()
-                ]
-                return {
-                    "address": account.address,
-                    "protocol_version": "v2",
-                    "chain_height": consensus.chain.current_height,
-                    "items": items,
-                }
+                return self._v2_pending_payload(
+                    session.wallet,
+                    chain_height=session.consensus.chain.current_height,
+                )
             finally:
                 session.close()
 
@@ -466,33 +596,10 @@ class TxEngine:
             _, session = self._open_v2_session(wallet_store, password)
             try:
                 self._record_v2_received_events(wallet_store, session)
-                account = session.wallet
-                consensus = session.consensus
-                items = [
-                    {
-                        "seq": receipt.seq,
-                        "height": receipt.header_lite.height,
-                        "block_hash": receipt.header_lite.block_hash.hex(),
-                        "state_root": receipt.header_lite.state_root.hex(),
-                        "prev_ref": (
-                            None
-                            if receipt.prev_ref is None
-                            else {
-                                "height": receipt.prev_ref.height,
-                                "block_hash": receipt.prev_ref.block_hash.hex(),
-                                "bundle_hash": receipt.prev_ref.bundle_hash.hex(),
-                                "seq": receipt.prev_ref.seq,
-                            }
-                        ),
-                    }
-                    for receipt in account.list_receipts()
-                ]
-                return {
-                    "address": account.address,
-                    "protocol_version": "v2",
-                    "chain_height": consensus.chain.current_height,
-                    "items": items,
-                }
+                return self._v2_receipts_payload(
+                    session.wallet,
+                    chain_height=session.consensus.chain.current_height,
+                )
             finally:
                 session.close()
 
@@ -503,26 +610,130 @@ class TxEngine:
             _, session = self._open_v2_session(wallet_store, password)
             try:
                 self._record_v2_received_events(wallet_store, session)
-                account = session.wallet
-                consensus = session.consensus
-                pending_incoming_transfer_count = session.pending_incoming_transfer_count()
-                items = [
-                    {
-                        "value_begin": checkpoint.value_begin,
-                        "value_end": checkpoint.value_end,
-                        "owner_addr": checkpoint.owner_addr,
-                        "checkpoint_height": checkpoint.checkpoint_height,
-                        "checkpoint_block_hash": checkpoint.checkpoint_block_hash.hex(),
-                        "checkpoint_bundle_hash": checkpoint.checkpoint_bundle_hash.hex(),
-                    }
-                    for checkpoint in account.list_checkpoints()
-                ]
-                return {
-                    "address": account.address,
-                    "protocol_version": "v2",
-                    "chain_height": consensus.chain.current_height,
-                    "items": items,
-                    "pending_incoming_transfer_count": pending_incoming_transfer_count,
-                }
+                return self._v2_checkpoints_payload(
+                    session.wallet,
+                    chain_height=session.consensus.chain.current_height,
+                    pending_incoming_transfer_count=session.pending_incoming_transfer_count(),
+                )
             finally:
                 session.close()
+
+    def remote_balance(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> Dict[str, Any]:
+        account = self._open_remote_v2_wallet(wallet_store, password, state)
+        try:
+            return self._v2_balance_payload(
+                account,
+                chain_height=self._remote_v2_chain_height(state),
+                pending_incoming_transfer_count=int(state.get("pending_incoming_transfer_count", 0)),
+            )
+        finally:
+            account.close()
+
+    def remote_pending(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> Dict[str, Any]:
+        account = self._open_remote_v2_wallet(wallet_store, password, state)
+        try:
+            return self._v2_pending_payload(
+                account,
+                chain_height=self._remote_v2_chain_height(state),
+            )
+        finally:
+            account.close()
+
+    def remote_receipts(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> Dict[str, Any]:
+        account = self._open_remote_v2_wallet(wallet_store, password, state)
+        try:
+            return self._v2_receipts_payload(
+                account,
+                chain_height=self._remote_v2_chain_height(state),
+            )
+        finally:
+            account.close()
+
+    def remote_checkpoints(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> Dict[str, Any]:
+        account = self._open_remote_v2_wallet(wallet_store, password, state)
+        try:
+            return self._v2_checkpoints_payload(
+                account,
+                chain_height=self._remote_v2_chain_height(state),
+                pending_incoming_transfer_count=int(state.get("pending_incoming_transfer_count", 0)),
+            )
+        finally:
+            account.close()
+
+    def remote_send(
+        self,
+        wallet_store: WalletStore,
+        password: str,
+        *,
+        recipient: str,
+        amount: int,
+        recipient_endpoint: str,
+        state: Dict[str, Any],
+        client_tx_id: Optional[str],
+    ) -> TxResult:
+        wallet = wallet_store.load_v2_wallet(password=password)
+        remote_address = str(state.get("address", "")).strip()
+        if remote_address and remote_address != wallet["address"]:
+            raise ValueError("wallet_address_mismatch_with_account_node")
+        consensus_endpoint = str(state.get("consensus_endpoint", "")).strip()
+        if not consensus_endpoint:
+            raise ValueError("consensus_endpoint_missing")
+        if not recipient_endpoint.strip():
+            raise ValueError("recipient_endpoint_required")
+        self._parse_endpoint(consensus_endpoint)
+        self._parse_endpoint(recipient_endpoint)
+
+        sender_peer = PeerInfo(
+            node_id=self._peer_id_for_address(wallet["address"]),
+            role="account",
+            endpoint="127.0.0.1:0",
+            metadata={"address": wallet["address"]},
+        )
+        consensus_peer = PeerInfo(node_id="consensus-0", role="consensus", endpoint=consensus_endpoint)
+        recipient_peer = PeerInfo(
+            node_id=self._peer_id_for_address(recipient),
+            role="account",
+            endpoint=recipient_endpoint,
+            metadata={"address": recipient},
+        )
+        host, port = self._parse_endpoint(sender_peer.endpoint)
+        network = TransportPeerNetwork(
+            TCPNetworkTransport(host, port),
+            peers=(sender_peer, consensus_peer, recipient_peer),
+        )
+        account_host = V2AccountHost(
+            node_id=sender_peer.node_id,
+            endpoint=sender_peer.endpoint,
+            wallet_db_path=self._remote_v2_wallet_db_path(wallet["address"], state),
+            chain_id=self.v2_chain_id,
+            network=network,
+            consensus_peer_id=consensus_peer.node_id,
+            address=wallet["address"],
+            private_key_pem=wallet["private_key_pem"].encode("utf-8"),
+            public_key_pem=wallet["public_key_pem"].encode("utf-8"),
+        )
+        try:
+            network.start()
+            account_host.recover_network_state()
+            payment = account_host.submit_payment(
+                recipient_peer.node_id,
+                amount=amount,
+                expiry_height=self.v2_expiry_height,
+                fee=0,
+                anti_spam_nonce=secrets.randbelow(1 << 63),
+            )
+            return TxResult(
+                tx_hash=payment.tx_hash_hex,
+                submit_hash=payment.submit_hash_hex,
+                amount=amount,
+                recipient=recipient,
+                status="confirmed" if payment.receipt_height is not None else "submitted",
+                client_tx_id=client_tx_id,
+                receipt_height=payment.receipt_height,
+                receipt_block_hash=payment.receipt_block_hash_hex,
+            )
+        finally:
+            try:
+                account_host.close()
+            finally:
+                network.stop()

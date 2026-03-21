@@ -65,11 +65,25 @@ def test_build_summary_fails_when_new_red_lines_are_crossed():
         restart_probe_failures=1,
         max_restart_probe_failures=0,
         duration_seconds=12.5,
+        failure_cycles=[4, 5],
+        restart_failure_cycles=[5],
+        max_failed_cycle_streak=2,
+        max_failed_cycle_streak_start=4,
+        max_failed_cycle_streak_end=5,
     )
 
     assert summary["ok"] is False
     assert summary["max_consecutive_failures"] == 2
     assert summary["restart_probe_failures"] == 1
+    assert summary["failure_cycles"] == [4, 5]
+    assert summary["restart_failure_cycles"] == [5]
+    assert summary["first_failure_cycle"] == 4
+    assert summary["last_failure_cycle"] == 5
+    assert summary["max_failed_cycle_streak"] == 2
+    assert summary["max_failed_cycle_streak_start"] == 4
+    assert summary["max_failed_cycle_streak_end"] == 5
+    assert "max_consecutive_failures>1" in summary["blocking_reasons"]
+    assert "restart_probe_failures>0" in summary["blocking_reasons"]
 
 
 def test_build_summary_passes_when_all_red_lines_hold():
@@ -89,7 +103,15 @@ def test_build_summary_passes_when_all_red_lines_hold():
         restart_probe_failures=0,
         max_restart_probe_failures=0,
         duration_seconds=8.0,
+        failure_cycles=[],
+        restart_failure_cycles=[],
+        max_failed_cycle_streak=0,
+        max_failed_cycle_streak_start=0,
+        max_failed_cycle_streak_end=0,
     )
 
     assert summary["ok"] is True
     assert summary["failure_rate"] == 0.0
+    assert summary["failure_cycles"] == []
+    assert summary["restart_failure_cycles"] == []
+    assert summary["blocking_reasons"] == []

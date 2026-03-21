@@ -30,6 +30,11 @@ def main() -> int:
     parser.add_argument("--executor", required=True)
     parser.add_argument("--os", dest="os_name", choices=("macos", "windows"), required=True)
     parser.add_argument("--install-path", choices=("source", "binary"), required=True)
+    parser.add_argument(
+        "--network-environment",
+        choices=("real-external", "single-host-rehearsal"),
+        default="real-external",
+    )
     parser.add_argument("--config-path", default="ezchain.yaml")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
@@ -51,6 +56,7 @@ def main() -> int:
     environment = dict(payload.get("environment") or {})
     environment["os"] = args.os_name
     environment["install_path"] = args.install_path
+    environment["network_environment"] = args.network_environment
     environment["config_path"] = args.config_path
     payload["environment"] = environment
 
@@ -72,6 +78,16 @@ def main() -> int:
         workflow[key] = "pending"
     payload["workflow"] = workflow
 
+    evidence = dict(payload.get("evidence") or {})
+    contact_card = dict(evidence.get("contact_card") or {})
+    contact_card.setdefault("path", "")
+    contact_card.setdefault("address", "")
+    contact_card.setdefault("endpoint", "")
+    contact_card["imported"] = bool(contact_card.get("imported", False))
+    contact_card["used_for_send"] = bool(contact_card.get("used_for_send", False))
+    evidence["contact_card"] = contact_card
+    payload["evidence"] = evidence
+
     out_path = Path(args.out) if args.out else (root / "doc" / "trials" / f"{payload['trial_id']}.json")
     if not out_path.is_absolute():
         out_path = root / out_path
@@ -89,6 +105,7 @@ def main() -> int:
                 "executor": args.executor,
                 "os": args.os_name,
                 "install_path": args.install_path,
+                "network_environment": args.network_environment,
                 "config_path": args.config_path,
             },
             indent=2,

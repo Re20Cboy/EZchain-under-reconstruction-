@@ -26,9 +26,11 @@ def test_apply_network_profile_updates_config_file():
         cfg = apply_network_profile(cfg_path, "official-testnet")
         assert cfg.network.consensus_nodes == 3
         assert cfg.network.bootstrap_nodes == ["bootstrap.ezchain.test:19500"]
+        assert cfg.app.protocol_version == "v2"
 
         loaded = load_config(cfg_path)
         assert loaded.network.consensus_nodes == 3
+        assert loaded.app.protocol_version == "v2"
 
 
 def test_cli_network_profile_flow(capsys):
@@ -49,13 +51,21 @@ def test_cli_network_profile_flow(capsys):
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["profile"] == "official-testnet"
+        assert parsed["mode"] == "official-testnet"
         assert parsed["consensus_nodes"] == 3
+        assert parsed["tx_path"] == "local_v2_runtime"
+        assert parsed["tx_path_ready"] is False
+
+        loaded = load_config(cfg_path)
+        assert loaded.app.protocol_version == "v2"
 
         code = main(["--config", str(cfg_path), "network", "info"])
         assert code == 0
         out = capsys.readouterr().out
         parsed = json.loads(out)
         assert parsed["bootstrap_nodes"] == ["bootstrap.ezchain.test:19500"]
+        assert parsed["mode"] == "official-testnet"
+        assert parsed["tx_path_ready"] is False
 
 
 def test_profile_templates_exist():
@@ -76,6 +86,7 @@ def test_write_profile_template_generates_official_config():
         assert loaded.network.name == "testnet"
         assert loaded.network.consensus_nodes == 3
         assert loaded.network.bootstrap_nodes == ["bootstrap.ezchain.test:19500"]
+        assert loaded.app.protocol_version == "v2"
 
 
 def test_write_profile_template_refuses_overwrite_without_force():

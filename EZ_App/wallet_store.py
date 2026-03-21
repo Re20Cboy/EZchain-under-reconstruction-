@@ -22,6 +22,7 @@ class WalletStore:
         self.base_dir = Path(data_dir)
         self.wallet_file = self.base_dir / "wallet.json"
         self.history_file = self.base_dir / "tx_history.json"
+        self.contacts_file = self.base_dir / "contacts.json"
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def exists(self) -> bool:
@@ -114,3 +115,104 @@ class WalletStore:
             return json.loads(self.history_file.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return []
+
+    def _load_contacts(self) -> Dict[str, Dict[str, Any]]:
+        if not self.contacts_file.exists():
+            return {}
+        try:
+            parsed = json.loads(self.contacts_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for address, item in parsed.items():
+            if not isinstance(item, dict):
+                continue
+            normalized_address = str(item.get("address", address)).strip()
+            entry = {
+                "address": normalized_address,
+                "endpoint": str(item.get("endpoint", "")).strip(),
+                "updated_at": str(item.get("updated_at", "")),
+            }
+            network = str(item.get("network", "")).strip()
+            if network:
+                entry["network"] = network
+            mode_family = str(item.get("mode_family", "")).strip()
+            if mode_family:
+                entry["mode_family"] = mode_family
+            consensus_endpoint = str(item.get("consensus_endpoint", "")).strip()
+            if consensus_endpoint:
+                entry["consensus_endpoint"] = consensus_endpoint
+            source = str(item.get("source", "")).strip()
+            if source:
+                entry["source"] = source
+            fetched_from = str(item.get("fetched_from", "")).strip()
+            if fetched_from:
+                entry["fetched_from"] = fetched_from
+            normalized[normalized_address] = entry
+        return normalized
+
+    def _save_contacts(self, contacts: Dict[str, Dict[str, Any]]) -> None:
+        self.contacts_file.write_text(json.dumps(contacts, indent=2), encoding="utf-8")
+
+    def set_contact(
+        self,
+        *,
+        address: str,
+        endpoint: str,
+        network: str | None = None,
+        mode_family: str | None = None,
+        consensus_endpoint: str | None = None,
+        source: str | None = None,
+        fetched_from: str | None = None,
+    ) -> Dict[str, Any]:
+        if not str(address).strip():
+            raise ValueError("address_required")
+        if not str(endpoint).strip():
+            raise ValueError("endpoint_required")
+        contacts = self._load_contacts()
+        normalized_address = str(address).strip()
+        entry = {
+            "address": normalized_address,
+            "endpoint": str(endpoint).strip(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if str(network or "").strip():
+            entry["network"] = str(network).strip()
+        if str(mode_family or "").strip():
+            entry["mode_family"] = str(mode_family).strip()
+        if str(consensus_endpoint or "").strip():
+            entry["consensus_endpoint"] = str(consensus_endpoint).strip()
+        if str(source or "").strip():
+            entry["source"] = str(source).strip()
+        if str(fetched_from or "").strip():
+            entry["fetched_from"] = str(fetched_from).strip()
+        contacts[normalized_address] = entry
+        self._save_contacts(contacts)
+        return dict(entry)
+
+    def get_contact(self, address: str) -> Optional[Dict[str, Any]]:
+        contacts = self._load_contacts()
+        item = contacts.get(str(address).strip())
+        if item is None:
+            return None
+        return dict(item)
+
+    def get_contact_endpoint(self, address: str) -> Optional[str]:
+        item = self.get_contact(address)
+        if item is None:
+            return None
+        endpoint = str(item.get("endpoint", "")).strip()
+        return endpoint or None
+
+    def remove_contact(self, address: str) -> bool:
+        contacts = self._load_contacts()
+        normalized_address = str(address).strip()
+        removed = contacts.pop(normalized_address, None)
+        self._save_contacts(contacts)
+        return removed is not None
+
+    def list_contacts(self) -> List[Dict[str, Any]]:
+        contacts = self._load_contacts()
+        return [dict(contacts[address]) for address in sorted(contacts)]

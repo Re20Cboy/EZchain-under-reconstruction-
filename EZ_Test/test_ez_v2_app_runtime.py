@@ -1,4 +1,5 @@
 from dataclasses import replace
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,9 +7,21 @@ from pathlib import Path
 from EZ_App.runtime import TxEngine
 from EZ_App.wallet_store import WalletStore
 from EZ_V2.localnet import V2AccountNode, V2ConsensusNode
+from EZ_V2.network_host import V2AccountHost, V2ConsensusHost
+from EZ_V2.network_transport import TCPNetworkTransport
+from EZ_V2.networking import PeerInfo
+from EZ_V2.transport_peer import TransportPeerNetwork
+from EZ_V2.values import ValueRange
+from EZ_V2.wallet import WalletAccountV2
 
 
 class EZV2AppRuntimeTest(unittest.TestCase):
+    @staticmethod
+    def _reserve_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+
     def test_wallet_store_derives_stable_v2_identity(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = WalletStore(td)
@@ -372,6 +385,132 @@ class EZV2AppRuntimeTest(unittest.TestCase):
 
             restarted = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
             self.assertEqual(restarted.checkpoints(bob_store, password="pw123")["items"], checkpoint_view["items"])
+
+    def test_v2_tx_engine_remote_send_confirms_when_recipient_endpoint_is_given(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+
+            alice_wallet = alice_store.load_v2_wallet(password="pw123")
+            bob_wallet = bob_store.load_v2_wallet(password="pw123")
+            alice_address = alice_wallet["address"]
+            bob_address = bob_wallet["address"]
+            alice_wallet_db_path = alice_dir / "wallet_state_v2" / alice_address / "wallet_v2.db"
+            bob_wallet_db_path = bob_dir / "wallet_state_v2" / bob_address / "wallet_v2.db"
+            alice_wallet_db_path.parent.mkdir(parents=True, exist_ok=True)
+            bob_wallet_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                consensus_port = self._reserve_port()
+                bob_port = self._reserve_port()
+            except PermissionError as exc:
+                raise unittest.SkipTest(f"bind_not_permitted:{exc}") from exc
+
+            peers = (
+                PeerInfo(node_id="consensus-0", role="consensus", endpoint=f"127.0.0.1:{consensus_port}"),
+                PeerInfo(node_id="alice", role="account", endpoint="127.0.0.1:0", metadata={"address": alice_address}),
+                PeerInfo(node_id="bob", role="account", endpoint=f"127.0.0.1:{bob_port}", metadata={"address": bob_address}),
+            )
+            consensus_network = TransportPeerNetwork(
+                TCPNetworkTransport("127.0.0.1", consensus_port),
+                peers,
+            )
+            bob_network = TransportPeerNetwork(
+                TCPNetworkTransport("127.0.0.1", bob_port),
+                peers,
+            )
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint=f"127.0.0.1:{consensus_port}",
+                store_path=f"{td}/consensus.sqlite3",
+                network=consensus_network,
+                chain_id=909,
+            )
+            bob_account = V2AccountHost(
+                node_id="bob",
+                endpoint=f"127.0.0.1:{bob_port}",
+                wallet_db_path=str(bob_wallet_db_path),
+                chain_id=909,
+                network=bob_network,
+                consensus_peer_id="consensus-0",
+                address=bob_address,
+                private_key_pem=bob_wallet["private_key_pem"].encode("utf-8"),
+                public_key_pem=bob_wallet["public_key_pem"].encode("utf-8"),
+            )
+            try:
+                try:
+                    consensus_network.start()
+                    bob_network.start()
+                except PermissionError as exc:
+                    raise unittest.SkipTest(f"bind_not_permitted:{exc}") from exc
+                except RuntimeError as exc:
+                    if isinstance(exc.__cause__, PermissionError):
+                        raise unittest.SkipTest(f"bind_not_permitted:{exc.__cause__}") from exc
+                    raise
+
+                minted = ValueRange(0, 199)
+                consensus.register_genesis_value(alice_address, minted)
+                sender_wallet = WalletAccountV2(
+                    address=alice_address,
+                    genesis_block_hash=b"\x00" * 32,
+                    db_path=str(alice_wallet_db_path),
+                )
+                try:
+                    sender_wallet.add_genesis_value(minted)
+                finally:
+                    sender_wallet.close()
+
+                engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2")
+                remote_state = {
+                    "address": alice_address,
+                    "consensus_endpoint": f"127.0.0.1:{consensus_port}",
+                    "wallet_db_path": str(alice_wallet_db_path),
+                    "chain_cursor": {"height": 0, "block_hash_hex": "00" * 32},
+                    "pending_incoming_transfer_count": 0,
+                }
+
+                result = engine.send(
+                    alice_store,
+                    password="pw123",
+                    recipient=bob_address,
+                    amount=70,
+                    client_tx_id="cid-remote-runtime-1",
+                    state=remote_state,
+                    recipient_endpoint=f"127.0.0.1:{bob_port}",
+                )
+
+                self.assertEqual(result.status, "confirmed")
+                self.assertEqual(result.receipt_height, 1)
+                self.assertTrue(result.tx_hash)
+                self.assertTrue(result.submit_hash)
+
+                sender_wallet = WalletAccountV2(
+                    address=alice_address,
+                    genesis_block_hash=b"\x00" * 32,
+                    db_path=str(alice_wallet_db_path),
+                )
+                recipient_wallet = WalletAccountV2(
+                    address=bob_address,
+                    genesis_block_hash=b"\x00" * 32,
+                    db_path=str(bob_wallet_db_path),
+                )
+                try:
+                    self.assertEqual(sender_wallet.available_balance(), 130)
+                    self.assertEqual(recipient_wallet.available_balance(), 70)
+                    self.assertEqual(len(sender_wallet.list_receipts()), 1)
+                finally:
+                    sender_wallet.close()
+                    recipient_wallet.close()
+            finally:
+                bob_network.stop()
+                consensus_network.stop()
+                bob_account.close()
+                consensus.close()
 
     def test_invalid_mailbox_package_is_not_claimed_and_valid_package_still_syncs(self) -> None:
         with tempfile.TemporaryDirectory() as td:
