@@ -30,6 +30,12 @@ python scripts/app_gate.py
 python scripts/security_gate.py
 ```
 
+5. V2 网络分层冒烟检查（可选，但改动账户/共识分离或传输层时建议跑）：
+```bash
+python3 run_ez_v2_network_smoke.py
+python3 run_ez_v2_tcp_network_smoke.py --allow-bind-restricted-skip
+```
+
 ## 3. 发布前门禁（推荐）
 1. 统一发布门禁：
 ```bash

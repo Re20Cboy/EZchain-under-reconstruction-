@@ -1,46 +1,39 @@
 # EZchain Documentation Hub
 
-本目录是当前 MVP 阶段的统一文档入口。
+本目录只保留高频入口。详细流程下沉到对应专题文档。
 
-## 先看这里（所有人）
-- 仓库结构图：`doc/PROJECT_STRUCTURE.md`
-- V2 快速上手：`doc/EZchain-V2-quickstart.md`
-- V1 freeze / V2 切换规则：`EZchain-V2-design/EZchain-V1-freeze-and-V2-default-transition.md`
-- 项目状态检查点：`doc/PROJECT_CHECKPOINT_2026-02-12.md`
-- 最新状态检查点：`doc/PROJECT_CHECKPOINT_2026-03-20.md`
-- 后续计划（MVP 收口）：`doc/MVP_ROADMAP_NEXT.md`
+## Start Here
+- 项目结构：`doc/PROJECT_STRUCTURE.md`
+- 当前状态：`doc/PROJECT_CHECKPOINT_2026-03-20.md`
+- 本地快速跑通 V2：`doc/EZchain-V2-quickstart.md`
 - 安装与首次使用：`doc/INSTALLATION.md`
-- 测试网拓扑与配置：`doc/TESTNET_TOPOLOGY.md`
 
-## 终端用户
-- 快速上手（钱包/转账/节点/API）：`doc/USER_QUICKSTART.md`
-- 安装与升级前备份：`doc/INSTALLATION.md`
-- 官方测试网试用手册：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
+## By Role
+
+### 终端用户
+- 日常试用入口：`doc/USER_QUICKSTART.md`
+- 正式测试网演练：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
 - 常见错误码：`doc/API_ERROR_CODES.md`
 
-## 开发者与测试
-- 测试与门禁总览：`doc/DEV_TESTING.md`
-- V2 默认切换 readiness：`doc/V2_DEFAULT_READINESS.md`
-- 深度测试说明（历史文档）：`doc/TESTING_DEEP_DIVE.md`
-- P2P 模块现状：`doc/EZ_P2P_Status.md`
-- P2P 一键测试：`doc/RUN_P2P_TESTS.md`
+### 开发者
+- 提交前与 RC 测试：`doc/DEV_TESTING.md`
+- V2 默认化判断：`doc/V2_DEFAULT_READINESS.md`
+- P2P 现状：`doc/EZ_P2P_Status.md`
 
-## 发布与运维
+### 发布与运维
 - 发布检查清单：`doc/RELEASE_CHECKLIST.md`
-- 运行手册（故障/回滚/备份）：`doc/MVP_RUNBOOK.md`
-- 官方测试网外部试用记录模板：`doc/OFFICIAL_TESTNET_TRIAL_TEMPLATE.json`
-- 官方测试网外部试用执行手册：`doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md`
-- 官方测试网外部试用记录初始化：`scripts/init_external_trial.py`
-- 灰度观测脚本（canary）：`scripts/canary_monitor.py` / `scripts/canary_gate.py`
-- 安全威胁模型（内部门禁）：`doc/SECURITY_THREAT_MODEL.md`
+- 运行与回滚：`doc/MVP_RUNBOOK.md`
+- 外部试用记录模板：`doc/OFFICIAL_TESTNET_TRIAL_TEMPLATE.json`
 - 发布记录：`doc/releases/`
 
-## 研究资料
-- 白皮书原文（仓库副本）：`doc/VWchian.pdf`
-- 白皮书文本提取：`doc/VWchian.txt`
+## Key Topics
+- V1 legacy / V2 分层：`doc/V1_LEGACY_STRUCTURE.md`
+- V1 物理迁移计划：`doc/V1_PHYSICAL_MIGRATION_PLAN.md`
+- 测试网拓扑：`doc/TESTNET_TOPOLOGY.md`
+- 后续 MVP 收口计划：`doc/MVP_ROADMAP_NEXT.md`
 
-## 当前默认流程（推荐）
-1. 先看 `doc/PROJECT_STRUCTURE.md`，确认当前 V2 / V1 分层。
-2. 使用 `configs/ezchain.v2-localnet.yaml` 作为本地默认配置。
-3. 用 `doc/EZchain-V2-quickstart.md` 跑通钱包创建、faucet、转账和 service。
-4. 提交前执行 `doc/DEV_TESTING.md` 的 V2 默认门槛。
+## Default Flow
+1. 用 `doc/EZchain-V2-quickstart.md` 跑通本地 V2。
+2. 用 `doc/USER_QUICKSTART.md` 或 `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md` 走用户路径。
+3. 提交前执行 `doc/DEV_TESTING.md`。
+4. 发版前执行 `doc/RELEASE_CHECKLIST.md`。
