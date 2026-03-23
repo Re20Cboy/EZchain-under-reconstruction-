@@ -14,10 +14,15 @@ def run(cmd: list[str], cwd: Path) -> None:
         raise RuntimeError(f"command failed: {' '.join(cmd)}")
 
 
+def should_run_v2_account_recovery(args: argparse.Namespace) -> bool:
+    return bool(args.with_v2_account_recovery or args.with_stability)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="EZchain release gate")
     parser.add_argument("--skip-slow", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
+    parser.add_argument("--with-consensus", action="store_true")
     parser.add_argument("--with-v2-adversarial", action="store_true")
     parser.add_argument("--with-v2-account-recovery", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
@@ -62,7 +67,7 @@ def main() -> int:
             if args.allow_bind_restricted_skip:
                 stability_cmd.append("--allow-bind-restricted-skip")
             run(stability_cmd, cwd=root)
-        if args.with_v2_account_recovery:
+        if should_run_v2_account_recovery(args):
             recovery_cmd = [
                 sys.executable,
                 "scripts/v2_account_recovery_smoke.py",
@@ -72,6 +77,8 @@ def main() -> int:
             if args.allow_bind_restricted_skip:
                 recovery_cmd.append("--allow-bind-restricted-skip")
             run(recovery_cmd, cwd=root)
+        if args.with_consensus:
+            run([sys.executable, "scripts/consensus_gate.py"], cwd=root)
     except RuntimeError as exc:
         print(f"[release-gate] FAILED: {exc}")
         return 1

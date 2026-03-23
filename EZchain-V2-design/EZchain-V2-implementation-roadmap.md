@@ -14,6 +14,7 @@
 本文档以以下文档为上位约束：
 
 - `EZchain-V2-protocol-draft.md`
+- `EZchain-V2-consensus-mvp-spec.md`
 - `EZchain-V2-module-migration-checklist.md`
 - `EZchain-V2-small-scale-simulation.md`
 - `EZchain-V2-network-and-transport-plan.md`

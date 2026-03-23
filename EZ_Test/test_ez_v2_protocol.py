@@ -91,6 +91,30 @@ class EZV2ProtocolTests(unittest.TestCase):
         unit1 = ConfirmedBundleUnit(receipt=receipts1[alice_addr], bundle_sidecar=sub1.sidecar)
         self.assertEqual(receipts2[alice_addr].prev_ref, confirmed_ref(unit1))
 
+    def test_apply_block_reconciles_follower_bundle_pool_using_finalized_diff_package(self) -> None:
+        chain_a = ChainStateV2(chain_id=10)
+        chain_b = ChainStateV2(chain_id=10)
+        alice_priv, alice_pub = generate_secp256k1_keypair()
+        alice_addr = address_from_public_key_pem(alice_pub)
+        bob_priv, bob_pub = generate_secp256k1_keypair()
+        bob_addr = address_from_public_key_pem(bob_pub)
+
+        tx1 = OffChainTx(
+            sender_addr=alice_addr,
+            recipient_addr=bob_addr,
+            value_list=(ValueRange(0, 99),),
+            tx_local_index=0,
+            tx_time=1,
+        )
+        sub1 = self._make_submission(alice_priv, alice_pub, 10, 1, 10, 1, 1, [tx1])
+        chain_a.submit_bundle(sub1)
+        chain_b.submit_bundle(sub1)
+        self.assertEqual(len(chain_b.bundle_pool.snapshot()), 1)
+
+        block1, _ = chain_a.build_block(timestamp=1)
+        chain_b.apply_block(block1)
+        self.assertEqual(chain_b.bundle_pool.snapshot(), [])
+
     def test_recursive_witness_validation_and_checkpoint_anchor(self) -> None:
         chain = ChainStateV2(chain_id=11)
         grace_priv, grace_pub = generate_secp256k1_keypair()

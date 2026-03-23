@@ -12,22 +12,48 @@
 3. `python scripts/security_gate.py`
 4. `python scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --max-failures 0 --max-failure-rate 0.0 --max-consecutive-failures 0 --max-restart-probe-failures 0`
    - result now includes `failure_cycles`, `restart_failure_cycles`, `max_failed_cycle_streak`, and `blocking_reasons`
-5. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
-6. `python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip --run-metrics`
+   - release flows that use `--with-stability` now also run `v2-account recovery smoke` automatically
+5. `python scripts/consensus_gate.py`
+   - runs the current V2 consensus layered checks
+   - includes:
+     - core consensus tests
+     - sync / catch-up tests
+     - restart-after-catch-up tests
+     - static-network MVP consensus tests
+     - recovery / restart tests
+     - TCP consensus and TCP catch-up tests
+   - a local `passed` result still needs to be read together with the TCP evidence fields in `release_report`
+6. `python scripts/metrics_probe.py --url http://127.0.0.1:8787/metrics`
+7. `python scripts/release_report.py --run-gates --with-stability --with-consensus --with-v2-adversarial --allow-bind-restricted-skip --run-metrics`
    - recommended: `--require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --external-trial-record <trial-record.json>`
    - initialize trial record: `python scripts/init_external_trial.py --executor <name> --os macos --install-path source`
    - optional precheck: `python scripts/external_trial_gate.py --record <trial-record.json> --require-passed`
    - if the trial record is incomplete, the report now shows exactly which steps are still missing or already failed
-   - if the recovery gate is enabled, the report also shows whether `v2-account` could recover after repeated consensus flaps
-7. `python scripts/prepare_rc.py --version v0.1.0-rc1`
-8. `python scripts/rc_gate.py`
-9. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip --target none`
+   - when `--with-stability` is enabled, the report also shows whether `v2-account` could recover after repeated consensus flaps
+   - when `--with-consensus` is enabled, the report now also summarizes:
+     - `consensus_core_status`
+     - `consensus_sync_status`
+     - `consensus_catchup_status`
+     - `consensus_network_status`
+     - `consensus_recovery_status`
+     - `consensus_tcp_evidence_status`
+     - `consensus_formal_tcp_evidence_ready`
+   - if TCP consensus suites are skipped because the current machine is bind-restricted, the report will show that explicitly and keep it visible as a release risk
+   - even if a maintainer can run some TCP pytest cases successfully one by one, release judgement still follows the gate/report evidence chain; do not upgrade TCP evidence to “passed” unless `consensus_gate` itself actually executed those TCP layers
+8. `python scripts/prepare_rc.py --version v0.1.0-rc1`
+9. `python scripts/rc_gate.py`
+10. `python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --with-v2-adversarial --allow-bind-restricted-skip --target none`
    - recommended: `--require-official-testnet --official-config configs/ezchain.official-testnet.yaml --official-check-connectivity --external-trial-record <trial-record.json>`
-10. `python3 scripts/v2_readiness.py`
+   - RC 流程现在会自动带上 `consensus_gate`
+11. `python3 scripts/v2_readiness.py`
    - used to decide whether V2 can be treated as the default project path instead of only the default local/dev path
    - `release_candidate.py` now runs this automatically and carries the result into the RC manifest
-11. `python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 1800 --interval-sec 15 --out-json dist/canary_report.json`
-12. `python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency`
+   - readiness output now also includes a non-blocking `consensus_tcp_evidence` line so the report can distinguish:
+     - layered consensus validation passed
+     - TCP formal evidence passed
+     - TCP formal evidence not executed in the current environment
+12. `python scripts/canary_monitor.py --url http://127.0.0.1:8787/metrics --duration-sec 1800 --interval-sec 15 --out-json dist/canary_report.json`
+13. `python scripts/canary_gate.py --report dist/canary_report.json --max-crash-rate 0.05 --min-tx-success-rate 0.95 --max-sync-latency-ms-p95 30000 --min-node-online-rate 0.95 --allow-missing-latency`
 
 ## Functional acceptance
 1. Wallet create/import/show/balance pass.

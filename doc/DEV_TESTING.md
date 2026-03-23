@@ -34,10 +34,31 @@ python scripts/security_gate.py
 ```bash
 python3 run_ez_v2_network_smoke.py
 python3 run_ez_v2_tcp_network_smoke.py --allow-bind-restricted-skip
+python3 run_ez_v2_tcp_mvp_consensus_smoke.py --allow-bind-restricted-skip
 python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip
 python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip --seed 915 --failover-round 2
 python3 scripts/v2_account_recovery_smoke.py --allow-bind-restricted-skip
+python3 scripts/consensus_gate.py
 ```
+
+说明：
+- `run_ez_v2_tcp_mvp_consensus_smoke.py` 现在会先做 proposer 选择，再由选中的共识节点完成这一轮确认
+- `scripts/consensus_gate.py` 现在会把共识检查拆成分层套件：
+  - core 状态机层
+  - sync / catch-up 层
+  - restart 后 catch-up 层
+  - recovery / restart 层
+  - TCP 多节点层
+  - TCP restart/catch-up 层
+- `scripts/consensus_gate.py --json-out <path>` 的输出现在会额外给出 summary，明确区分：
+  - 静态 / 本地共识验证是否通过
+  - TCP 套件是否真的执行过
+  - TCP 套件是否因为 bind 限制被跳过
+  - 当前是否已经形成 formal TCP evidence
+- 当前仓库里的 TCP 共识用例还有一个需要诚实面对的执行差异：
+  - 某些 TCP suite 单独直接跑时，可能可以真实通过
+  - 但放进完整 `scripts/consensus_gate.py` 顺序执行时，当前机器仍可能返回 `bind_not_permitted:[Errno 1] Operation not permitted`
+  - 这种情况下应以 gate 的 JSON summary 和 `-rs` skip 原因为准，而不是把“单独跑通过”直接当成“正式 gate 证据已经形成”
 
 ## 3. 发布前门禁（推荐）
 1. 统一发布门禁：
@@ -50,6 +71,10 @@ python scripts/release_gate.py --skip-slow
 python scripts/release_gate.py --skip-slow --with-stability --allow-bind-restricted-skip
 ```
 
+说明：
+- 现在只要带 `--with-stability`，`v2-account recovery smoke` 会自动一起跑
+- 不需要再额外记第二个开关
+
 3. 包含 V2 对抗强化回归（建议 RC / 夜间）：
 ```bash
 python scripts/release_gate.py --skip-slow --with-v2-adversarial
@@ -57,13 +82,20 @@ python scripts/release_gate.py --skip-slow --with-v2-adversarial
 
 4. 同时包含稳定性 + V2 对抗强化回归：
 ```bash
-python scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial --allow-bind-restricted-skip
+python scripts/release_gate.py --skip-slow --with-stability --with-consensus --with-v2-adversarial --allow-bind-restricted-skip
 ```
 
 5. 生成包含 V2 对抗状态的发布报告：
 ```bash
-python scripts/release_report.py --run-gates --with-stability --with-v2-adversarial --with-v2-account-recovery --allow-bind-restricted-skip
+python scripts/release_report.py --run-gates --with-stability --with-consensus --with-v2-adversarial --allow-bind-restricted-skip
 ```
+
+说明：
+
+- `release_report` 现在会把共识分层结果合并到顶层 summary。
+- 如果你只是在本机完成了静态 / 本地验证，但 TCP 套件因为环境限制没有执行，报告会显示 `consensus_tcp_evidence_status=not_executed_bind_restricted`。
+- 这表示“当前共识 gate 已通过，但 TCP 正式证据还没形成”，不是测试脚本出错。
+- 如果你单独执行某些 TCP pytest case 可以通过，但 `consensus_gate` 里同一类 TCP step 仍然显示 `bind_not_permitted`，发布口径仍然以 gate / report 结果为准。
 
 6. 触发网络抖动 + 重复请求压力路径（建议 nightly）：
 ```bash
@@ -111,7 +143,7 @@ python3 scripts/v2_account_recovery_smoke.py \
 
 7. 生成发布报告：
 ```bash
-python scripts/release_report.py --run-gates --with-stability --allow-bind-restricted-skip
+python scripts/release_report.py --run-gates --with-stability --with-consensus --allow-bind-restricted-skip
 ```
 
 8. 判断 V2 是否达到“项目默认路径”切换门槛：
@@ -119,12 +151,20 @@ python scripts/release_report.py --run-gates --with-stability --allow-bind-restr
 python3 scripts/v2_readiness.py
 ```
 
+说明：
+
+- readiness 现在会额外显示 `consensus_tcp_evidence`。
+- 当前这条默认是非阻断信息项，用来帮助你区分：
+  - 共识分层 gate 已通过
+  - 与 TCP 正式证据是否已经形成
+- 是否把这条升级成正式阻断条件，仍取决于治理规则，而不是单次本地测试结果。
+
 带官方测试网与外部试用记录：
 ```bash
 python scripts/release_report.py \
   --run-gates \
   --with-stability \
-  --with-v2-account-recovery \
+  --with-consensus \
   --allow-bind-restricted-skip \
   --require-official-testnet \
   --official-config configs/ezchain.official-testnet.yaml \
@@ -172,6 +212,11 @@ python scripts/rc_gate.py
 python scripts/release_candidate.py --version v0.1.0-rc1 --with-stability --allow-bind-restricted-skip --target none
 ```
 
+说明：
+
+- `release_candidate.py` 现在会自动带上 `consensus_gate`
+- 所以 RC 流程里不需要再额外手写 `--with-consensus`
+
 ## 6. CI 对齐说明
 CI 当前固定执行：
 - `scripts/release_gate.py --skip-slow`
@@ -181,7 +226,7 @@ CI 当前固定执行：
   - 内含 `run_ez_v2_acceptance.py` 作为 V2 默认路径门槛
 - RC/nightly 建议额外执行：
   - `run_ezchain_tests.py --groups v2-adversarial --skip-slow`
-  - 或 `scripts/release_gate.py --skip-slow --with-v2-adversarial`
+  - 或 `scripts/release_gate.py --skip-slow --with-consensus --with-v2-adversarial`
 - nightly stability workflow
   - `scripts/stability_gate.py --cycles 30 --interval 1 --restart-every 10 --jitter 0.2 --burst-every 5 --burst-size 3 --max-failures 0 --max-failure-rate 0.0 --max-consecutive-failures 0 --max-restart-probe-failures 0`
   - `run_ezchain_tests.py --groups v2-adversarial --skip-slow`

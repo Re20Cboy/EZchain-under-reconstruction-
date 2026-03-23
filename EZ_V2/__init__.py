@@ -55,6 +55,8 @@ from .app_client import (
 )
 from .localnet import LocalParticipant, SubmittedPayment, V2AccountNode, V2ConsensusNode, V2LocalNetwork
 from .network_host import (
+    BlockSyncResult,
+    ConsensusRuntimeSnapshot,
     LocalCommitAdapter,
     StaticPeerNetwork,
     V2AccountHost,
@@ -85,6 +87,7 @@ __all__ = [
     "AccountLeaf",
     "BlockHeaderV2",
     "BlockV2",
+    "BlockSyncResult",
     "BundleSubmitResult",
     "BundleEnvelope",
     "BundlePool",
@@ -96,6 +99,7 @@ __all__ = [
     "CheckpointAnchor",
     "ChainSyncCursor",
     "ConfirmedBundleUnit",
+    "ConsensusRuntimeSnapshot",
     "ConsensusAdapter",
     "ConsensusStateMetadata",
     "ConsensusStateStore",

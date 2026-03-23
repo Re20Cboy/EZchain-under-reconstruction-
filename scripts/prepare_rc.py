@@ -24,6 +24,9 @@ def _default_notes(version: str, git_head: str) -> str:
         "4. Re-run health and one end-to-end send/receive check.\n\n"
         "## Validation Evidence\n"
         "- Attach `dist/release_report.json` and `dist/release_report.md`.\n"
+        "- Confirm `consensus_tcp_evidence_status` and whether formal TCP consensus evidence was actually formed.\n"
+        "- Check `consensus_tcp_step_notes` for per-step retry/skip details when TCP evidence is still missing.\n"
+        "- If the current environment is bind-restricted, call that out explicitly instead of treating it as equivalent to passed TCP evidence.\n"
         "- Reference runbook: `doc/MVP_RUNBOOK.md`.\n"
     )
 
@@ -87,6 +90,17 @@ def main() -> int:
         "external_trial_failed_steps": report.get("summary", {}).get("external_trial_failed_steps", []),
         "official_testnet_gate_status": report.get("summary", {}).get("official_testnet_gate_status", "missing"),
         "v2_adversarial_gate_status": report.get("summary", {}).get("v2_adversarial_gate_status", "missing"),
+        "consensus_gate_status": report.get("summary", {}).get("consensus_gate_status", "missing"),
+        "consensus_core_status": report.get("summary", {}).get("consensus_core_status", "missing"),
+        "consensus_sync_status": report.get("summary", {}).get("consensus_sync_status", "missing"),
+        "consensus_catchup_status": report.get("summary", {}).get("consensus_catchup_status", "missing"),
+        "consensus_network_status": report.get("summary", {}).get("consensus_network_status", "missing"),
+        "consensus_recovery_status": report.get("summary", {}).get("consensus_recovery_status", "missing"),
+        "consensus_tcp_evidence_status": report.get("summary", {}).get("consensus_tcp_evidence_status", "missing"),
+        "consensus_formal_tcp_evidence_ready": report.get("summary", {}).get(
+            "consensus_formal_tcp_evidence_ready", False
+        ),
+        "consensus_tcp_step_notes": report.get("summary", {}).get("consensus_tcp_step_notes", []),
         "v2_account_recovery_gate_status": report.get("summary", {}).get("v2_account_recovery_gate_status", "missing"),
         "v2_account_recovery_final_sync_health": report.get("summary", {}).get(
             "v2_account_recovery_final_sync_health", ""

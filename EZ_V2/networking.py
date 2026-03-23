@@ -15,6 +15,13 @@ MSG_BUNDLE_REJECT = "bundle_reject"
 MSG_BLOCK_ANNOUNCE = "block_announce"
 MSG_BLOCK_FETCH_REQ = "block_fetch_req"
 MSG_BLOCK_FETCH_RESP = "block_fetch_resp"
+MSG_CONSENSUS_BUNDLE_FORWARD = "consensus_bundle_forward"
+MSG_CONSENSUS_FINALIZE = "consensus_finalize"
+MSG_CONSENSUS_PROPOSAL = "consensus_proposal"
+MSG_CONSENSUS_SORTITION_CLAIM = "consensus_sortition_claim"
+MSG_CONSENSUS_TIMEOUT_CERT = "consensus_timeout_cert"
+MSG_CONSENSUS_TIMEOUT_VOTE = "consensus_timeout_vote"
+MSG_CONSENSUS_VOTE = "consensus_vote"
 MSG_RECEIPT_DELIVER = "receipt_deliver"
 MSG_RECEIPT_REQ = "receipt_req"
 MSG_RECEIPT_RESP = "receipt_resp"
@@ -96,6 +103,13 @@ __all__ = [
     "MSG_BUNDLE_ACK",
     "MSG_BUNDLE_REJECT",
     "MSG_BUNDLE_SUBMIT",
+    "MSG_CONSENSUS_BUNDLE_FORWARD",
+    "MSG_CONSENSUS_FINALIZE",
+    "MSG_CONSENSUS_PROPOSAL",
+    "MSG_CONSENSUS_SORTITION_CLAIM",
+    "MSG_CONSENSUS_TIMEOUT_CERT",
+    "MSG_CONSENSUS_TIMEOUT_VOTE",
+    "MSG_CONSENSUS_VOTE",
     "MSG_CHAIN_STATE_REQ",
     "MSG_CHAIN_STATE_RESP",
     "MSG_CHECKPOINT_REQ",

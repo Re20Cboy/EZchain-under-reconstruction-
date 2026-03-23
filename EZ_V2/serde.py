@@ -29,6 +29,18 @@ from .types import (
     TransferPackage,
     WitnessV2,
 )
+from .consensus.pacemaker import PacemakerState
+from .consensus.sortition import VRFProposerClaim
+from .consensus.types import (
+    ConsensusGenesisConfig,
+    ConsensusValidator,
+    Proposal,
+    QC,
+    TC,
+    TimeoutVote,
+    Vote,
+    VotePhase,
+)
 from .values import LocalValueRecord, LocalValueStatus, ValueRange
 from .networking import (
     ChainSyncCursor,
@@ -56,16 +68,25 @@ _DATACLASS_REGISTRY = {
         DiffPackage,
         GenesisAnchor,
         HeaderLite,
+        ConsensusGenesisConfig,
+        ConsensusValidator,
         LocalValueRecord,
         OffChainTx,
+        PacemakerState,
         PendingBundleContext,
         PriorWitnessLink,
+        Proposal,
+        QC,
         Receipt,
         ReceiptResponse,
         ReceiptSyncCursor,
         SparseMerkleProof,
+        TC,
+        TimeoutVote,
         TransferPackage,
         TransferMailboxEvent,
+        VRFProposerClaim,
+        Vote,
         ChainSyncCursor,
         PeerInfo,
         NetworkEnvelope,
@@ -76,15 +97,24 @@ _DATACLASS_REGISTRY = {
 
 _ENUM_REGISTRY = {
     LocalValueStatus.__name__: LocalValueStatus,
+    VotePhase.__name__: VotePhase,
+}
+
+_LAZY_DATACLASS_LOADERS = {
+    "BlockSyncResult": ("EZ_V2.network_host", "BlockSyncResult"),
+    "ConsensusRuntimeSnapshot": ("EZ_V2.network_host", "ConsensusRuntimeSnapshot"),
 }
 
 _TUPLE_FIELDS = {
+    "ConsensusGenesisConfig": {"validators"},
     "OffChainTx": {"value_list"},
     "BundleSidecar": {"tx_list"},
-    "SparseMerkleProof": {"siblings"},
-    "WitnessV2": {"confirmed_bundle_chain"},
     "DiffPackage": {"diff_entries", "sidecars", "sender_public_keys"},
     "PendingBundleContext": {"pending_record_ids", "outgoing_record_ids", "outgoing_values"},
+    "QC": {"signers"},
+    "SparseMerkleProof": {"siblings"},
+    "TC": {"signers"},
+    "WitnessV2": {"confirmed_bundle_chain"},
 }
 
 
@@ -130,7 +160,15 @@ def from_json_obj(value: Any) -> Any:
             return enum_cls(value["value"])
         if "__type__" in value:
             cls_name = value["__type__"]
-            cls = _DATACLASS_REGISTRY[cls_name]
+            cls = _DATACLASS_REGISTRY.get(cls_name)
+            if cls is None:
+                lazy_loader = _LAZY_DATACLASS_LOADERS.get(cls_name)
+                if lazy_loader is None:
+                    raise KeyError(cls_name)
+                module_name, attr_name = lazy_loader
+                module = __import__(module_name, fromlist=[attr_name])
+                cls = getattr(module, attr_name)
+                _DATACLASS_REGISTRY[cls_name] = cls
             tuple_fields = _TUPLE_FIELDS.get(cls_name, set())
             kwargs = {}
             for key, raw_item in value.items():

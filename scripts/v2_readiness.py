@@ -40,6 +40,21 @@ def _evaluate(report: dict[str, Any]) -> dict[str, Any]:
             "detail": f"v2_adversarial_gate_status={summary.get('v2_adversarial_gate_status', 'missing')}",
         },
         {
+            "name": "consensus_gate",
+            "required": True,
+            "status": "passed" if summary.get("consensus_gate_status") == "passed" else "failed",
+            "detail": f"consensus_gate_status={summary.get('consensus_gate_status', 'missing')}",
+        },
+        {
+            "name": "consensus_tcp_evidence",
+            "required": False,
+            "status": "passed" if summary.get("consensus_formal_tcp_evidence_ready") is True else "failed",
+            "detail": (
+                "consensus_tcp_evidence_status="
+                f"{summary.get('consensus_tcp_evidence_status', 'missing')}"
+            ),
+        },
+        {
             "name": "v2_account_recovery_gate",
             "required": True,
             "status": "passed" if summary.get("v2_account_recovery_gate_status") == "passed" else "failed",

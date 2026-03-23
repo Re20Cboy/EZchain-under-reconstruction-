@@ -245,6 +245,18 @@ class BundlePool:
     def remove_sender(self, sender_addr: str) -> None:
         self._pending_by_sender.pop(sender_addr, None)
 
+    def remove_finalized_bundle(self, sender_addr: str, seq: int, bundle_hash: bytes) -> bool:
+        existing = self._pending_by_sender.get(sender_addr)
+        if existing is None:
+            return False
+        existing_seq = existing.envelope.seq
+        if existing_seq > seq:
+            return False
+        if existing_seq < seq or existing.envelope.bundle_hash == bundle_hash or existing_seq == seq:
+            self._pending_by_sender.pop(sender_addr, None)
+            return True
+        return False
+
 
 class ChainStateV2:
     def __init__(
@@ -313,6 +325,22 @@ class ChainStateV2:
             proposer_sig=proposer_sig,
             consensus_extra=consensus_extra,
             remove_from_pool=True,
+        )
+
+    def preview_block(
+        self,
+        timestamp: int,
+        proposer_sig: bytes = b"",
+        consensus_extra: bytes = b"",
+        limit: int | None = None,
+    ) -> tuple[BlockV2, dict[str, Receipt]]:
+        preview = self.copy()
+        preview.bundle_pool._pending_by_sender = dict(self.bundle_pool._pending_by_sender)
+        return preview.build_block(
+            timestamp=timestamp,
+            proposer_sig=proposer_sig,
+            consensus_extra=consensus_extra,
+            limit=limit,
         )
 
     def _prepare_entries(
@@ -424,7 +452,11 @@ class ChainStateV2:
         self.blocks.append(block)
         if remove_from_pool:
             for submission in submissions:
-                self.bundle_pool.remove_sender(submission.sidecar.sender_addr)
+                self.bundle_pool.remove_finalized_bundle(
+                    submission.sidecar.sender_addr,
+                    submission.envelope.seq,
+                    submission.envelope.bundle_hash,
+                )
         return block, receipts
 
     def apply_block(self, block: BlockV2) -> dict[str, Receipt]:
@@ -512,6 +544,12 @@ class ChainStateV2:
         self.tree = temp_tree
         self.account_leaves = temp_account_leaves
         self.blocks.append(block)
+        for entry in entries:
+            self.bundle_pool.remove_finalized_bundle(
+                entry.new_leaf.addr,
+                entry.bundle_envelope.seq,
+                entry.bundle_hash,
+            )
         return receipts
 
 

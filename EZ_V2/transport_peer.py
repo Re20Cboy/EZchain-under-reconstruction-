@@ -176,7 +176,13 @@ class TransportPeerNetwork:
             try:
                 result = self._handler(envelope)
                 for pending in list(self._active_remote_deliveries):
-                    await self._send_remote(pending)
+                    try:
+                        await self._send_remote(pending)
+                    except Exception:
+                        # Remote follow-up deliveries are best-effort. A down
+                        # peer must not turn the original request into a hard
+                        # failure for the caller.
+                        continue
                 return {
                     "result": result,
                     "deliveries": list(self._active_outbox),

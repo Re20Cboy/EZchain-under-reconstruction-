@@ -148,6 +148,7 @@ class V2Runtime:
         for context in wallet.list_pending_bundles():
             response = self.get_receipt(sender_addr, context.seq)
             if response.receipt is None:
+                wallet.mark_receipt_missing(context.seq)
                 results.append(
                     ReceiptDeliveryResult(
                         sender_addr=sender_addr,

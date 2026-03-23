@@ -25,6 +25,10 @@ def run_step(name: str, cmd: List[str], cwd: Path, dry_run: bool) -> Dict[str, A
     }
 
 
+def should_with_v2_account_recovery(args: argparse.Namespace) -> bool:
+    return bool(args.with_v2_account_recovery or args.with_stability)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build and validate EZchain release candidate")
     parser.add_argument("--version", required=True, help="e.g. v0.1.0-rc1")
@@ -64,6 +68,7 @@ def main() -> int:
         sys.executable,
         "scripts/release_report.py",
         "--run-gates",
+        "--with-consensus",
         "--out-json",
         "dist/release_report.json",
         "--out-md",
@@ -73,7 +78,7 @@ def main() -> int:
         report_cmd.append("--with-stability")
     if args.with_v2_adversarial:
         report_cmd.append("--with-v2-adversarial")
-    if args.with_v2_account_recovery:
+    if should_with_v2_account_recovery(args):
         report_cmd.append("--with-v2-account-recovery")
     if args.allow_bind_restricted_skip:
         report_cmd.append("--allow-bind-restricted-skip")

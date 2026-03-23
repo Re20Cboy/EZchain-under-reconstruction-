@@ -203,6 +203,11 @@ def sign_digest_secp256k1(private_key_pem: bytes, digest: bytes) -> bytes:
         return normalize_low_s(sig_path.read_bytes())
 
 
+def sign_message_secp256k1(private_key_pem: bytes, message: bytes, *, domain: bytes = b"") -> bytes:
+    digest = hashlib.sha256(domain + message).digest()
+    return sign_digest_secp256k1(private_key_pem, digest)
+
+
 def verify_digest_secp256k1(public_key_pem: bytes, digest: bytes, signature: bytes) -> bool:
     if len(digest) != 32:
         return False
@@ -236,3 +241,8 @@ def verify_digest_secp256k1(public_key_pem: bytes, digest: bytes, signature: byt
             text=False,
         )
         return result.returncode == 0
+
+
+def verify_message_secp256k1(public_key_pem: bytes, message: bytes, signature: bytes, *, domain: bytes = b"") -> bool:
+    digest = hashlib.sha256(domain + message).digest()
+    return verify_digest_secp256k1(public_key_pem, digest, signature)

@@ -206,6 +206,22 @@ class V2ConsensusNode:
         deliveries = self.runtime.deliver_receipts(receipts)
         return ProduceBlockResult(block=block, receipts=receipts, deliveries=deliveries)
 
+    def preview_block(
+        self,
+        timestamp: int | None = None,
+        proposer_sig: bytes = b"",
+        consensus_extra: bytes = b"",
+        limit: int | None = None,
+    ) -> tuple[BlockV2, dict[str, Receipt]]:
+        if not self.chain.bundle_pool.snapshot(limit=limit):
+            raise ValueError("no pending bundles to package")
+        return self.chain.preview_block(
+            timestamp=int(time.time()) if timestamp is None else timestamp,
+            proposer_sig=proposer_sig,
+            consensus_extra=consensus_extra,
+            limit=limit,
+        )
+
     def apply_block(self, block: BlockV2) -> ApplyBlockResult:
         receipts = self.chain.apply_block(block)
         self.store.save_applied_block(

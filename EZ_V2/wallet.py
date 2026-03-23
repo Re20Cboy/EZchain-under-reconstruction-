@@ -462,6 +462,20 @@ class WalletAccountV2:
         self._persist_records(updated_records)
         return confirmed_unit
 
+    def mark_receipt_missing(self, seq: int) -> PendingBundleContext:
+        context = self.db.get_pending_bundle(self.address, seq)
+        if context is None:
+            raise ValueError("no pending bundle matches seq")
+        pending_ids = set(context.pending_record_ids)
+        updated_records: list[LocalValueRecord] = []
+        for record in self.records:
+            if record.record_id in pending_ids and record.local_status == LocalValueStatus.PENDING_BUNDLE:
+                updated_records.append(replace(record, local_status=LocalValueStatus.RECEIPT_MISSING))
+            else:
+                updated_records.append(record)
+        self._persist_records(updated_records)
+        return context
+
     def apply_sender_confirmed_unit(
         self,
         confirmed_unit: ConfirmedBundleUnit,

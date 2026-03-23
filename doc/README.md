@@ -18,6 +18,8 @@
 ### 开发者
 - 提交前与 RC 测试：`doc/DEV_TESTING.md`
 - V2 默认化判断：`doc/V2_DEFAULT_READINESS.md`
+- 发布报告与 readiness 现在会单独展示共识 TCP 正式证据状态，不再把
+  “consensus gate 已通过”和“TCP 正式证据已形成”混为一件事
 - P2P 现状：`doc/EZ_P2P_Status.md`
 
 ### 发布与运维
@@ -37,3 +39,5 @@
 2. 用 `doc/USER_QUICKSTART.md` 或 `doc/OFFICIAL_TESTNET_TRIAL_RUNBOOK.md` 走用户路径。
 3. 提交前执行 `doc/DEV_TESTING.md`。
 4. 发版前执行 `doc/RELEASE_CHECKLIST.md`。
+5. 判断是否达到默认正式交付路径时，再看 `doc/V2_DEFAULT_READINESS.md`；
+   当前要额外关注共识 TCP 证据是否真的已经形成。
