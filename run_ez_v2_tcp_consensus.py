@@ -19,22 +19,62 @@ def _parse_endpoint(endpoint: str) -> tuple[str, int]:
     return host.strip(), int(port_s)
 
 
-def run_daemon(root_dir: str, chain_id: int, state_file: str, heartbeat_sec: float, endpoint: str) -> None:
+def _parse_peer_spec(spec: str) -> PeerInfo:
+    node_id, endpoint = str(spec).split("=", 1)
+    node_id = node_id.strip()
+    endpoint = endpoint.strip()
+    if not node_id:
+        raise ValueError("peer_spec_missing_node_id")
+    _parse_endpoint(endpoint)
+    return PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint)
+
+
+def _build_consensus_peers(*, node_id: str, endpoint: str, peer_specs: tuple[str, ...]) -> tuple[PeerInfo, ...]:
+    if not peer_specs:
+        return (PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint),)
+    peers = tuple(_parse_peer_spec(spec) for spec in peer_specs)
+    local_peer = next((peer for peer in peers if peer.node_id == node_id), None)
+    if local_peer is None:
+        raise ValueError("local_node_missing_from_peer_specs")
+    if local_peer.endpoint != endpoint:
+        raise ValueError("local_node_endpoint_mismatch")
+    return peers
+
+
+def run_daemon(
+    *,
+    root_dir: str,
+    chain_id: int,
+    state_file: str,
+    heartbeat_sec: float,
+    node_id: str,
+    endpoint: str,
+    peer_specs: tuple[str, ...],
+    consensus_mode: str,
+    validator_ids: tuple[str, ...],
+    auto_run_mvp_consensus: bool,
+) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
 
-    peer = PeerInfo(node_id="consensus-0", role="consensus", endpoint=endpoint)
+    peers = _build_consensus_peers(node_id=node_id, endpoint=endpoint, peer_specs=peer_specs)
+    peer_map = {peer.node_id: peer for peer in peers}
+    peer = peer_map[node_id]
     host, port = _parse_endpoint(endpoint)
     network = TransportPeerNetwork(
         TCPNetworkTransport(host, port),
-        (peer,),
+        peers,
     )
+    effective_validator_ids = tuple(validator_ids) or tuple(item.node_id for item in peers)
     consensus = V2ConsensusHost(
         node_id=peer.node_id,
         endpoint=peer.endpoint,
         store_path=str(root / "consensus.sqlite3"),
         network=network,
         chain_id=chain_id,
+        consensus_mode=consensus_mode,
+        consensus_validator_ids=effective_validator_ids,
+        auto_run_mvp_consensus=auto_run_mvp_consensus,
     )
 
     running = True
@@ -56,7 +96,12 @@ def run_daemon(root_dir: str, chain_id: int, state_file: str, heartbeat_sec: flo
                     "mode": "v2-tcp-consensus",
                     "pid": os.getpid(),
                     "root_dir": str(root),
+                    "node_id": node_id,
                     "endpoint": endpoint,
+                    "peer_endpoints": {item.node_id: item.endpoint for item in peers},
+                    "consensus_mode": consensus_mode,
+                    "consensus_validator_ids": list(effective_validator_ids),
+                    "auto_run_mvp_consensus": auto_run_mvp_consensus,
                     "started_at": started_at,
                     "updated_at": int(time.time()),
                     "backend": read_backend_metadata(str(root)),
@@ -74,7 +119,31 @@ def main() -> None:
     parser.add_argument("--state-file", required=True, help="State file for daemon mode")
     parser.add_argument("--chain-id", type=int, default=1, help="Chain id for the V2 consensus daemon")
     parser.add_argument("--heartbeat-sec", type=float, default=0.5, help="Heartbeat interval")
+    parser.add_argument("--node-id", default="consensus-0", help="Consensus node id for this daemon")
     parser.add_argument("--endpoint", default="127.0.0.1:19500", help="TCP listen endpoint")
+    parser.add_argument(
+        "--peer",
+        action="append",
+        default=[],
+        help="Repeatable consensus peer spec in the form node_id=host:port",
+    )
+    parser.add_argument(
+        "--consensus-mode",
+        choices=("legacy", "mvp"),
+        default="legacy",
+        help="Consensus host mode",
+    )
+    parser.add_argument(
+        "--validator-id",
+        action="append",
+        default=[],
+        help="Repeatable validator id list for mvp consensus; defaults to the configured peer ids",
+    )
+    parser.add_argument(
+        "--auto-run-mvp-consensus",
+        action="store_true",
+        help="Automatically route and commit mvp consensus bundles through the selected proposer",
+    )
     args = parser.parse_args()
 
     run_daemon(
@@ -82,7 +151,12 @@ def main() -> None:
         chain_id=args.chain_id,
         state_file=args.state_file,
         heartbeat_sec=args.heartbeat_sec,
+        node_id=args.node_id,
         endpoint=args.endpoint,
+        peer_specs=tuple(args.peer),
+        consensus_mode=args.consensus_mode,
+        validator_ids=tuple(args.validator_id),
+        auto_run_mvp_consensus=bool(args.auto_run_mvp_consensus),
     )
 
 
