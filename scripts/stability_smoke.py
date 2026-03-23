@@ -66,7 +66,7 @@ def build_summary(
     if restart_probe_failures > int(max_restart_probe_failures):
         blocking_reasons.append(f"restart_probe_failures>{int(max_restart_probe_failures)}")
     return {
-        "ok": not blocking_reasons,
+        "ok": bool(skipped_bind_restricted) or not blocking_reasons,
         "skipped_bind_restricted": bool(skipped_bind_restricted),
         "cycles": int(cycles),
         "checks": total,
@@ -172,8 +172,8 @@ def main() -> int:
             bind_restricted = "PermissionError" in err and "Operation not permitted" in err
             summary = build_summary(
                 cycles=int(args.cycles),
-                checks=int(args.cycles),
-                failures=int(args.cycles),
+                checks=0 if bind_restricted and args.allow_bind_restricted_skip else int(args.cycles),
+                failures=0 if bind_restricted and args.allow_bind_restricted_skip else int(args.cycles),
                 max_failures=int(args.max_failures),
                 max_failure_rate=float(args.max_failure_rate),
                 burst_every=burst_every,
@@ -181,16 +181,16 @@ def main() -> int:
                 burst_checks=0,
                 jitter=jitter_ratio,
                 restarts=0,
-                max_consecutive_failures=int(args.cycles),
+                max_consecutive_failures=0 if bind_restricted and args.allow_bind_restricted_skip else int(args.cycles),
                 max_consecutive_failures_allowed=int(args.max_consecutive_failures),
                 restart_probe_failures=0,
                 max_restart_probe_failures=int(args.max_restart_probe_failures),
                 duration_seconds=time.time() - started_at,
-                failure_cycles=list(range(1, int(args.cycles) + 1)),
+                failure_cycles=[] if bind_restricted and args.allow_bind_restricted_skip else list(range(1, int(args.cycles) + 1)),
                 restart_failure_cycles=[],
-                max_failed_cycle_streak=int(args.cycles),
-                max_failed_cycle_streak_start=1 if int(args.cycles) > 0 else 0,
-                max_failed_cycle_streak_end=int(args.cycles),
+                max_failed_cycle_streak=0 if bind_restricted and args.allow_bind_restricted_skip else int(args.cycles),
+                max_failed_cycle_streak_start=0 if bind_restricted and args.allow_bind_restricted_skip else (1 if int(args.cycles) > 0 else 0),
+                max_failed_cycle_streak_end=0 if bind_restricted and args.allow_bind_restricted_skip else int(args.cycles),
                 skipped_bind_restricted=bool(args.allow_bind_restricted_skip and bind_restricted),
             )
             if args.json_out:

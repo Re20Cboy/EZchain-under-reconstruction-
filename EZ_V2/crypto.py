@@ -16,7 +16,19 @@ LOW_S_MAX = SECP256K1_ORDER // 2
 
 
 def keccak256(data: bytes) -> bytes:
-    return hashlib.new("keccak-256", data).digest()
+    try:
+        return hashlib.new("keccak-256", data).digest()
+    except ValueError:
+        try:
+            from Crypto.Hash import keccak  # type: ignore
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "keccak-256 is unavailable in hashlib and pycryptodome is not installed. "
+                "Install dependencies from requirements.txt or add pycryptodome."
+            ) from exc
+        digest = keccak.new(digest_bits=256)
+        digest.update(data)
+        return digest.digest()
 
 
 def _run_openssl(*args: str) -> subprocess.CompletedProcess:

@@ -121,8 +121,17 @@ def test_prepare_rc_carries_external_trial_progress_fields():
                         "consensus_tcp_step_notes": [
                             "consensus_tcp_catchup_suite: all skipped after 3 attempt(s); SKIPPED [1] foo: bind_not_permitted:[Errno 1] Operation not permitted"
                         ],
+                        "stability_gate_status": "passed",
+                        "stability_failures": 0,
+                        "stability_failure_rate": 0.0,
+                        "stability_restarts": 2,
+                        "stability_burst_checks": 6,
+                        "stability_blocking_reasons": [],
                         "v2_account_recovery_gate_status": "passed",
                         "v2_account_recovery_final_sync_health": "healthy",
+                        "v2_account_recovery_final_sync_health_reason": "stable_after_recovery",
+                        "v2_account_recovery_flaps_requested": 2,
+                        "v2_account_recovery_flaps_completed": 2,
                         "v2_account_recovery_blocking_reasons": [],
                     },
                 },
@@ -130,6 +139,7 @@ def test_prepare_rc_carries_external_trial_progress_fields():
             ),
             encoding="utf-8",
         )
+        report_path.with_suffix(".md").write_text("# report\n", encoding="utf-8")
         readiness_path.write_text(
             json.dumps(
                 {
@@ -140,6 +150,7 @@ def test_prepare_rc_carries_external_trial_progress_fields():
             ),
             encoding="utf-8",
         )
+        readiness_path.with_suffix(".md").write_text("# readiness\n", encoding="utf-8")
 
         subprocess.run(
             [
@@ -173,9 +184,22 @@ def test_prepare_rc_carries_external_trial_progress_fields():
         assert manifest["consensus_tcp_step_notes"] == [
             "consensus_tcp_catchup_suite: all skipped after 3 attempt(s); SKIPPED [1] foo: bind_not_permitted:[Errno 1] Operation not permitted"
         ]
+        assert manifest["release_report_md"] == str(report_path.with_suffix(".md"))
+        assert manifest["v2_readiness_md"] == str(readiness_path.with_suffix(".md"))
+        assert manifest["stability_gate_status"] == "passed"
+        assert manifest["stability_restarts"] == 2
+        assert manifest["stability_burst_checks"] == 6
+        assert manifest["stability_blocking_reasons"] == []
         assert manifest["v2_account_recovery_gate_status"] == "passed"
         assert manifest["v2_account_recovery_final_sync_health"] == "healthy"
+        assert manifest["v2_account_recovery_final_sync_health_reason"] == "stable_after_recovery"
+        assert manifest["v2_account_recovery_flaps_requested"] == 2
+        assert manifest["v2_account_recovery_flaps_completed"] == 2
         assert manifest["v2_account_recovery_blocking_reasons"] == []
+        assert manifest["artifacts"]["release_report_json"]["exists"] is True
+        assert manifest["artifacts"]["release_report_md"]["exists"] is True
+        assert manifest["artifacts"]["v2_readiness_json"]["exists"] is True
+        assert manifest["artifacts"]["v2_readiness_md"]["exists"] is True
         assert "consensus_tcp_evidence_status" in notes_text
         assert "consensus_tcp_step_notes" in notes_text
         assert "bind-restricted" in notes_text
@@ -208,6 +232,12 @@ def test_release_candidate_dry_run_always_carries_consensus_gate():
 
         assert "--with-consensus" in report_step["command"]
         assert payload["status"] == "planned"
+        assert payload["artifacts_ready"] is False
+        assert payload["artifacts"]["release_report_json"]["path"] == "dist/release_report.json"
+        assert payload["artifacts"]["release_report_json"]["exists"] is False
+        assert payload["artifacts"]["v2_readiness_json"]["path"] == "dist/v2_readiness.json"
+        assert payload["artifacts"]["rc_manifest"]["path"] == "dist/rc_manifest.json"
+        assert payload["artifacts"]["release_notes"]["path"] == "doc/releases/v0.1.0-rc-test.md"
         assert "[release-candidate] wrote" in proc.stdout
 
 
@@ -510,6 +540,101 @@ def test_release_report_markdown_includes_tcp_step_notes():
 
     assert "TCP step details:" in markdown
     assert "consensus_tcp_catchup_suite: all skipped after 3 attempt(s)" in markdown
+
+
+def test_release_report_markdown_includes_stability_and_recovery_sections():
+    markdown = to_markdown(
+        {
+            "generated_at": "2026-03-23T00:00:00Z",
+            "git_head": "abc123",
+            "overall_status": "passed",
+            "summary": {
+                "stability_gate_status": "passed",
+                "stability_skipped_bind_restricted": False,
+                "stability_failures": 0,
+                "stability_failure_rate": 0.0,
+                "stability_restarts": 2,
+                "stability_burst_checks": 6,
+                "stability_failure_cycles": [],
+                "stability_restart_failure_cycles": [],
+                "stability_max_failed_cycle_streak": 0,
+                "stability_blocking_reasons": [],
+                "v2_account_recovery_gate_status": "passed",
+                "v2_account_recovery_skipped_bind_restricted": False,
+                "v2_account_recovery_flaps_requested": 2,
+                "v2_account_recovery_flaps_completed": 2,
+                "v2_account_recovery_final_sync_health": "healthy",
+                "v2_account_recovery_final_sync_health_reason": "stable_after_recovery",
+                "v2_account_recovery_degraded_rounds": [1],
+                "v2_account_recovery_recovered_rounds": [1],
+                "v2_account_recovery_steady_rounds": [1],
+                "v2_account_recovery_blocking_reasons": [],
+            },
+            "risks": [],
+            "steps": [],
+        }
+    )
+
+    assert "## Stability Evidence" in markdown
+    assert "stability_restarts: 2" in markdown
+    assert "## V2 Account Recovery" in markdown
+    assert "v2_account_recovery_final_sync_health: healthy" in markdown
+
+
+def test_v2_readiness_main_records_source_report_metadata():
+    repo_root = Path(__file__).resolve().parent.parent
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        report_path = tmp / "release_report.json"
+        out_json = tmp / "v2_readiness.json"
+        out_md = tmp / "v2_readiness.md"
+        report_path.write_text(
+            json.dumps(
+                {
+                    "generated_at": "2026-03-23T00:00:00Z",
+                    "git_head": "abc123",
+                    "overall_status": "passed",
+                    "risks": [],
+                    "summary": {
+                        "v2_gate_status": "passed",
+                        "v2_adversarial_gate_status": "passed",
+                        "consensus_gate_status": "passed",
+                        "v2_account_recovery_gate_status": "passed",
+                        "stability_gate_status": "passed",
+                        "official_testnet_gate_status": "passed",
+                        "external_trial_gate_status": "passed",
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        subprocess.run(
+            [
+                sys.executable,
+                "scripts/v2_readiness.py",
+                "--report-json",
+                str(report_path),
+                "--out-json",
+                str(out_json),
+                "--out-md",
+                str(out_md),
+            ],
+            cwd=str(repo_root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        payload = json.loads(out_json.read_text(encoding="utf-8"))
+        markdown = out_md.read_text(encoding="utf-8")
+        assert payload["source_report_json"] == str(report_path)
+        assert payload["source_report_git_head"] == "abc123"
+        assert payload["source_report_generated_at"] == "2026-03-23T00:00:00Z"
+        assert "source_report_json" in markdown
+        assert "source_report_git_head: abc123" in markdown
 
 
 def test_v2_readiness_blocks_when_consensus_gate_is_missing():

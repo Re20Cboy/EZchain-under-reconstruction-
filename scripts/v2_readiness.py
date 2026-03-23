@@ -106,9 +106,22 @@ def _to_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- generated_at: {payload['generated_at']}",
         f"- ready_for_v2_default: {payload['ready_for_v2_default']}",
-        "",
-        "## Checks",
     ]
+    source_report_json = str(payload.get("source_report_json", "") or "").strip()
+    if source_report_json:
+        lines.append(f"- source_report_json: {source_report_json}")
+    source_report_git_head = str(payload.get("source_report_git_head", "") or "").strip()
+    if source_report_git_head:
+        lines.append(f"- source_report_git_head: {source_report_git_head}")
+    source_report_generated_at = str(payload.get("source_report_generated_at", "") or "").strip()
+    if source_report_generated_at:
+        lines.append(f"- source_report_generated_at: {source_report_generated_at}")
+    lines.extend(
+        [
+            "",
+            "## Checks",
+        ]
+    )
     for item in payload["checks"]:
         marker = "PASS" if item["status"] == "passed" else "FAIL"
         lines.append(f"- [{marker}] {item['name']}: {item['detail']}")
@@ -129,8 +142,13 @@ def main() -> int:
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
-    report = _load_json((root / args.report_json) if not Path(args.report_json).is_absolute() else Path(args.report_json))
+    report_path = (root / args.report_json) if not Path(args.report_json).is_absolute() else Path(args.report_json)
+    report = _load_json(report_path)
     payload = _evaluate(report)
+    payload["source_report_json"] = str(report_path)
+    payload["source_report_generated_at"] = report.get("generated_at", "")
+    payload["source_report_git_head"] = report.get("git_head", "")
+    payload["source_report_overall_status"] = report.get("overall_status", "")
 
     out_json = Path(args.out_json)
     out_md = Path(args.out_md)

@@ -115,3 +115,35 @@ def test_build_summary_passes_when_all_red_lines_hold():
     assert summary["failure_cycles"] == []
     assert summary["restart_failure_cycles"] == []
     assert summary["blocking_reasons"] == []
+
+
+def test_build_summary_treats_bind_restricted_skip_as_non_blocking():
+    summary = build_summary(
+        cycles=10,
+        checks=0,
+        failures=0,
+        max_failures=0,
+        max_failure_rate=0.0,
+        burst_every=0,
+        burst_size=1,
+        burst_checks=0,
+        jitter=0.0,
+        restarts=0,
+        max_consecutive_failures=0,
+        max_consecutive_failures_allowed=0,
+        restart_probe_failures=0,
+        max_restart_probe_failures=0,
+        duration_seconds=0.5,
+        failure_cycles=[],
+        restart_failure_cycles=[],
+        max_failed_cycle_streak=0,
+        max_failed_cycle_streak_start=0,
+        max_failed_cycle_streak_end=0,
+        skipped_bind_restricted=True,
+    )
+
+    assert summary["ok"] is True
+    assert summary["skipped_bind_restricted"] is True
+    assert summary["failures"] == 0
+    assert summary["failure_cycles"] == []
+    assert summary["blocking_reasons"] == []

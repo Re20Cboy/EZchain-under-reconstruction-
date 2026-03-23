@@ -298,6 +298,64 @@ def to_markdown(payload: Dict[str, Any]) -> str:
             lines.append("- TCP step details:")
             for note in tcp_step_notes:
                 lines.append(f"  - {note}")
+    if "stability_gate_status" in summary:
+        lines.extend(
+            [
+                "",
+                "## Stability Evidence",
+                f"- stability_gate_status: {summary.get('stability_gate_status', 'missing')}",
+                f"- stability_skipped_bind_restricted: {summary.get('stability_skipped_bind_restricted', False)}",
+                f"- stability_failures: {summary.get('stability_failures', 'missing')}",
+                f"- stability_failure_rate: {summary.get('stability_failure_rate', 'missing')}",
+                f"- stability_restarts: {summary.get('stability_restarts', 'missing')}",
+                f"- stability_burst_checks: {summary.get('stability_burst_checks', 'missing')}",
+                f"- stability_failure_cycles: {summary.get('stability_failure_cycles', [])}",
+                f"- stability_restart_failure_cycles: {summary.get('stability_restart_failure_cycles', [])}",
+                f"- stability_max_failed_cycle_streak: {summary.get('stability_max_failed_cycle_streak', 0)}",
+                f"- stability_blocking_reasons: {summary.get('stability_blocking_reasons', [])}",
+            ]
+        )
+    if "v2_account_recovery_gate_status" in summary:
+        lines.extend(
+            [
+                "",
+                "## V2 Account Recovery",
+                f"- v2_account_recovery_gate_status: {summary.get('v2_account_recovery_gate_status', 'missing')}",
+                (
+                    "- v2_account_recovery_skipped_bind_restricted: "
+                    f"{summary.get('v2_account_recovery_skipped_bind_restricted', False)}"
+                ),
+                (
+                    "- v2_account_recovery_flaps: "
+                    f"{summary.get('v2_account_recovery_flaps_completed', 'missing')}/"
+                    f"{summary.get('v2_account_recovery_flaps_requested', 'missing')}"
+                ),
+                (
+                    "- v2_account_recovery_final_sync_health: "
+                    f"{summary.get('v2_account_recovery_final_sync_health', 'missing')}"
+                ),
+                (
+                    "- v2_account_recovery_final_sync_health_reason: "
+                    f"{summary.get('v2_account_recovery_final_sync_health_reason', '')}"
+                ),
+                (
+                    "- v2_account_recovery_degraded_rounds: "
+                    f"{summary.get('v2_account_recovery_degraded_rounds', [])}"
+                ),
+                (
+                    "- v2_account_recovery_recovered_rounds: "
+                    f"{summary.get('v2_account_recovery_recovered_rounds', [])}"
+                ),
+                (
+                    "- v2_account_recovery_steady_rounds: "
+                    f"{summary.get('v2_account_recovery_steady_rounds', [])}"
+                ),
+                (
+                    "- v2_account_recovery_blocking_reasons: "
+                    f"{summary.get('v2_account_recovery_blocking_reasons', [])}"
+                ),
+            ]
+        )
     lines.extend(
         [
             "",

@@ -29,6 +29,22 @@ def should_with_v2_account_recovery(args: argparse.Namespace) -> bool:
     return bool(args.with_v2_account_recovery or args.with_stability)
 
 
+def _path_for_manifest(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def _artifact_entry(path: Path, root: Path, *, produced_by: str, required: bool = True) -> Dict[str, Any]:
+    return {
+        "path": _path_for_manifest(path, root),
+        "exists": path.exists(),
+        "required": required,
+        "produced_by": produced_by,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build and validate EZchain release candidate")
     parser.add_argument("--version", required=True, help="e.g. v0.1.0-rc1")
@@ -167,19 +183,70 @@ def main() -> int:
 
     failed = any(step["status"] == "failed" for step in steps)
     status = "failed" if failed else ("planned" if args.dry_run else "passed")
+    notes_path = root / "doc" / "releases" / f"{args.version}.md"
+    report_json_path = root / "dist" / "release_report.json"
+    report_md_path = root / "dist" / "release_report.md"
+    readiness_json_path = root / "dist" / "v2_readiness.json"
+    readiness_md_path = root / "dist" / "v2_readiness.md"
+    rc_manifest_path = root / "dist" / "rc_manifest.json"
+    manifest_path = root / args.manifest_out
+    artifacts = {
+        "release_candidate_manifest": _artifact_entry(
+            manifest_path,
+            root,
+            produced_by="release_candidate",
+        ),
+        "release_report_json": _artifact_entry(
+            report_json_path,
+            root,
+            produced_by="release_report",
+        ),
+        "release_report_md": _artifact_entry(
+            report_md_path,
+            root,
+            produced_by="release_report",
+        ),
+        "v2_readiness_json": _artifact_entry(
+            readiness_json_path,
+            root,
+            produced_by="v2_readiness",
+        ),
+        "v2_readiness_md": _artifact_entry(
+            readiness_md_path,
+            root,
+            produced_by="v2_readiness",
+        ),
+        "rc_manifest": _artifact_entry(
+            rc_manifest_path,
+            root,
+            produced_by="prepare_rc",
+        ),
+        "release_notes": _artifact_entry(
+            notes_path,
+            root,
+            produced_by="prepare_rc",
+        ),
+    }
+    artifacts_ready = all((not item["required"]) or item["exists"] for item in artifacts.values())
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "version": args.version,
         "status": status,
         "dry_run": args.dry_run,
         "steps": steps,
+        "artifacts_ready": artifacts_ready,
+        "artifacts": artifacts,
     }
 
-    out = root / args.manifest_out
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    payload["artifacts"]["release_candidate_manifest"]["exists"] = True
+    payload["artifacts_ready"] = all(
+        (not item["required"]) or item["exists"] for item in payload["artifacts"].values()
+    )
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(json.dumps(payload, indent=2))
-    print(f"[release-candidate] wrote {out}")
+    print(f"[release-candidate] wrote {manifest_path}")
     return 1 if failed else 0
 
 

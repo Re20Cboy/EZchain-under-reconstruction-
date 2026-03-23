@@ -45,6 +45,17 @@ def _path_for_manifest(path: Path, root: Path) -> str:
         return str(path)
 
 
+def _sibling_markdown_path(path: Path) -> Path:
+    return path.with_suffix(".md")
+
+
+def _artifact_entry(path: Path, root: Path) -> dict[str, object]:
+    return {
+        "path": _path_for_manifest(path, root),
+        "exists": path.exists(),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare RC release notes and manifest")
     parser.add_argument("--version", required=True, help="e.g. v0.1.0-rc1")
@@ -63,11 +74,13 @@ def main() -> int:
     report = {}
     if report_path.exists():
         report = json.loads(report_path.read_text(encoding="utf-8"))
+    report_md_path = _sibling_markdown_path(report_path)
 
     readiness_path = root / args.readiness_json
     readiness = {}
     if readiness_path.exists():
         readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
+    readiness_md_path = _sibling_markdown_path(readiness_path)
 
     git_head = str(report.get("git_head") or _git_head(root))
     if not notes_file.exists():
@@ -79,9 +92,11 @@ def main() -> int:
         "git_head": git_head,
         "release_notes": _path_for_manifest(notes_file, root),
         "release_report_json": _path_for_manifest(report_path, root) if report_path.exists() else "",
+        "release_report_md": _path_for_manifest(report_md_path, root) if report_md_path.exists() else "",
         "release_report_status": report.get("overall_status", "missing"),
         "release_report_risks": report.get("risks", []),
         "v2_readiness_json": _path_for_manifest(readiness_path, root) if readiness_path.exists() else "",
+        "v2_readiness_md": _path_for_manifest(readiness_md_path, root) if readiness_md_path.exists() else "",
         "v2_ready_for_default": readiness.get("ready_for_v2_default", False),
         "v2_readiness_blocking_items": readiness.get("blocking_items", []),
         "external_trial_status": report.get("summary", {}).get("external_trial_status", "missing"),
@@ -101,13 +116,35 @@ def main() -> int:
             "consensus_formal_tcp_evidence_ready", False
         ),
         "consensus_tcp_step_notes": report.get("summary", {}).get("consensus_tcp_step_notes", []),
+        "stability_gate_status": report.get("summary", {}).get("stability_gate_status", "missing"),
+        "stability_failures": report.get("summary", {}).get("stability_failures", "missing"),
+        "stability_failure_rate": report.get("summary", {}).get("stability_failure_rate", "missing"),
+        "stability_restarts": report.get("summary", {}).get("stability_restarts", "missing"),
+        "stability_burst_checks": report.get("summary", {}).get("stability_burst_checks", "missing"),
+        "stability_blocking_reasons": report.get("summary", {}).get("stability_blocking_reasons", []),
         "v2_account_recovery_gate_status": report.get("summary", {}).get("v2_account_recovery_gate_status", "missing"),
         "v2_account_recovery_final_sync_health": report.get("summary", {}).get(
             "v2_account_recovery_final_sync_health", ""
         ),
+        "v2_account_recovery_final_sync_health_reason": report.get("summary", {}).get(
+            "v2_account_recovery_final_sync_health_reason", ""
+        ),
+        "v2_account_recovery_flaps_requested": report.get("summary", {}).get(
+            "v2_account_recovery_flaps_requested", "missing"
+        ),
+        "v2_account_recovery_flaps_completed": report.get("summary", {}).get(
+            "v2_account_recovery_flaps_completed", "missing"
+        ),
         "v2_account_recovery_blocking_reasons": report.get("summary", {}).get(
             "v2_account_recovery_blocking_reasons", []
         ),
+        "artifacts": {
+            "release_notes": _artifact_entry(notes_file, root),
+            "release_report_json": _artifact_entry(report_path, root),
+            "release_report_md": _artifact_entry(report_md_path, root),
+            "v2_readiness_json": _artifact_entry(readiness_path, root),
+            "v2_readiness_md": _artifact_entry(readiness_md_path, root),
+        },
     }
 
     manifest_out = root / args.manifest_out
