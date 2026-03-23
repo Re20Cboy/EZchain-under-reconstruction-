@@ -55,6 +55,8 @@ def test_cli_network_profile_flow(capsys):
         assert parsed["consensus_nodes"] == 3
         assert parsed["tx_path"] == "local_v2_runtime"
         assert parsed["tx_path_ready"] is False
+        assert parsed["tx_capabilities"]["tx_faucet"] == "unsupported"
+        assert parsed["tx_capabilities"]["tx_history"] == "remote_read"
 
         loaded = load_config(cfg_path)
         assert loaded.app.protocol_version == "v2"
@@ -66,6 +68,7 @@ def test_cli_network_profile_flow(capsys):
         assert parsed["bootstrap_nodes"] == ["bootstrap.ezchain.test:19500"]
         assert parsed["mode"] == "official-testnet"
         assert parsed["tx_path_ready"] is False
+        assert parsed["tx_capabilities"]["tx_send"] == "remote_send"
 
 
 def test_profile_templates_exist():

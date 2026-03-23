@@ -37,6 +37,44 @@ VALID_CONNECTIVITY_RESULTS = {"pending", "passed", "failed"}
 VALID_NETWORK_ENVIRONMENTS = {"real-external", "single-host-rehearsal"}
 
 
+def _normalize_tx_send_readiness(value: object) -> dict:
+    normalized = {
+        "captured": False,
+        "capability": "",
+        "ready": False,
+        "recipient_endpoint_required_per_send": False,
+        "local_wallet_present": False,
+        "local_wallet_address": "",
+        "remote_account_status": "",
+        "remote_account_address": "",
+        "consensus_endpoint_present": False,
+        "wallet_db_present": False,
+        "wallet_address_matches": None,
+        "blockers": [],
+    }
+    if not isinstance(value, dict):
+        return normalized
+    normalized["captured"] = bool(value.get("captured", False))
+    normalized["capability"] = str(value.get("capability", "") or "").strip()
+    normalized["ready"] = bool(value.get("ready", False))
+    normalized["recipient_endpoint_required_per_send"] = bool(
+        value.get("recipient_endpoint_required_per_send", False)
+    )
+    normalized["local_wallet_present"] = bool(value.get("local_wallet_present", False))
+    normalized["local_wallet_address"] = str(value.get("local_wallet_address", "") or "").strip()
+    normalized["remote_account_status"] = str(value.get("remote_account_status", "") or "").strip()
+    normalized["remote_account_address"] = str(value.get("remote_account_address", "") or "").strip()
+    normalized["consensus_endpoint_present"] = bool(value.get("consensus_endpoint_present", False))
+    normalized["wallet_db_present"] = bool(value.get("wallet_db_present", False))
+    wallet_address_matches = value.get("wallet_address_matches")
+    if wallet_address_matches in (True, False, None):
+        normalized["wallet_address_matches"] = wallet_address_matches
+    blockers = value.get("blockers", [])
+    if isinstance(blockers, list):
+        normalized["blockers"] = [str(item).strip() for item in blockers if str(item).strip()]
+    return normalized
+
+
 def _is_non_empty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -133,6 +171,7 @@ def validate_trial_record(record: dict, require_passed: bool, require_real_exter
         failures.append("evidence must be an object")
     else:
         contact_card = evidence.get("contact_card")
+        tx_send_readiness = evidence.get("tx_send_readiness")
         if not isinstance(contact_card, dict):
             failures.append("evidence.contact_card must be an object")
         else:
@@ -157,6 +196,35 @@ def validate_trial_record(record: dict, require_passed: bool, require_real_exter
                 failures.append("evidence.contact_card.address must be set when used_for_send is true")
             if used_for_send and not _is_non_empty_string(endpoint):
                 failures.append("evidence.contact_card.endpoint must be set when used_for_send is true")
+        if tx_send_readiness is not None and not isinstance(tx_send_readiness, dict):
+            failures.append("evidence.tx_send_readiness must be an object when present")
+            tx_send_readiness_payload = _normalize_tx_send_readiness(None)
+        else:
+            tx_send_readiness_payload = _normalize_tx_send_readiness(tx_send_readiness)
+            if tx_send_readiness_payload["capability"] != "" and tx_send_readiness_payload["capability"] != "remote_send":
+                failures.append("evidence.tx_send_readiness.capability must be '' or 'remote_send'")
+            wallet_address_matches = tx_send_readiness_payload["wallet_address_matches"]
+            if wallet_address_matches not in (True, False, None):
+                failures.append("evidence.tx_send_readiness.wallet_address_matches must be true, false, or null")
+            if tx_send_readiness_payload["ready"] and tx_send_readiness_payload["blockers"]:
+                failures.append("evidence.tx_send_readiness.blockers must be empty when ready is true")
+            if tx_send_readiness_payload["captured"] and not tx_send_readiness_payload["capability"]:
+                failures.append("evidence.tx_send_readiness.capability must be set when captured is true")
+
+        send_status = ""
+        if isinstance(workflow, dict):
+            send_status = str(workflow.get("send", "")).lower()
+        used_for_send = bool(isinstance(contact_card, dict) and contact_card.get("used_for_send", False))
+        if send_status in {"passed", "failed"} or used_for_send:
+            if not isinstance(tx_send_readiness, dict) or not tx_send_readiness_payload["captured"]:
+                failures.append(
+                    "evidence.tx_send_readiness.captured must be true when workflow.send is passed/failed or contact_card.used_for_send is true"
+                )
+        if send_status == "passed":
+            if tx_send_readiness_payload["capability"] != "remote_send":
+                failures.append("evidence.tx_send_readiness.capability must be 'remote_send' when workflow.send is passed")
+            if tx_send_readiness_payload["ready"] is not True:
+                failures.append("evidence.tx_send_readiness.ready must be true when workflow.send is passed")
 
     status = str(record.get("status", "")).lower()
     if status not in VALID_TOP_STATUSES:

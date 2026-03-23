@@ -34,16 +34,70 @@ def _is_remote_official_profile(cfg) -> bool:
 
 
 def _remote_read_state(cfg, node_manager: NodeManager) -> Dict[str, Any]:
-    state = node_manager.account_status(bootstrap_nodes=cfg.network.bootstrap_nodes)
+    state = _remote_account_status(cfg, node_manager)
     if not isinstance(state, dict):
-        raise ValueError("account_status_missing")
+        raise ValueError("remote_account_not_running")
     if state.get("status") != "running":
-        raise ValueError("v2_account_not_running")
+        raise ValueError("remote_account_not_running")
     if state.get("mode_family") != "v2-account":
         raise ValueError("account_role_not_running")
     if not str(state.get("wallet_db_path", "")).strip():
-        raise ValueError("account_wallet_db_missing")
+        raise ValueError("wallet_db_path_missing")
+    if not str(state.get("consensus_endpoint", "")).strip():
+        raise ValueError("consensus_endpoint_missing")
     return state
+
+
+def _remote_account_status(cfg, node_manager: NodeManager) -> Dict[str, Any] | None:
+    state = node_manager.account_status(bootstrap_nodes=cfg.network.bootstrap_nodes)
+    return state if isinstance(state, dict) else None
+
+
+def _wallet_summary_if_exists(wallet_store: WalletStore, *, protocol_version: str):
+    try:
+        return wallet_store.summary(protocol_version=protocol_version)
+    except FileNotFoundError:
+        return None
+
+
+def _tx_send_readiness(cfg, wallet_store: WalletStore, node_manager: NodeManager) -> Dict[str, Any]:
+    raw_state = _remote_account_status(cfg, node_manager)
+    wallet_summary = _wallet_summary_if_exists(wallet_store, protocol_version="v2")
+    remote_account_running = bool(isinstance(raw_state, dict) and raw_state.get("status") == "running")
+    consensus_endpoint_present = bool(isinstance(raw_state, dict) and str(raw_state.get("consensus_endpoint", "")).strip())
+    wallet_db_present = bool(isinstance(raw_state, dict) and str(raw_state.get("wallet_db_path", "")).strip())
+    local_wallet_present = wallet_summary is not None
+    remote_address = "" if not isinstance(raw_state, dict) else str(raw_state.get("address", "")).strip()
+    local_address = "" if wallet_summary is None else str(wallet_summary.address)
+    wallet_address_matches = None
+    if local_wallet_present and remote_address:
+        wallet_address_matches = local_address == remote_address
+
+    blockers: list[str] = []
+    if not remote_account_running:
+        blockers.append("remote_account_not_running")
+    if remote_account_running and not consensus_endpoint_present:
+        blockers.append("consensus_endpoint_missing")
+    if remote_account_running and not wallet_db_present:
+        blockers.append("wallet_db_path_missing")
+    if not local_wallet_present:
+        blockers.append("local_wallet_not_created")
+    if wallet_address_matches is False:
+        blockers.append("wallet_address_mismatch_with_account_node")
+
+    return {
+        "capability": "remote_send",
+        "ready": len(blockers) == 0,
+        "recipient_endpoint_required_per_send": True,
+        "local_wallet_present": local_wallet_present,
+        "local_wallet_address": local_address,
+        "remote_account_status": None if not isinstance(raw_state, dict) else raw_state.get("status", ""),
+        "remote_account_address": remote_address,
+        "consensus_endpoint_present": consensus_endpoint_present,
+        "wallet_db_present": wallet_db_present,
+        "wallet_address_matches": wallet_address_matches,
+        "blockers": blockers,
+    }
 
 
 def run_rehearsal(
@@ -74,9 +128,37 @@ def run_rehearsal(
     if not recipient_address:
         raise ValueError("recipient_required")
     saved_contact = wallet_store.set_contact(address=recipient_address, endpoint=card["endpoint"])
+    extra_notes = list(note or [])
+    tx_send_readiness = _tx_send_readiness(cfg, wallet_store, node_manager)
+    if not tx_send_readiness["ready"]:
+        blockers = list(tx_send_readiness["blockers"])
+        blocker_text = ",".join(blockers) if blockers else "unknown"
+        error = f"send_preflight_failed:{blocker_text}"
+        update = update_trial_record(
+            record_path,
+            step="send",
+            step_status="failed",
+            contact_card_file=str(contact_card_file),
+            contact_card_imported=True,
+            contact_card_used_for_send=True,
+            tx_send_readiness=tx_send_readiness,
+            issues_to_add=[error],
+            notes_to_add=extra_notes + [f"send preflight blocked for {recipient_address}: {blocker_text}"],
+            auto_status=True,
+        )
+        return {
+            "ok": False,
+            "config": str(config_path),
+            "record": str(record_path),
+            "contact_card": card,
+            "saved_contact": saved_contact,
+            "error": error,
+            "tx_send_readiness": tx_send_readiness,
+            "trial_update": update,
+        }
+
     remote_state = _remote_read_state(cfg, node_manager)
     effective_client_tx_id = client_tx_id or f"trial-{secrets.token_hex(6)}"
-    extra_notes = list(note or [])
 
     try:
         result = tx_engine.send(
@@ -111,6 +193,7 @@ def run_rehearsal(
             contact_card_file=str(contact_card_file),
             contact_card_imported=True,
             contact_card_used_for_send=True,
+            tx_send_readiness=tx_send_readiness,
             notes_to_add=extra_notes + [f"send passed with contact card for {recipient_address}"],
             auto_status=True,
         )
@@ -120,6 +203,7 @@ def run_rehearsal(
             "record": str(record_path),
             "contact_card": card,
             "saved_contact": saved_contact,
+            "tx_send_readiness": tx_send_readiness,
             "tx": history_item,
             "trial_update": update,
         }
@@ -131,6 +215,7 @@ def run_rehearsal(
             contact_card_file=str(contact_card_file),
             contact_card_imported=True,
             contact_card_used_for_send=True,
+            tx_send_readiness=tx_send_readiness,
             issues_to_add=[f"send_failed:{exc}"],
             notes_to_add=extra_notes + [f"send failed with contact card for {recipient_address}: {exc}"],
             auto_status=True,
@@ -142,6 +227,7 @@ def run_rehearsal(
             "contact_card": card,
             "saved_contact": saved_contact,
             "error": str(exc),
+            "tx_send_readiness": tx_send_readiness,
             "trial_update": update,
         }
 

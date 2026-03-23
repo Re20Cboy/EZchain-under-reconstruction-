@@ -23,6 +23,23 @@ def _load_template(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _default_tx_send_readiness() -> dict[str, Any]:
+    return {
+        "captured": False,
+        "capability": "",
+        "ready": False,
+        "recipient_endpoint_required_per_send": False,
+        "local_wallet_present": False,
+        "local_wallet_address": "",
+        "remote_account_status": "",
+        "remote_account_address": "",
+        "consensus_endpoint_present": False,
+        "wallet_db_present": False,
+        "wallet_address_matches": None,
+        "blockers": [],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Initialize an official-testnet external trial record")
     parser.add_argument("--template", default="doc/OFFICIAL_TESTNET_TRIAL_TEMPLATE.json")
@@ -86,6 +103,35 @@ def main() -> int:
     contact_card["imported"] = bool(contact_card.get("imported", False))
     contact_card["used_for_send"] = bool(contact_card.get("used_for_send", False))
     evidence["contact_card"] = contact_card
+    tx_send_readiness = dict(evidence.get("tx_send_readiness") or {})
+    normalized_tx_send_readiness = _default_tx_send_readiness()
+    normalized_tx_send_readiness["captured"] = bool(tx_send_readiness.get("captured", False))
+    normalized_tx_send_readiness["capability"] = str(tx_send_readiness.get("capability", "") or "").strip()
+    normalized_tx_send_readiness["ready"] = bool(tx_send_readiness.get("ready", False))
+    normalized_tx_send_readiness["recipient_endpoint_required_per_send"] = bool(
+        tx_send_readiness.get("recipient_endpoint_required_per_send", False)
+    )
+    normalized_tx_send_readiness["local_wallet_present"] = bool(tx_send_readiness.get("local_wallet_present", False))
+    normalized_tx_send_readiness["local_wallet_address"] = str(
+        tx_send_readiness.get("local_wallet_address", "") or ""
+    ).strip()
+    normalized_tx_send_readiness["remote_account_status"] = str(
+        tx_send_readiness.get("remote_account_status", "") or ""
+    ).strip()
+    normalized_tx_send_readiness["remote_account_address"] = str(
+        tx_send_readiness.get("remote_account_address", "") or ""
+    ).strip()
+    normalized_tx_send_readiness["consensus_endpoint_present"] = bool(
+        tx_send_readiness.get("consensus_endpoint_present", False)
+    )
+    normalized_tx_send_readiness["wallet_db_present"] = bool(tx_send_readiness.get("wallet_db_present", False))
+    wallet_address_matches = tx_send_readiness.get("wallet_address_matches")
+    if wallet_address_matches in (True, False, None):
+        normalized_tx_send_readiness["wallet_address_matches"] = wallet_address_matches
+    blockers = tx_send_readiness.get("blockers", [])
+    if isinstance(blockers, list):
+        normalized_tx_send_readiness["blockers"] = [str(item).strip() for item in blockers if str(item).strip()]
+    evidence["tx_send_readiness"] = normalized_tx_send_readiness
     payload["evidence"] = evidence
 
     out_path = Path(args.out) if args.out else (root / "doc" / "trials" / f"{payload['trial_id']}.json")

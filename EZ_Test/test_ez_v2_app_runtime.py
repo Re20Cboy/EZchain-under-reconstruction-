@@ -386,6 +386,51 @@ class EZV2AppRuntimeTest(unittest.TestCase):
             restarted = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
             self.assertEqual(restarted.checkpoints(bob_store, password="pw123")["items"], checkpoint_view["items"])
 
+    def test_v2_history_includes_derived_confirmed_and_received_items(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            shared_backend = Path(td) / "shared_backend"
+            alice_dir = Path(td) / "alice"
+            bob_dir = Path(td) / "bob"
+
+            alice_store = WalletStore(str(alice_dir))
+            bob_store = WalletStore(str(bob_dir))
+            alice_store.create_wallet(password="pw123", name="alice")
+            bob_store.create_wallet(password="pw123", name="bob")
+
+            alice_engine = TxEngine(str(alice_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_engine = TxEngine(str(bob_dir), max_tx_amount=1000, protocol_version="v2", v2_backend_dir=str(shared_backend))
+            bob_addr = bob_store.summary(protocol_version="v2").address
+
+            alice_engine.faucet(alice_store, password="pw123", amount=120)
+            alice_engine.send(
+                alice_store,
+                password="pw123",
+                recipient=bob_addr,
+                amount=35,
+                client_tx_id="cid-history-1",
+            )
+            bob_engine.balance(bob_store, password="pw123")
+
+            alice_history = alice_engine.history(alice_store)
+            self.assertEqual(alice_history["protocol_version"], "v2")
+            self.assertEqual(alice_history["chain_height"], 1)
+            self.assertEqual(len(alice_history["items"]), 1)
+            self.assertEqual(alice_history["items"][0]["status"], "confirmed")
+            self.assertEqual(alice_history["items"][0]["amount"], 35)
+
+            remote_state = {
+                "address": bob_addr,
+                "wallet_db_path": str(bob_dir / "wallet_state_v2" / bob_addr / "wallet_v2.db"),
+                "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            }
+            bob_history = bob_engine.remote_history(bob_store, state=remote_state)
+            self.assertEqual(bob_history["protocol_version"], "v2")
+            self.assertEqual(bob_history["chain_height"], 1)
+            self.assertEqual(len(bob_history["items"]), 1)
+            self.assertEqual(bob_history["items"][0]["status"], "received")
+            self.assertEqual(bob_history["items"][0]["amount"], 35)
+            self.assertEqual(bob_history["items"][0]["recipient"], bob_addr)
+
     def test_v2_tx_engine_remote_send_confirms_when_recipient_endpoint_is_given(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             alice_dir = Path(td) / "alice"

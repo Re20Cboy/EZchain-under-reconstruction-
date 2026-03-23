@@ -187,6 +187,9 @@ class TxEngine:
             return path
         return str(self.data_dir / "wallet_state_v2" / wallet_address / "wallet_v2.db")
 
+    def _local_v2_wallet_db_path(self, wallet_address: str) -> str:
+        return str(self.data_dir / "wallet_state_v2" / wallet_address / "wallet_v2.db")
+
     @staticmethod
     def _remote_v2_chain_height(state: Dict[str, Any]) -> int:
         cursor = state.get("chain_cursor")
@@ -258,6 +261,112 @@ class TxEngine:
             "protocol_version": "v2",
             "chain_height": chain_height,
             "items": items,
+        }
+
+    def _v2_history_key(self, item: Dict[str, Any]) -> tuple[Any, ...] | None:
+        transfer_package_hash = str(item.get("transfer_package_hash", "")).strip()
+        if transfer_package_hash:
+            return ("transfer", transfer_package_hash)
+        tx_id = str(item.get("tx_id", "")).strip()
+        if not tx_id:
+            return None
+        status = str(item.get("status", "")).strip()
+        if status == "received":
+            begin = item.get("value_begin")
+            end = item.get("value_end")
+            if begin is not None and end is not None:
+                return ("received", tx_id, int(begin), int(end))
+        return ("tx", tx_id, status)
+
+    def _merge_v2_history_items(
+        self,
+        stored_items: list[Dict[str, Any]],
+        derived_items: list[Dict[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        merged = [dict(item) for item in stored_items]
+        seen = {key for item in merged if (key := self._v2_history_key(item)) is not None}
+        for item in derived_items:
+            key = self._v2_history_key(item)
+            if key is not None and key in seen:
+                continue
+            merged.append(dict(item))
+            if key is not None:
+                seen.add(key)
+        return merged
+
+    def _derive_v2_history_items(self, account: WalletAccountV2) -> list[Dict[str, Any]]:
+        items: list[Dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
+        for record in sorted(
+            account.list_records(),
+            key=lambda item: (
+                item.acquisition_height,
+                item.value.begin,
+                item.value.end,
+                item.record_id,
+            ),
+        ):
+            chain = getattr(record.witness_v2, "confirmed_bundle_chain", ())
+            if not chain:
+                continue
+            latest_unit = chain[0]
+            receipt = latest_unit.receipt
+            receipt_height = int(receipt.header_lite.height)
+            receipt_block_hash = receipt.header_lite.block_hash.hex()
+            for tx in latest_unit.bundle_sidecar.tx_list:
+                matching_value = next((value for value in tx.value_list if value == record.value), None)
+                if matching_value is None:
+                    continue
+                tx_id = self._v2_tx_hash(tx)
+                if tx.sender_addr == account.address:
+                    item = {
+                        "tx_id": tx_id,
+                        "sender": tx.sender_addr,
+                        "recipient": tx.recipient_addr,
+                        "amount": sum(value.size for value in tx.value_list),
+                        "status": "confirmed",
+                        "direction": "outbound",
+                        "receipt_height": receipt_height,
+                        "receipt_block_hash": receipt_block_hash,
+                    }
+                elif tx.recipient_addr == account.address:
+                    item = {
+                        "tx_id": tx_id,
+                        "sender": tx.sender_addr,
+                        "recipient": tx.recipient_addr,
+                        "amount": matching_value.size,
+                        "status": "received",
+                        "direction": "inbound",
+                        "value_begin": matching_value.begin,
+                        "value_end": matching_value.end,
+                        "receipt_height": receipt_height,
+                        "receipt_block_hash": receipt_block_hash,
+                    }
+                else:
+                    continue
+                key = self._v2_history_key(item)
+                if key is not None and key in seen:
+                    continue
+                items.append(item)
+                if key is not None:
+                    seen.add(key)
+        return items
+
+    def _v2_history_payload(
+        self,
+        wallet_store: WalletStore,
+        account: WalletAccountV2 | None,
+        *,
+        chain_height: int,
+    ) -> Dict[str, Any]:
+        stored_items = wallet_store.get_history()
+        derived_items = self._derive_v2_history_items(account) if account is not None else []
+        address = account.address if account is not None else wallet_store.summary(protocol_version="v2").address
+        return {
+            "address": address,
+            "protocol_version": "v2",
+            "chain_height": chain_height,
+            "items": self._merge_v2_history_items(stored_items, derived_items),
         }
 
     @staticmethod
@@ -618,6 +727,35 @@ class TxEngine:
             finally:
                 session.close()
 
+    def history(self, wallet_store: WalletStore) -> Dict[str, Any]:
+        if self.protocol_version != "v2":
+            return {"items": wallet_store.get_history()}
+        account = None
+        try:
+            address = wallet_store.summary(protocol_version="v2").address
+            db_path = Path(self._local_v2_wallet_db_path(address))
+            if db_path.exists():
+                account = WalletAccountV2(
+                    address=address,
+                    genesis_block_hash=self.v2_genesis_block_hash,
+                    db_path=str(db_path),
+                )
+            chain_height = 0
+            metadata = self.v2_client.backend_metadata()
+            if isinstance(metadata, dict):
+                try:
+                    chain_height = int(metadata.get("height", 0))
+                except Exception:
+                    chain_height = 0
+            return self._v2_history_payload(
+                wallet_store,
+                account,
+                chain_height=chain_height,
+            )
+        finally:
+            if account is not None:
+                account.close()
+
     def remote_balance(self, wallet_store: WalletStore, password: str, state: Dict[str, Any]) -> Dict[str, Any]:
         account = self._open_remote_v2_wallet(wallet_store, password, state)
         try:
@@ -659,6 +797,29 @@ class TxEngine:
             )
         finally:
             account.close()
+
+    def remote_history(self, wallet_store: WalletStore, state: Dict[str, Any]) -> Dict[str, Any]:
+        address = wallet_store.summary(protocol_version="v2").address
+        remote_address = str(state.get("address", "")).strip()
+        if remote_address and remote_address != address:
+            raise ValueError("wallet_address_mismatch_with_account_node")
+        db_path = Path(self._remote_v2_wallet_db_path(address, state))
+        account = None
+        try:
+            if db_path.exists():
+                account = WalletAccountV2(
+                    address=address,
+                    genesis_block_hash=self.v2_genesis_block_hash,
+                    db_path=str(db_path),
+                )
+            return self._v2_history_payload(
+                wallet_store,
+                account,
+                chain_height=self._remote_v2_chain_height(state),
+            )
+        finally:
+            if account is not None:
+                account.close()
 
     def remote_send(
         self,

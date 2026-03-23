@@ -7,11 +7,20 @@ import tempfile
 from pathlib import Path
 
 from scripts.release_report import (
+    _consensus_tcp_step_notes,
     _external_trial_contact_card,
     _external_trial_network_environment,
     _external_trial_progress,
+    _external_trial_tx_send_readiness,
+    _merge_consensus_summary,
+    should_run_v2_account_recovery as report_should_run_v2_account_recovery,
+    to_markdown,
 )
+from scripts.consensus_gate import build_summary, run_step_with_retry
+from scripts.release_gate import should_run_v2_account_recovery as gate_should_run_v2_account_recovery
+from scripts.release_candidate import should_with_v2_account_recovery
 from scripts.v2_readiness import _evaluate
+from argparse import Namespace
 
 
 def _trial_record(*, status: str = "passed", send_status: str = "passed", connectivity_result: str = "passed", connectivity_checked: bool = True) -> dict:
@@ -45,6 +54,14 @@ def _trial_record(*, status: str = "passed", send_status: str = "passed", connec
                 "endpoint": "",
                 "imported": False,
                 "used_for_send": False,
+            },
+            "tx_send_readiness": {
+                "captured": True,
+                "capability": "remote_send",
+                "ready": True,
+                "blockers": [],
+                "remote_account_status": "running",
+                "wallet_address_matches": True,
             }
         },
         "status": status,
@@ -93,6 +110,17 @@ def test_prepare_rc_carries_external_trial_progress_fields():
                         "external_trial_failed_steps": [],
                         "official_testnet_gate_status": "passed",
                         "v2_adversarial_gate_status": "passed",
+                        "consensus_gate_status": "passed",
+                        "consensus_core_status": "passed",
+                        "consensus_sync_status": "passed",
+                        "consensus_catchup_status": "passed",
+                        "consensus_network_status": "passed",
+                        "consensus_recovery_status": "passed",
+                        "consensus_tcp_evidence_status": "not_executed_bind_restricted",
+                        "consensus_formal_tcp_evidence_ready": False,
+                        "consensus_tcp_step_notes": [
+                            "consensus_tcp_catchup_suite: all skipped after 3 attempt(s); SKIPPED [1] foo: bind_not_permitted:[Errno 1] Operation not permitted"
+                        ],
                         "v2_account_recovery_gate_status": "passed",
                         "v2_account_recovery_final_sync_health": "healthy",
                         "v2_account_recovery_blocking_reasons": [],
@@ -135,11 +163,52 @@ def test_prepare_rc_carries_external_trial_progress_fields():
         )
 
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        notes_text = (tmp / "notes" / "v0.1.0-rc-test.md").read_text(encoding="utf-8")
         assert manifest["external_trial_remaining_steps"] == ["workflow.send"]
         assert manifest["external_trial_failed_steps"] == []
+        assert manifest["consensus_gate_status"] == "passed"
+        assert manifest["consensus_core_status"] == "passed"
+        assert manifest["consensus_tcp_evidence_status"] == "not_executed_bind_restricted"
+        assert manifest["consensus_formal_tcp_evidence_ready"] is False
+        assert manifest["consensus_tcp_step_notes"] == [
+            "consensus_tcp_catchup_suite: all skipped after 3 attempt(s); SKIPPED [1] foo: bind_not_permitted:[Errno 1] Operation not permitted"
+        ]
         assert manifest["v2_account_recovery_gate_status"] == "passed"
         assert manifest["v2_account_recovery_final_sync_health"] == "healthy"
         assert manifest["v2_account_recovery_blocking_reasons"] == []
+        assert "consensus_tcp_evidence_status" in notes_text
+        assert "consensus_tcp_step_notes" in notes_text
+        assert "bind-restricted" in notes_text
+
+
+def test_release_candidate_dry_run_always_carries_consensus_gate():
+    repo_root = Path(__file__).resolve().parent.parent
+
+    with tempfile.TemporaryDirectory() as td:
+        manifest_path = Path(td) / "release_candidate_manifest.json"
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "scripts/release_candidate.py",
+                "--version",
+                "v0.1.0-rc-test",
+                "--dry-run",
+                "--manifest-out",
+                str(manifest_path),
+            ],
+            cwd=str(repo_root),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        report_step = next(step for step in payload["steps"] if step["name"] == "release_report")
+
+        assert "--with-consensus" in report_step["command"]
+        assert payload["status"] == "planned"
+        assert "[release-candidate] wrote" in proc.stdout
 
 
 def test_external_trial_contact_card_summary_reads_contact_card_evidence():
@@ -160,6 +229,27 @@ def test_external_trial_contact_card_summary_reads_contact_card_evidence():
     assert summary["endpoint"] == "192.168.1.20:19500"
     assert summary["imported"] is True
     assert summary["used_for_send"] is True
+
+
+def test_external_trial_tx_send_readiness_summary_reads_structured_evidence():
+    record = _trial_record()
+    record["evidence"]["tx_send_readiness"] = {
+        "captured": True,
+        "capability": "remote_send",
+        "ready": False,
+        "blockers": ["remote_account_not_running"],
+        "remote_account_status": "stopped",
+        "wallet_address_matches": True,
+    }
+
+    summary = _external_trial_tx_send_readiness(record)
+
+    assert summary["captured"] is True
+    assert summary["capability"] == "remote_send"
+    assert summary["ready"] is False
+    assert summary["blockers"] == ["remote_account_not_running"]
+    assert summary["remote_account_status"] == "stopped"
+    assert summary["wallet_address_matches"] is True
 
 
 def test_external_trial_network_environment_reads_environment_flag():
@@ -217,6 +307,235 @@ def test_release_report_summary_can_carry_v2_account_recovery_details():
     assert recovery_summary["blocking_reasons"] == []
 
 
+def test_consensus_gate_summary_marks_tcp_bind_restricted_skip_as_not_executed():
+    summary = build_summary(
+        [
+            {"name": "consensus_core_suite", "status": "passed", "layer": "core", "transport": "none", "all_skipped": False, "skipped_bind_restricted": False},
+            {"name": "consensus_sync_suite", "status": "passed", "layer": "sync", "transport": "static", "all_skipped": False, "skipped_bind_restricted": False},
+            {"name": "consensus_catchup_suite", "status": "passed", "layer": "catchup", "transport": "static", "all_skipped": False, "skipped_bind_restricted": False},
+            {"name": "consensus_recovery_suite", "status": "passed", "layer": "recovery", "transport": "static", "all_skipped": False, "skipped_bind_restricted": False},
+            {"name": "consensus_static_network_suite", "status": "passed", "layer": "network", "transport": "static", "all_skipped": False, "skipped_bind_restricted": False},
+            {"name": "consensus_tcp_catchup_suite", "status": "passed", "layer": "catchup", "transport": "tcp", "all_skipped": True, "skipped_bind_restricted": True},
+            {"name": "consensus_tcp_network_suite", "status": "passed", "layer": "network", "transport": "tcp", "all_skipped": True, "skipped_bind_restricted": True},
+        ]
+    )
+
+    assert summary["layers"]["core"] == "passed"
+    assert summary["layers"]["catchup"] == "passed"
+    assert summary["tcp_steps_total"] == 2
+    assert summary["tcp_steps_executed"] == 0
+    assert summary["tcp_bind_restricted_skips"] == 2
+    assert summary["tcp_evidence_status"] == "not_executed_bind_restricted"
+    assert summary["formal_tcp_evidence_ready"] is False
+
+
+def test_consensus_gate_tcp_retry_stops_after_first_executed_attempt(monkeypatch, tmp_path):
+    attempts = [
+        {
+            "name": "consensus_tcp_network_suite",
+            "status": "passed",
+            "transport": "tcp",
+            "all_skipped": True,
+            "skipped_bind_restricted": True,
+        },
+        {
+            "name": "consensus_tcp_network_suite",
+            "status": "passed",
+            "transport": "tcp",
+            "all_skipped": False,
+            "skipped_bind_restricted": False,
+        },
+    ]
+
+    def _fake_run_step(name, cmd, cwd):
+        return dict(attempts.pop(0))
+
+    monkeypatch.setattr("scripts.consensus_gate.run_step", _fake_run_step)
+
+    step = run_step_with_retry("consensus_tcp_network_suite", ["pytest"], tmp_path)
+
+    assert step["attempts"] == 2
+    assert step["retried_after_all_skipped"] is True
+    assert step["all_skipped"] is False
+    assert attempts == []
+
+
+def test_consensus_gate_tcp_retry_preserves_all_skipped_after_final_attempt(monkeypatch, tmp_path):
+    attempts = [
+        {
+            "name": "consensus_tcp_catchup_suite",
+            "status": "passed",
+            "transport": "tcp",
+            "all_skipped": True,
+            "skipped_bind_restricted": True,
+        },
+        {
+            "name": "consensus_tcp_catchup_suite",
+            "status": "passed",
+            "transport": "tcp",
+            "all_skipped": True,
+            "skipped_bind_restricted": True,
+        },
+        {
+            "name": "consensus_tcp_catchup_suite",
+            "status": "passed",
+            "transport": "tcp",
+            "all_skipped": True,
+            "skipped_bind_restricted": True,
+        },
+    ]
+
+    def _fake_run_step(name, cmd, cwd):
+        return dict(attempts.pop(0))
+
+    monkeypatch.setattr("scripts.consensus_gate.run_step", _fake_run_step)
+
+    step = run_step_with_retry("consensus_tcp_catchup_suite", ["pytest"], tmp_path)
+
+    assert step["attempts"] == 3
+    assert step["retried_after_all_skipped"] is True
+    assert step["all_skipped"] is True
+    assert step["skipped_bind_restricted"] is True
+    assert attempts == []
+
+
+def test_release_report_merges_consensus_summary_and_marks_tcp_evidence_gap():
+    summary = {}
+    risks: list[str] = []
+
+    _merge_consensus_summary(
+        summary,
+        {
+            "layers": {
+                "core": "passed",
+                "sync": "passed",
+                "catchup": "passed",
+                "network": "passed",
+                "recovery": "passed",
+            },
+            "static_steps_total": 4,
+            "static_steps_passed": 4,
+            "tcp_steps_total": 2,
+            "tcp_steps_passed": 2,
+            "tcp_steps_executed": 0,
+            "tcp_steps_all_skipped": 2,
+            "tcp_bind_restricted_skips": 2,
+            "tcp_evidence_status": "not_executed_bind_restricted",
+            "formal_tcp_evidence_ready": False,
+        },
+        risks,
+    )
+
+    assert summary["consensus_core_status"] == "passed"
+    assert summary["consensus_sync_status"] == "passed"
+    assert summary["consensus_catchup_status"] == "passed"
+    assert summary["consensus_network_status"] == "passed"
+    assert summary["consensus_recovery_status"] == "passed"
+    assert summary["consensus_tcp_steps_executed"] == 0
+    assert summary["consensus_tcp_evidence_status"] == "not_executed_bind_restricted"
+    assert summary["consensus_formal_tcp_evidence_ready"] is False
+    assert any("consensus TCP evidence not executed" in risk for risk in risks)
+
+
+def test_release_report_markdown_explains_bind_restricted_tcp_evidence_gap():
+    markdown = to_markdown(
+        {
+            "generated_at": "2026-03-23T00:00:00Z",
+            "git_head": "abc123",
+            "overall_status": "passed",
+            "summary": {
+                "consensus_gate_status": "passed",
+                "consensus_tcp_evidence_status": "not_executed_bind_restricted",
+                "consensus_formal_tcp_evidence_ready": False,
+            },
+            "risks": [],
+            "steps": [],
+        }
+    )
+
+    assert "## Consensus Evidence" in markdown
+    assert "consensus_tcp_evidence_status: not_executed_bind_restricted" in markdown
+    assert "layered consensus validation passed" in markdown
+    assert "release judgement still follows the gate/report evidence chain" in markdown
+
+
+def test_release_report_extracts_tcp_step_notes_from_consensus_gate_payload():
+    notes = _consensus_tcp_step_notes(
+        {
+            "steps": [
+                {
+                    "name": "consensus_tcp_catchup_suite",
+                    "transport": "tcp",
+                    "attempts": 3,
+                    "all_skipped": True,
+                    "stdout_tail": (
+                        "ss\n"
+                        "SKIPPED [1] EZ_Test/test_ez_v2_network.py:2976: bind_not_permitted:[Errno 1] Operation not permitted\n"
+                    ),
+                },
+                {
+                    "name": "consensus_tcp_network_suite",
+                    "transport": "tcp",
+                    "attempts": 2,
+                    "all_skipped": False,
+                    "stdout_tail": ".....\n5 passed in 10.0s\n",
+                },
+            ]
+        }
+    )
+
+    assert notes[0].startswith("consensus_tcp_catchup_suite: all skipped after 3 attempt(s);")
+    assert "bind_not_permitted:[Errno 1] Operation not permitted" in notes[0]
+    assert notes[1] == "consensus_tcp_network_suite: executed after 2 attempt(s)"
+
+
+def test_release_report_markdown_includes_tcp_step_notes():
+    markdown = to_markdown(
+        {
+            "generated_at": "2026-03-23T00:00:00Z",
+            "git_head": "abc123",
+            "overall_status": "passed",
+            "summary": {
+                "consensus_gate_status": "passed",
+                "consensus_tcp_evidence_status": "not_executed_bind_restricted",
+                "consensus_formal_tcp_evidence_ready": False,
+                "consensus_tcp_step_notes": [
+                    "consensus_tcp_catchup_suite: all skipped after 3 attempt(s); SKIPPED [1] foo: bind_not_permitted:[Errno 1] Operation not permitted"
+                ],
+            },
+            "risks": [],
+            "steps": [],
+        }
+    )
+
+    assert "TCP step details:" in markdown
+    assert "consensus_tcp_catchup_suite: all skipped after 3 attempt(s)" in markdown
+
+
+def test_v2_readiness_blocks_when_consensus_gate_is_missing():
+    payload = _evaluate(
+        {
+            "overall_status": "passed",
+            "risks": [],
+            "summary": {
+                "v2_gate_status": "passed",
+                "v2_adversarial_gate_status": "passed",
+                "v2_account_recovery_gate_status": "passed",
+                "stability_gate_status": "passed",
+                "official_testnet_gate_status": "passed",
+                "external_trial_gate_status": "passed",
+            },
+        }
+    )
+
+    assert payload["ready_for_v2_default"] is False
+    assert any(item["name"] == "consensus_gate" for item in payload["blocking_items"])
+    tcp_check = next(item for item in payload["checks"] if item["name"] == "consensus_tcp_evidence")
+    assert tcp_check["required"] is False
+    assert tcp_check["status"] == "failed"
+    assert tcp_check["detail"] == "consensus_tcp_evidence_status=missing"
+
+
 def test_v2_readiness_blocks_when_v2_account_recovery_gate_is_missing():
     payload = _evaluate(
         {
@@ -224,6 +543,7 @@ def test_v2_readiness_blocks_when_v2_account_recovery_gate_is_missing():
             "risks": [],
             "summary": {
                 "v2_gate_status": "passed",
+                "consensus_gate_status": "passed",
                 "v2_adversarial_gate_status": "passed",
                 "stability_gate_status": "passed",
                 "official_testnet_gate_status": "passed",
@@ -234,3 +554,43 @@ def test_v2_readiness_blocks_when_v2_account_recovery_gate_is_missing():
 
     assert payload["ready_for_v2_default"] is False
     assert any(item["name"] == "v2_account_recovery_gate" for item in payload["blocking_items"])
+
+
+def test_v2_readiness_reports_consensus_tcp_evidence_status_without_making_it_blocking():
+    payload = _evaluate(
+        {
+            "overall_status": "passed",
+            "risks": [],
+            "summary": {
+                "v2_gate_status": "passed",
+                "consensus_gate_status": "passed",
+                "consensus_tcp_evidence_status": "not_executed_bind_restricted",
+                "consensus_formal_tcp_evidence_ready": False,
+                "v2_adversarial_gate_status": "passed",
+                "v2_account_recovery_gate_status": "passed",
+                "stability_gate_status": "passed",
+                "official_testnet_gate_status": "passed",
+                "external_trial_gate_status": "passed",
+            },
+        }
+    )
+
+    tcp_check = next(item for item in payload["checks"] if item["name"] == "consensus_tcp_evidence")
+    assert tcp_check["required"] is False
+    assert tcp_check["status"] == "failed"
+    assert tcp_check["detail"] == "consensus_tcp_evidence_status=not_executed_bind_restricted"
+    assert all(item["name"] != "consensus_tcp_evidence" for item in payload["blocking_items"])
+
+
+def test_release_flow_auto_enables_v2_account_recovery_when_stability_is_requested():
+    args = Namespace(with_stability=True, with_v2_account_recovery=False)
+
+    assert gate_should_run_v2_account_recovery(args) is True
+    assert report_should_run_v2_account_recovery(args) is True
+    assert should_with_v2_account_recovery(args) is True
+
+    args = Namespace(with_stability=False, with_v2_account_recovery=False)
+
+    assert gate_should_run_v2_account_recovery(args) is False
+    assert report_should_run_v2_account_recovery(args) is False
+    assert should_with_v2_account_recovery(args) is False

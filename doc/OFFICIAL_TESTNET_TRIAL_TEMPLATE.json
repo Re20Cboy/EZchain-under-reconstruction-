@@ -28,6 +28,20 @@
       "endpoint": "",
       "imported": false,
       "used_for_send": false
+    },
+    "tx_send_readiness": {
+      "captured": false,
+      "capability": "",
+      "ready": false,
+      "recipient_endpoint_required_per_send": false,
+      "local_wallet_present": false,
+      "local_wallet_address": "",
+      "remote_account_status": "",
+      "remote_account_address": "",
+      "consensus_endpoint_present": false,
+      "wallet_db_present": false,
+      "wallet_address_matches": null,
+      "blockers": []
     }
   },
   "status": "pending",

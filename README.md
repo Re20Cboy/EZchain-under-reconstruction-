@@ -79,10 +79,11 @@ python3 ezchain_cli.py --config ezchain.yaml node account-status
 For `official-testnet + v2`, the current state is more limited and more honest:
 
 - read-only queries such as `wallet balance`, `wallet checkpoints`,
-  `tx pending`, and `tx receipts` can read from the shared account wallet DB
+  `tx pending`, `tx receipts`, and `tx history` can read from the shared
+  account wallet DB and local history state
 - `tx send` can now use the remote account path when you explicitly pass the
   recipient account-node endpoint, or when you saved that endpoint locally in advance
-- `tx faucet` and `tx history` are still not wired for the remote path
+- `tx faucet` is still not wired for the remote path
 
 Example:
 
@@ -157,6 +158,18 @@ Release-level gate:
 python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial
 ```
 
+Readiness-level reporting:
+
+```bash
+python3 scripts/release_report.py --run-gates --with-stability --with-consensus --with-v2-adversarial --allow-bind-restricted-skip
+python3 scripts/v2_readiness.py
+```
+
+The report now separates:
+
+- layered consensus validation passed
+- whether formal TCP consensus evidence was actually executed in the current environment
+
 ## Documentation
 
 - Docs hub: `doc/README.md`
@@ -171,5 +184,10 @@ python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversari
 - V2 is the default development and validation path
 - Whether V2 is ready for default formal delivery is still gated by readiness
   and final confirmation on a reachable official testnet
+- `consensus_gate` passing now means the layered consensus suites passed; it does
+  not by itself mean TCP multi-node evidence was formed
+- `release_report` and `v2_readiness` now expose the TCP evidence side
+  explicitly, including bind-restricted local environments where TCP suites were
+  not executed
 - V1 remains for compatibility and historical reference
 - This repository is not yet a finished public-network V2 node stack

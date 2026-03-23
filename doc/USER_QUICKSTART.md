@@ -60,8 +60,13 @@ python ezchain_cli.py network check
 - 远端 profile 这层已经生效
 - 但交易命令现在还没真正走远端账户节点
 
-为了避免混淆，当前 `official-testnet + v2` 下的交易相关命令会直接返回
-`tx_path_not_ready`，而不是再悄悄给出本地运行时结果。
+为了避免混淆，当前 `official-testnet + v2` 下不会再悄悄给出本地运行时结果。
+
+- 对明确不支持的动作，比如 `tx faucet`，会返回 `tx_action_unsupported`
+- 对依赖远端账户节点状态的动作，比如 `tx send`，会根据具体缺口返回更明确的错误
+  - 例如 `remote_account_not_running`
+  - `recipient_endpoint_required`
+  - `consensus_endpoint_missing`
 
 但如果你已经启动了 `v2-account`，而且它复用了当前钱包对应的共享 V2 钱包库，
 下面这些只读命令现在已经可以先用：
@@ -70,6 +75,24 @@ python ezchain_cli.py network check
 - `python ezchain_cli.py wallet checkpoints --password your_password`
 - `python ezchain_cli.py tx pending --password your_password`
 - `python ezchain_cli.py tx receipts --password your_password`
+- `python ezchain_cli.py tx history`
+
+如果你想在真正发 `tx send` 之前先看“远端路径现在差哪一步”，可以先看：
+
+- `python ezchain_cli.py network info`
+
+现在输出里会带：
+
+- `tx_capabilities`
+- `tx_send_readiness`
+
+其中 `tx_send_readiness.blockers` 会直接告诉你当前是否卡在：
+
+- `remote_account_not_running`
+- `consensus_endpoint_missing`
+- `wallet_db_path_missing`
+- `local_wallet_not_created`
+- `wallet_address_mismatch_with_account_node`
 
 另外，`tx send` 现在也补了一条最小可用路，但条件更明确：
 
@@ -145,6 +168,8 @@ python scripts/update_external_trial.py --record <trial-record.json> --auto-stat
 ```
 
 它会直接告诉你这份记录现在是通过、失败，还是还没做完，以及还差哪几步。
+
+`official_testnet_send_rehearsal.py` 的输出里现在也会带 `tx_send_readiness`。如果远端发送还缺前置条件，脚本会先返回 blocker，并把 `workflow.send` 写成失败，而不是直接盲发一次交易。
 
 ## 3. 创建钱包
 ```bash

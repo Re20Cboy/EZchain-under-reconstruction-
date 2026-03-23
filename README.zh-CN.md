@@ -70,10 +70,10 @@ python3 ezchain_cli.py --config ezchain.yaml node account-status
 
 如果是 `official-testnet + v2`，当前能力边界也已经说得更直白了：
 
-- `wallet balance`、`wallet checkpoints`、`tx pending`、`tx receipts`
-  这类只读查询，可以直接读共享的钱包库
+- `wallet balance`、`wallet checkpoints`、`tx pending`、`tx receipts`、`tx history`
+  这类只读查询，可以直接读共享的钱包库和本地 history 状态
 - `tx send` 现在只要你明确提供收款方账户节点地址，或者提前把它记进本地地址簿，就能走远端账户路径
-- `tx faucet` 和 `tx history` 还没有接成远端路径
+- `tx faucet` 还没有接成远端路径
 
 示例：
 
@@ -145,6 +145,18 @@ python3 run_ez_v2_acceptance.py
 python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversarial
 ```
 
+readiness 级报告：
+
+```bash
+python3 scripts/release_report.py --run-gates --with-stability --with-consensus --with-v2-adversarial --allow-bind-restricted-skip
+python3 scripts/v2_readiness.py
+```
+
+现在报告会明确区分两件事：
+
+- 分层共识验证是否已经通过
+- 当前环境里是否真的执行并形成了 TCP 共识正式证据
+
 ## 文档入口
 
 - 文档总入口：`doc/README.md`
@@ -158,5 +170,7 @@ python3 scripts/release_gate.py --skip-slow --with-stability --with-v2-adversari
 
 - V2 已经是默认开发和验证路径
 - V2 是否已经达到默认正式交付口径，仍以 readiness 和真实官方测试网最终确认为准
+- `consensus_gate` 通过现在表示分层共识套件已通过，不自动等同于 TCP 多节点正式证据已经形成
+- `release_report` 和 `v2_readiness` 现在会单独给出 TCP 共识证据状态，包括当前机器因 bind 限制没有执行 TCP 套件的情况
 - V1 保留用于兼容和历史参考
 - 仓库还不是完整的公网 V2 节点栈

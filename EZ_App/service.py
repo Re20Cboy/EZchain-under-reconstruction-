@@ -292,6 +292,40 @@ class LocalService:
             def _tx_path_ready(self) -> bool:
                 return bool(service.network_info.get("tx_path_ready", True))
 
+            def _tx_capabilities(self) -> Dict[str, str]:
+                raw = service.network_info.get("tx_capabilities")
+                if isinstance(raw, dict):
+                    return {str(key): str(value) for key, value in raw.items()}
+                if service.tx_engine.protocol_version == "v2" and str(service.network_info.get("mode", "")) == "official-testnet":
+                    return {
+                        "wallet_balance": "remote_read",
+                        "wallet_checkpoints": "remote_read",
+                        "tx_pending": "remote_read",
+                        "tx_receipts": "remote_read",
+                        "tx_history": "remote_read",
+                        "tx_send": "remote_send",
+                        "tx_faucet": "unsupported",
+                    }
+                if service.tx_engine.protocol_version == "v2":
+                    return {
+                        "wallet_balance": "local",
+                        "wallet_checkpoints": "local",
+                        "tx_pending": "local",
+                        "tx_receipts": "local",
+                        "tx_history": "local",
+                        "tx_send": "local",
+                        "tx_faucet": "local",
+                    }
+                return {
+                    "wallet_balance": "local",
+                    "wallet_checkpoints": "unsupported",
+                    "tx_pending": "unsupported",
+                    "tx_receipts": "unsupported",
+                    "tx_history": "local",
+                    "tx_send": "local",
+                    "tx_faucet": "local",
+                }
+
             def _tx_path_note(self) -> str:
                 return str(
                     service.network_info.get(
@@ -300,14 +334,23 @@ class LocalService:
                     )
                 )
 
+            def _tx_action_key(self, action: str) -> str:
+                return str(action).replace(" ", "_")
+
             def _err_tx_path_not_ready(self, action: str) -> None:
+                action_key = self._tx_action_key(action)
+                capability = self._tx_capabilities().get(action_key, "unsupported")
+                if capability == "unsupported":
+                    self._err(501, "tx_action_unsupported", f"{action} is not supported on this profile. {self._tx_path_note()}")
+                    return
                 self._err(501, "tx_path_not_ready", f"{action} is not available on this profile yet. {self._tx_path_note()}")
 
+            def _err_tx_action(self, code: int, err_code: str, message: str) -> None:
+                self._err(code, err_code, f"{message}. {self._tx_path_note()}")
+
             def _remote_read_state(self):
-                state = service.node_manager.account_status(
-                    bootstrap_nodes=service.network_info.get("bootstrap_nodes", []),
-                )
-                if not isinstance(state, dict):
+                state = self._remote_account_status()
+                if state is None:
                     return None
                 if state.get("status") != "running":
                     return None
@@ -316,6 +359,121 @@ class LocalService:
                 if not str(state.get("wallet_db_path", "")).strip():
                     return None
                 return state
+
+            def _remote_account_status(self):
+                state = service.node_manager.account_status(
+                    bootstrap_nodes=service.network_info.get("bootstrap_nodes", []),
+                )
+                return state if isinstance(state, dict) else None
+
+            def _wallet_summary_if_exists(self):
+                try:
+                    return service.wallet_store.summary(protocol_version=service.tx_engine.protocol_version)
+                except FileNotFoundError:
+                    return None
+
+            def _tx_send_readiness(self) -> Dict[str, Any]:
+                capability = self._tx_capabilities().get("tx_send", "unsupported")
+                if capability == "local":
+                    return {
+                        "capability": capability,
+                        "ready": True,
+                        "recipient_endpoint_required_per_send": False,
+                        "blockers": [],
+                    }
+                if capability == "unsupported":
+                    return {
+                        "capability": capability,
+                        "ready": False,
+                        "recipient_endpoint_required_per_send": False,
+                        "blockers": ["tx_send_unsupported_on_profile"],
+                    }
+
+                raw_state = self._remote_account_status()
+                wallet_summary = self._wallet_summary_if_exists()
+                remote_account_running = bool(isinstance(raw_state, dict) and raw_state.get("status") == "running")
+                consensus_endpoint_present = bool(
+                    isinstance(raw_state, dict) and str(raw_state.get("consensus_endpoint", "")).strip()
+                )
+                wallet_db_present = bool(
+                    isinstance(raw_state, dict) and str(raw_state.get("wallet_db_path", "")).strip()
+                )
+                local_wallet_present = wallet_summary is not None
+                remote_address = "" if not isinstance(raw_state, dict) else str(raw_state.get("address", "")).strip()
+                local_address = "" if wallet_summary is None else str(wallet_summary.address)
+                wallet_address_matches = None
+                if local_wallet_present and remote_address:
+                    wallet_address_matches = local_address == remote_address
+
+                blockers: list[str] = []
+                if not remote_account_running:
+                    blockers.append("remote_account_not_running")
+                if remote_account_running and not consensus_endpoint_present:
+                    blockers.append("consensus_endpoint_missing")
+                if remote_account_running and not wallet_db_present:
+                    blockers.append("wallet_db_path_missing")
+                if not local_wallet_present:
+                    blockers.append("local_wallet_not_created")
+                if wallet_address_matches is False:
+                    blockers.append("wallet_address_mismatch_with_account_node")
+
+                return {
+                    "capability": capability,
+                    "ready": len(blockers) == 0,
+                    "recipient_endpoint_required_per_send": True,
+                    "local_wallet_present": local_wallet_present,
+                    "local_wallet_address": local_address,
+                    "remote_account_status": None if not isinstance(raw_state, dict) else raw_state.get("status", ""),
+                    "remote_account_address": remote_address,
+                    "consensus_endpoint_present": consensus_endpoint_present,
+                    "wallet_db_present": wallet_db_present,
+                    "wallet_address_matches": wallet_address_matches,
+                    "blockers": blockers,
+                }
+
+            def _remote_send_preflight(self, *, recipient: str, recipient_endpoint: str):
+                remote_state = self._remote_read_state()
+                if remote_state is None:
+                    return None, (
+                        "remote_account_not_running",
+                        "tx send requires a running v2-account on this profile",
+                    )
+                if not str(remote_state.get("consensus_endpoint", "")).strip():
+                    return None, (
+                        "consensus_endpoint_missing",
+                        "tx send requires the remote v2-account to expose its consensus endpoint",
+                    )
+                resolved_recipient_endpoint = str(recipient_endpoint or "").strip()
+                if not resolved_recipient_endpoint:
+                    resolved_recipient_endpoint = str(service.wallet_store.get_contact_endpoint(recipient) or "").strip()
+                if not resolved_recipient_endpoint:
+                    return None, (
+                        "recipient_endpoint_required",
+                        "tx send requires recipient_endpoint or a saved contact endpoint on this profile",
+                    )
+                return {
+                    "state": remote_state,
+                    "recipient_endpoint": resolved_recipient_endpoint,
+                }, None
+
+            def _tx_send_error(self, exc: ValueError) -> tuple[str, str] | None:
+                message = str(exc)
+                if message == "wallet_address_mismatch_with_account_node":
+                    return (
+                        "wallet_address_mismatch_with_account_node",
+                        "Local wallet address does not match the running remote v2-account address",
+                    )
+                if message == "consensus_endpoint_missing":
+                    return (
+                        "consensus_endpoint_missing",
+                        "tx send requires the remote v2-account to expose its consensus endpoint",
+                    )
+                if message == "recipient_endpoint_required":
+                    return (
+                        "recipient_endpoint_required",
+                        "tx send requires recipient_endpoint or a saved contact endpoint on this profile",
+                    )
+                return None
 
             def _contact_address_from_path(self) -> str | None:
                 prefix = "/contacts/"
@@ -419,9 +577,21 @@ class LocalService:
                     return
                 if self.path == "/tx/history":
                     if not self._tx_path_ready():
-                        self._err_tx_path_not_ready("tx history")
+                        remote_state = self._remote_read_state()
+                        if remote_state is None:
+                            self._err_tx_path_not_ready("tx history")
+                            return
+                        try:
+                            data = service.tx_engine.remote_history(service.wallet_store, state=remote_state)
+                        except ValueError as exc:
+                            self._err(400, "invalid_request", str(exc))
+                            return
+                        except Exception as exc:
+                            self._err(500, "history_failed", str(exc))
+                            return
+                        self._ok(data)
                         return
-                    self._ok({"items": service.wallet_store.get_history()})
+                    self._ok(service.tx_engine.history(service.wallet_store))
                     return
                 if self.path == "/tx/pending":
                     if not self._auth_ok():
@@ -550,6 +720,8 @@ class LocalService:
                             "account_nodes": int(service.network_info.get("account_nodes", 1)),
                             "start_port": int(service.network_info.get("start_port", 0)),
                             "bootstrap_probe": probe,
+                            "tx_send_readiness": self._tx_send_readiness(),
+                            "tx_capabilities": self._tx_capabilities(),
                             "tx_path": service.network_info.get("tx_path", "legacy_local_runtime"),
                             "tx_path_ready": bool(service.network_info.get("tx_path_ready", True)),
                             "tx_path_note": service.network_info.get(
@@ -633,8 +805,6 @@ class LocalService:
 
                     recipient = body.get("recipient", "")
                     recipient_endpoint = str(body.get("recipient_endpoint", "") or "").strip()
-                    if not recipient_endpoint and isinstance(recipient, str):
-                        recipient_endpoint = str(service.wallet_store.get_contact_endpoint(recipient) or "").strip()
                     password = body.get("password", "")
                     client_tx_id = body.get("client_tx_id") or uuid.uuid4().hex
                     if not self._validate_send_fields(recipient=recipient, password=password, client_tx_id=client_tx_id):
@@ -647,12 +817,19 @@ class LocalService:
                         return
 
                     remote_state = None
+                    resolved_recipient_endpoint = recipient_endpoint
                     if not self._tx_path_ready():
-                        remote_state = self._remote_read_state()
-                        if remote_state is None or not recipient_endpoint:
-                            service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="tx_path_not_ready")
-                            self._err_tx_path_not_ready("tx send")
+                        remote_send, remote_error = self._remote_send_preflight(
+                            recipient=str(recipient),
+                            recipient_endpoint=recipient_endpoint,
+                        )
+                        if remote_send is None and remote_error is not None:
+                            error_code, error_message = remote_error
+                            service.metrics.record_tx_send(ok=False, latency_ms=None, error_code=error_code)
+                            self._err_tx_action(409 if error_code == "remote_account_not_running" else 400, error_code, error_message)
                             return
+                        remote_state = remote_send["state"]
+                        resolved_recipient_endpoint = remote_send["recipient_endpoint"]
 
                     try:
                         result = service.tx_engine.send(
@@ -662,7 +839,7 @@ class LocalService:
                             amount=amount,
                             client_tx_id=client_tx_id,
                             state=remote_state,
-                            recipient_endpoint=recipient_endpoint or None,
+                            recipient_endpoint=resolved_recipient_endpoint or None,
                         )
                     except FileNotFoundError:
                         service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="wallet_not_found")
@@ -672,6 +849,12 @@ class LocalService:
                         if str(exc) == "duplicate_transaction":
                             service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="duplicate_transaction")
                             self._err(409, "duplicate_transaction", "Duplicate client_tx_id")
+                            return
+                        mapped_error = self._tx_send_error(exc)
+                        if mapped_error is not None:
+                            error_code, error_message = mapped_error
+                            service.metrics.record_tx_send(ok=False, latency_ms=None, error_code=error_code)
+                            self._err(400, error_code, error_message)
                             return
                         service.metrics.record_tx_send(ok=False, latency_ms=None, error_code="invalid_request")
                         self._err(400, "invalid_request", str(exc))

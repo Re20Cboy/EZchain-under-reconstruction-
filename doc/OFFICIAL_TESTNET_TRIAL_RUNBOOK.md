@@ -158,8 +158,12 @@ python scripts/testnet_profile_gate.py --config ezchain.yaml --check-connectivit
 - 网络连通性检查已经在走远端 profile
 - 但完整远端交易路径还没有全部接完
 
-现在 CLI 和 service 在这种情况下会直接拦下这些交易相关命令，并返回
-`tx_path_not_ready`，避免你误把本地结果当成远端测试网结果。
+现在 CLI 和 service 在这种情况下会直接拦下不该走本地路径的交易动作，
+避免你误把本地结果当成远端测试网结果。
+
+- `tx faucet` 这类当前明确不支持的动作，会返回 `tx_action_unsupported`
+- `tx send` 如果缺少远端账户节点、缺少 `recipient_endpoint`，或远端状态不完整，
+  会返回更具体的错误码，而不是一律压成 `tx_path_not_ready`
 
 不过，如果 `v2-account` 已经在跑，而且它复用了当前钱包对应的
 `wallet_state_v2/<address>/wallet_v2.db`，下面这些只读查询现在已经可以先用：
@@ -168,6 +172,7 @@ python scripts/testnet_profile_gate.py --config ezchain.yaml --check-connectivit
 - `wallet checkpoints`
 - `tx pending`
 - `tx receipts`
+- `tx history`
 
 另外，`tx send` 现在也开放了一条最小可用路，但条件必须满足：
 
@@ -231,6 +236,8 @@ python scripts/update_external_trial.py \
 
 这样记录里会留下一个单独的 `evidence.contact_card` 证据块，后面的发布报告也能直接读出来。
 
+现在试用记录模板里还会保留 `evidence.tx_send_readiness`。这块不是手工填写用的，主要由 `official_testnet_send_rehearsal.py` 自动写入，记录当时远端 send path 是否 ready、有哪些 blocker。
+
 如果你想把“导入联系卡 + 发交易 + 更新试用记录”一次做完，现在也可以直接用收尾脚本：
 
 ```bash
@@ -248,6 +255,10 @@ python scripts/official_testnet_send_rehearsal.py \
 - 把联系卡导入本地地址簿
 - 用这张联系卡发起一次远端发送
 - 把发送结果和联系卡证据写回试用记录
+
+脚本输出里现在还会带 `tx_send_readiness`。如果远端 `v2-account` 没在运行，或者缺少 `consensus_endpoint`、`wallet_db_path`，脚本会先把这些 blocker 暴露出来，不会盲目调用发送。
+
+如果 preflight 没通过，试用记录里的 `workflow.send` 会被标记为 `failed`，同时写入类似 `send_preflight_failed:remote_account_not_running` 的 issue，方便后续汇总和发布报告直接识别。
 
 它们会直接读共享的 V2 钱包库，不再走本地假结果。
 

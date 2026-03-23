@@ -44,6 +44,20 @@ def _base_record() -> dict:
                 "endpoint": "",
                 "imported": False,
                 "used_for_send": False,
+            },
+            "tx_send_readiness": {
+                "captured": True,
+                "capability": "remote_send",
+                "ready": True,
+                "recipient_endpoint_required_per_send": True,
+                "local_wallet_present": True,
+                "local_wallet_address": "0xsender",
+                "remote_account_status": "running",
+                "remote_account_address": "0xsender",
+                "consensus_endpoint_present": True,
+                "wallet_db_present": True,
+                "wallet_address_matches": True,
+                "blockers": [],
             }
         },
         "status": "passed",
@@ -97,7 +111,22 @@ def test_update_external_trial_auto_status_and_remaining_steps():
 
     with tempfile.TemporaryDirectory() as td:
         record_path = Path(td) / "trial.json"
-        record_path.write_text(json.dumps(_base_record(), indent=2), encoding="utf-8")
+        payload = _base_record()
+        payload["evidence"]["tx_send_readiness"] = {
+            "captured": False,
+            "capability": "",
+            "ready": False,
+            "recipient_endpoint_required_per_send": False,
+            "local_wallet_present": False,
+            "local_wallet_address": "",
+            "remote_account_status": "",
+            "remote_account_address": "",
+            "consensus_endpoint_present": False,
+            "wallet_db_present": False,
+            "wallet_address_matches": None,
+            "blockers": [],
+        }
+        record_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
         payload = json.loads(record_path.read_text(encoding="utf-8"))
         payload["status"] = "pending"
@@ -169,6 +198,29 @@ def test_validate_trial_record_rejects_contact_card_used_without_required_fields
     assert "evidence.contact_card.endpoint must be set when used_for_send is true" in failures
 
 
+def test_validate_trial_record_rejects_missing_tx_send_readiness_when_send_is_not_pending():
+    record = _base_record()
+    del record["evidence"]["tx_send_readiness"]
+
+    failures = validate_trial_record(record, require_passed=False)
+
+    assert (
+        "evidence.tx_send_readiness.captured must be true when workflow.send is passed/failed or contact_card.used_for_send is true"
+        in failures
+    )
+
+
+def test_validate_trial_record_rejects_passed_send_when_tx_send_readiness_is_not_ready():
+    record = _base_record()
+    record["evidence"]["tx_send_readiness"]["ready"] = False
+    record["evidence"]["tx_send_readiness"]["blockers"] = ["remote_account_not_running"]
+
+    failures = validate_trial_record(record, require_passed=False)
+
+    assert "evidence.tx_send_readiness.ready must be true when workflow.send is passed" in failures
+    assert "evidence.tx_send_readiness.blockers must be empty when ready is true" not in failures
+
+
 def test_validate_trial_record_rejects_single_host_rehearsal_when_real_external_is_required():
     record = _base_record()
     record["environment"]["network_environment"] = "single-host-rehearsal"
@@ -184,7 +236,22 @@ def test_update_external_trial_can_store_contact_card_evidence():
 
     with tempfile.TemporaryDirectory() as td:
         record_path = Path(td) / "trial.json"
-        record_path.write_text(json.dumps(_base_record(), indent=2), encoding="utf-8")
+        payload = _base_record()
+        payload["evidence"]["tx_send_readiness"] = {
+            "captured": False,
+            "capability": "",
+            "ready": False,
+            "recipient_endpoint_required_per_send": False,
+            "local_wallet_present": False,
+            "local_wallet_address": "",
+            "remote_account_status": "",
+            "remote_account_address": "",
+            "consensus_endpoint_present": False,
+            "wallet_db_present": False,
+            "wallet_address_matches": None,
+            "blockers": [],
+        }
+        record_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
         proc = subprocess.run(
             [
@@ -219,6 +286,8 @@ def test_update_external_trial_can_store_contact_card_evidence():
         assert output["contact_card"]["endpoint"] == "192.168.1.20:19500"
         assert output["contact_card"]["imported"] is True
         assert output["contact_card"]["used_for_send"] is True
+        assert output["tx_send_readiness"]["captured"] is False
+        assert output["tx_send_readiness"]["ready"] is False
 
 
 def test_update_external_trial_can_load_contact_card_file():
@@ -227,7 +296,22 @@ def test_update_external_trial_can_load_contact_card_file():
     with tempfile.TemporaryDirectory() as td:
         record_path = Path(td) / "trial.json"
         card_path = Path(td) / "bob-contact.json"
-        record_path.write_text(json.dumps(_base_record(), indent=2), encoding="utf-8")
+        payload = _base_record()
+        payload["evidence"]["tx_send_readiness"] = {
+            "captured": False,
+            "capability": "",
+            "ready": False,
+            "recipient_endpoint_required_per_send": False,
+            "local_wallet_present": False,
+            "local_wallet_address": "",
+            "remote_account_status": "",
+            "remote_account_address": "",
+            "consensus_endpoint_present": False,
+            "wallet_db_present": False,
+            "wallet_address_matches": None,
+            "blockers": [],
+        }
+        record_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         card_path.write_text(
             json.dumps(
                 {
@@ -266,6 +350,7 @@ def test_update_external_trial_can_load_contact_card_file():
         assert output["contact_card"]["address"] == "0xb0b123"
         assert output["contact_card"]["endpoint"] == "192.168.1.20:19500"
         assert output["contact_card"]["imported"] is True
+        assert output["tx_send_readiness"]["captured"] is False
 
 
 def test_official_testnet_send_rehearsal_imports_contact_and_updates_trial_record():
@@ -341,6 +426,8 @@ def test_official_testnet_send_rehearsal_imports_contact_and_updates_trial_recor
                 )
 
         assert result["ok"] is True
+        assert result["tx_send_readiness"]["ready"] is True
+        assert result["tx_send_readiness"]["blockers"] == []
         assert result["saved_contact"]["address"] == "0xb0b123"
         assert result["saved_contact"]["endpoint"] == "192.168.1.20:19500"
         assert result["tx"]["status"] == "confirmed"
@@ -355,3 +442,83 @@ def test_official_testnet_send_rehearsal_imports_contact_and_updates_trial_recor
         assert updated_record["evidence"]["contact_card"]["endpoint"] == "192.168.1.20:19500"
         assert updated_record["evidence"]["contact_card"]["imported"] is True
         assert updated_record["evidence"]["contact_card"]["used_for_send"] is True
+        assert updated_record["evidence"]["tx_send_readiness"]["captured"] is True
+        assert updated_record["evidence"]["tx_send_readiness"]["ready"] is True
+        assert updated_record["evidence"]["tx_send_readiness"]["blockers"] == []
+
+
+def test_official_testnet_send_rehearsal_reports_preflight_blockers_without_sending():
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        cfg_path = tmp / "ezchain.yaml"
+        data_dir = tmp / ".eztrial"
+        record_path = tmp / "trial.json"
+        card_path = tmp / "bob-contact.json"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                '  protocol_version: "v2"\n'
+            ),
+            encoding="utf-8",
+        )
+        record_path.write_text(json.dumps(_base_record(), indent=2), encoding="utf-8")
+        card_path.write_text(
+            json.dumps(
+                {
+                    "kind": "ezchain-contact-card/v1",
+                    "address": "0xb0b123",
+                    "endpoint": "192.168.1.20:19500",
+                    "network": "official-testnet",
+                    "mode_family": "v2-account",
+                    "exported_at": "2026-03-21T00:00:00Z",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        remote_state = {
+            "status": "stopped",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+        }
+
+        with mock.patch("scripts.official_testnet_send_rehearsal.NodeManager.account_status", return_value=remote_state):
+            with mock.patch("scripts.official_testnet_send_rehearsal.TxEngine.send") as send_mock:
+                result = run_rehearsal(
+                    config_path=cfg_path,
+                    record_path=record_path,
+                    password="pw123",
+                    contact_card_file=card_path,
+                    amount=35,
+                    client_tx_id="cid-trial-send-2",
+                    note=["trial wrapper used"],
+                )
+
+        assert result["ok"] is False
+        assert result["error"] == "send_preflight_failed:remote_account_not_running"
+        assert result["tx_send_readiness"]["ready"] is False
+        assert result["tx_send_readiness"]["blockers"] == ["remote_account_not_running"]
+        assert result["saved_contact"]["address"] == "0xb0b123"
+        send_mock.assert_not_called()
+
+        updated_record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert updated_record["workflow"]["send"] == "failed"
+        assert "send_preflight_failed:remote_account_not_running" in updated_record["issues"]
+        assert "send preflight blocked for 0xb0b123: remote_account_not_running" in updated_record["notes"]
+        assert updated_record["evidence"]["contact_card"]["path"] == str(card_path)
+        assert updated_record["evidence"]["contact_card"]["imported"] is True
+        assert updated_record["evidence"]["contact_card"]["used_for_send"] is True
+        assert updated_record["evidence"]["tx_send_readiness"]["captured"] is True
+        assert updated_record["evidence"]["tx_send_readiness"]["ready"] is False
+        assert updated_record["evidence"]["tx_send_readiness"]["blockers"] == ["remote_account_not_running"]

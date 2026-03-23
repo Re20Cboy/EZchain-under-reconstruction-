@@ -170,9 +170,11 @@ def test_cli_blocks_remote_v2_tx_commands_until_tx_path_is_ready():
             code = main(["--config", str(cfg_path), "tx", "faucet", "--password", "pw123", "--amount", "100"])
         assert code == 2
         payload = json.loads(out.getvalue())
-        assert payload["error"]["code"] == "tx_path_not_ready"
+        assert payload["error"]["code"] == "tx_action_unsupported"
         assert payload["mode"] == "official-testnet"
         assert payload["tx_path_ready"] is False
+        assert payload["tx_action"] == "tx_faucet"
+        assert payload["tx_action_capability"] == "unsupported"
 
 
 def test_cli_remote_v2_wallet_balance_reads_shared_account_wallet_db():
@@ -296,6 +298,237 @@ def test_cli_remote_v2_tx_send_uses_remote_account_path_when_recipient_endpoint_
         kwargs = send_mock.call_args.kwargs
         assert kwargs["state"] == remote_state
         assert kwargs["recipient_endpoint"] == "127.0.0.1:19660"
+
+
+def test_cli_remote_v2_tx_send_requires_running_v2_account():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        WalletStore(str(data_dir)).create_wallet(password="pw123", name="demo")
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value={"status": "not_running"}):
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "--config",
+                        str(cfg_path),
+                        "tx",
+                        "send",
+                        "--recipient",
+                        "0xabc12345",
+                        "--amount",
+                        "45",
+                        "--password",
+                        "pw123",
+                        "--client-tx-id",
+                        "cid-remote-preflight-1",
+                        "--recipient-endpoint",
+                        "127.0.0.1:19660",
+                    ]
+                )
+        assert code == 2
+        payload = json.loads(out.getvalue())
+        assert payload["error"]["code"] == "remote_account_not_running"
+        assert payload["tx_action"] == "tx_send"
+        assert payload["tx_action_capability"] == "remote_send"
+
+
+def test_cli_remote_v2_tx_send_requires_recipient_endpoint_when_contact_missing():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with redirect_stdout(out):
+                code = main(
+                    [
+                        "--config",
+                        str(cfg_path),
+                        "tx",
+                        "send",
+                        "--recipient",
+                        "0xabc12345",
+                        "--amount",
+                        "45",
+                        "--password",
+                        "pw123",
+                        "--client-tx-id",
+                        "cid-remote-preflight-2",
+                    ]
+                )
+        assert code == 2
+        payload = json.loads(out.getvalue())
+        assert payload["error"]["code"] == "recipient_endpoint_required"
+
+
+def test_cli_remote_v2_tx_send_reports_wallet_address_mismatch():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            with mock.patch("EZ_App.cli.TxEngine.send", side_effect=ValueError("wallet_address_mismatch_with_account_node")):
+                with redirect_stdout(out):
+                    code = main(
+                        [
+                            "--config",
+                            str(cfg_path),
+                            "tx",
+                            "send",
+                            "--recipient",
+                            "0xabc12345",
+                            "--amount",
+                            "45",
+                            "--password",
+                            "pw123",
+                            "--client-tx-id",
+                            "cid-remote-preflight-3",
+                            "--recipient-endpoint",
+                            "127.0.0.1:19660",
+                        ]
+                    )
+        assert code == 2
+        payload = json.loads(out.getvalue())
+        assert payload["error"]["code"] == "wallet_address_mismatch_with_account_node"
+
+
+def test_cli_remote_v2_tx_history_reads_shared_wallet_state():
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezcli"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        alice_dir = data_dir / "alice"
+        bob_dir = data_dir / "bob"
+        shared_backend = data_dir / "shared_backend"
+        alice_store = WalletStore(str(alice_dir))
+        bob_store = WalletStore(str(bob_dir))
+        alice_store.create_wallet(password="pw123", name="alice")
+        bob_store.create_wallet(password="pw123", name="bob")
+        alice_engine = TxEngine(str(alice_dir), protocol_version="v2", v2_backend_dir=str(shared_backend))
+        bob_engine = TxEngine(str(bob_dir), protocol_version="v2", v2_backend_dir=str(shared_backend))
+        bob_addr = bob_store.summary(protocol_version="v2").address
+        alice_engine.faucet(alice_store, password="pw123", amount=90)
+        alice_engine.send(
+            alice_store,
+            password="pw123",
+            recipient=bob_addr,
+            amount=25,
+            client_tx_id="cid-cli-history-1",
+        )
+        bob_engine.balance(bob_store, password="pw123")
+
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": bob_addr,
+            "wallet_db_path": str(bob_dir / "wallet_state_v2" / bob_addr / "wallet_v2.db"),
+            "chain_cursor": {"height": 1, "block_hash_hex": "11" * 32},
+            "pending_incoming_transfer_count": 0,
+        }
+
+        out = StringIO()
+        with mock.patch("EZ_App.cli._build_runtime", return_value=(load_config(cfg_path), bob_store, mock.Mock(), bob_engine)):
+            with mock.patch("EZ_App.cli._remote_read_state", return_value=remote_state):
+                with redirect_stdout(out):
+                    code = main(["--config", str(cfg_path), "tx", "history"])
+        assert code == 0
+        payload = json.loads(out.getvalue())
+        assert payload["protocol_version"] == "v2"
+        assert payload["chain_height"] == 1
+        assert len(payload["items"]) == 1
+        assert payload["items"][0]["status"] == "received"
+        assert payload["items"][0]["amount"] == 25
 
 
 def test_cli_contacts_set_list_remove_and_remote_send_can_reuse_saved_endpoint():

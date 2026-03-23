@@ -32,6 +32,48 @@ BOOLEAN_CHOICES = ("true", "false")
 NETWORK_ENVIRONMENTS = ("real-external", "single-host-rehearsal")
 
 
+def _default_tx_send_readiness() -> dict[str, Any]:
+    return {
+        "captured": False,
+        "capability": "",
+        "ready": False,
+        "recipient_endpoint_required_per_send": False,
+        "local_wallet_present": False,
+        "local_wallet_address": "",
+        "remote_account_status": "",
+        "remote_account_address": "",
+        "consensus_endpoint_present": False,
+        "wallet_db_present": False,
+        "wallet_address_matches": None,
+        "blockers": [],
+    }
+
+
+def _normalize_tx_send_readiness(value: Any, *, captured_default: bool) -> dict[str, Any]:
+    normalized = _default_tx_send_readiness()
+    if not isinstance(value, dict):
+        return normalized
+    normalized["captured"] = bool(value.get("captured", captured_default))
+    normalized["capability"] = str(value.get("capability", "") or "").strip()
+    normalized["ready"] = bool(value.get("ready", False))
+    normalized["recipient_endpoint_required_per_send"] = bool(
+        value.get("recipient_endpoint_required_per_send", False)
+    )
+    normalized["local_wallet_present"] = bool(value.get("local_wallet_present", False))
+    normalized["local_wallet_address"] = str(value.get("local_wallet_address", "") or "").strip()
+    normalized["remote_account_status"] = str(value.get("remote_account_status", "") or "").strip()
+    normalized["remote_account_address"] = str(value.get("remote_account_address", "") or "").strip()
+    normalized["consensus_endpoint_present"] = bool(value.get("consensus_endpoint_present", False))
+    normalized["wallet_db_present"] = bool(value.get("wallet_db_present", False))
+    wallet_address_matches = value.get("wallet_address_matches")
+    if wallet_address_matches in (True, False, None):
+        normalized["wallet_address_matches"] = wallet_address_matches
+    blockers = value.get("blockers", [])
+    if isinstance(blockers, list):
+        normalized["blockers"] = [str(item).strip() for item in blockers if str(item).strip()]
+    return normalized
+
+
 def _derive_status(payload: dict[str, Any]) -> str:
     workflow = payload.get("workflow")
     profile = payload.get("profile")
@@ -133,6 +175,7 @@ def update_trial_record(
     contact_card_endpoint: str | None = None,
     contact_card_imported: bool | None = None,
     contact_card_used_for_send: bool | None = None,
+    tx_send_readiness: dict[str, Any] | None = None,
     issues_to_add: list[str] | None = None,
     notes_to_add: list[str] | None = None,
     clear_default_notes: bool = False,
@@ -161,6 +204,11 @@ def update_trial_record(
         contact_card = evidence.setdefault("contact_card", {})
         if not isinstance(contact_card, dict):
             raise SystemExit("evidence.contact_card must be a JSON object")
+        tx_send_readiness_evidence = evidence.setdefault("tx_send_readiness", _default_tx_send_readiness())
+        if not isinstance(tx_send_readiness_evidence, dict):
+            raise SystemExit("evidence.tx_send_readiness must be a JSON object")
+        tx_send_readiness_evidence = _normalize_tx_send_readiness(tx_send_readiness_evidence, captured_default=False)
+        evidence["tx_send_readiness"] = tx_send_readiness_evidence
         issues = payload.setdefault("issues", [])
         if not isinstance(issues, list):
             raise SystemExit("issues must be a JSON array")
@@ -197,6 +245,9 @@ def update_trial_record(
             contact_card["imported"] = bool(contact_card_imported)
         if contact_card_used_for_send is not None:
             contact_card["used_for_send"] = bool(contact_card_used_for_send)
+        if tx_send_readiness is not None:
+            tx_send_readiness_evidence = _normalize_tx_send_readiness(tx_send_readiness, captured_default=True)
+            evidence["tx_send_readiness"] = tx_send_readiness_evidence
 
         if clear_default_notes:
             notes[:] = [item for item in notes if item != "Record any operator-facing problems here."]
@@ -230,6 +281,7 @@ def update_trial_record(
             "imported": contact_card.get("imported", False),
             "used_for_send": contact_card.get("used_for_send", False),
         },
+        "tx_send_readiness": dict(tx_send_readiness_evidence),
         "remaining_steps": remaining_steps,
         "issues_count": len(issues),
         "notes_count": len(notes),

@@ -142,3 +142,52 @@ def test_cli_network_info_reports_official_testnet_mode_for_remote_v2_profile(ca
         assert payload["roles"] == ["account"]
         assert payload["tx_path"] == "local_v2_runtime"
         assert payload["tx_path_ready"] is False
+        assert payload["tx_send_readiness"]["capability"] == "remote_send"
+        assert payload["tx_send_readiness"]["ready"] is False
+        assert "remote_account_not_running" in payload["tx_send_readiness"]["blockers"]
+
+
+def test_cli_network_info_reports_remote_send_readiness_when_account_path_is_live(capsys):
+    with tempfile.TemporaryDirectory() as td:
+        cfg_path = Path(td) / "ezchain.yaml"
+        data_dir = Path(td) / ".ezchain"
+        cfg_path.write_text(
+            (
+                "network:\n"
+                '  name: "testnet"\n'
+                '  bootstrap_nodes: ["192.168.1.9:19500"]\n'
+                "  consensus_nodes: 3\n"
+                "  account_nodes: 1\n"
+                "  start_port: 19500\n"
+                "app:\n"
+                f"  data_dir: {data_dir}\n"
+                f"  log_dir: {data_dir / 'logs'}\n"
+                f"  api_token_file: {data_dir / 'api.token'}\n"
+                "  api_host: 127.0.0.1\n"
+                "  api_port: 8787\n"
+                "  protocol_version: v2\n"
+            ),
+            encoding="utf-8",
+        )
+
+        wallet_store = WalletStore(str(data_dir))
+        wallet_store.create_wallet(password="pw123", name="demo")
+        address = wallet_store.summary(protocol_version="v2").address
+        remote_state = {
+            "status": "running",
+            "mode": "v2-account",
+            "mode_family": "v2-account",
+            "roles": ["account"],
+            "address": address,
+            "consensus_endpoint": "192.168.1.9:19500",
+            "wallet_db_path": str(data_dir / "wallet_state_v2" / address / "wallet_v2.db"),
+        }
+
+        with patch("EZ_App.cli.NodeManager.account_status", return_value=remote_state):
+            code = main(["--config", str(cfg_path), "network", "info"])
+        assert code == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["tx_send_readiness"]["capability"] == "remote_send"
+        assert payload["tx_send_readiness"]["ready"] is True
+        assert payload["tx_send_readiness"]["wallet_address_matches"] is True
+        assert payload["tx_send_readiness"]["blockers"] == []

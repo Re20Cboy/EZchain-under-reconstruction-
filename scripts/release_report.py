@@ -60,8 +60,66 @@ def _append_risk(risks: List[str], message: str) -> None:
         risks.append(message)
 
 
+def should_run_v2_account_recovery(args: argparse.Namespace) -> bool:
+    return bool(args.with_v2_account_recovery or args.with_stability)
+
+
 def _status_from_step(steps: List[Dict[str, Any]], name: str) -> str:
     return next((str(step["status"]) for step in steps if step["name"] == name), "not_run")
+
+
+def _merge_consensus_summary(summary: Dict[str, Any], consensus_summary: Dict[str, Any], risks: List[str]) -> None:
+    layers = consensus_summary.get("layers")
+    if isinstance(layers, dict):
+        summary["consensus_core_status"] = str(layers.get("core", "missing"))
+        summary["consensus_sync_status"] = str(layers.get("sync", "missing"))
+        summary["consensus_catchup_status"] = str(layers.get("catchup", "missing"))
+        summary["consensus_network_status"] = str(layers.get("network", "missing"))
+        summary["consensus_recovery_status"] = str(layers.get("recovery", "missing"))
+    summary["consensus_static_steps_total"] = consensus_summary.get("static_steps_total", 0)
+    summary["consensus_static_steps_passed"] = consensus_summary.get("static_steps_passed", 0)
+    summary["consensus_tcp_steps_total"] = consensus_summary.get("tcp_steps_total", 0)
+    summary["consensus_tcp_steps_passed"] = consensus_summary.get("tcp_steps_passed", 0)
+    summary["consensus_tcp_steps_executed"] = consensus_summary.get("tcp_steps_executed", 0)
+    summary["consensus_tcp_steps_all_skipped"] = consensus_summary.get("tcp_steps_all_skipped", 0)
+    summary["consensus_tcp_bind_restricted_skips"] = consensus_summary.get("tcp_bind_restricted_skips", 0)
+    summary["consensus_tcp_evidence_status"] = str(consensus_summary.get("tcp_evidence_status", "unknown"))
+    summary["consensus_formal_tcp_evidence_ready"] = bool(
+        consensus_summary.get("formal_tcp_evidence_ready", False)
+    )
+    if summary["consensus_tcp_evidence_status"] == "failed":
+        _append_risk(risks, "consensus TCP evidence did not pass")
+    elif summary["consensus_tcp_evidence_status"] == "not_executed_bind_restricted":
+        _append_risk(
+            risks,
+            "consensus TCP evidence not executed in this environment; bind-restricted TCP suites were skipped",
+        )
+
+
+def _consensus_tcp_step_notes(consensus_payload: Dict[str, Any]) -> List[str]:
+    notes: List[str] = []
+    steps = consensus_payload.get("steps")
+    if not isinstance(steps, list):
+        return notes
+    for step in steps:
+        if not isinstance(step, dict) or step.get("transport") != "tcp":
+            continue
+        name = str(step.get("name", "tcp_step"))
+        attempts = int(step.get("attempts", 1) or 1)
+        if step.get("all_skipped", False):
+            stdout_tail = str(step.get("stdout_tail", "") or "")
+            skip_lines = [
+                line.strip()
+                for line in stdout_tail.splitlines()
+                if "bind_not_permitted:" in line
+            ]
+            if skip_lines:
+                notes.append(f"{name}: all skipped after {attempts} attempt(s); " + " | ".join(skip_lines))
+            else:
+                notes.append(f"{name}: all skipped after {attempts} attempt(s)")
+        else:
+            notes.append(f"{name}: executed after {attempts} attempt(s)")
+    return notes
 
 
 def _external_trial_progress(record: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,6 +203,44 @@ def _external_trial_contact_card(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _external_trial_tx_send_readiness(record: Dict[str, Any]) -> Dict[str, Any]:
+    evidence = record.get("evidence")
+    if not isinstance(evidence, dict):
+        return {
+            "captured": False,
+            "capability": "",
+            "ready": False,
+            "blockers": [],
+            "remote_account_status": "",
+            "wallet_address_matches": None,
+        }
+    readiness = evidence.get("tx_send_readiness")
+    if not isinstance(readiness, dict):
+        return {
+            "captured": False,
+            "capability": "",
+            "ready": False,
+            "blockers": [],
+            "remote_account_status": "",
+            "wallet_address_matches": None,
+        }
+    blockers = readiness.get("blockers", [])
+    normalized_blockers = []
+    if isinstance(blockers, list):
+        normalized_blockers = [str(item).strip() for item in blockers if str(item).strip()]
+    wallet_address_matches = readiness.get("wallet_address_matches")
+    if wallet_address_matches not in (True, False, None):
+        wallet_address_matches = None
+    return {
+        "captured": bool(readiness.get("captured", False)),
+        "capability": str(readiness.get("capability", "") or "").strip(),
+        "ready": bool(readiness.get("ready", False)),
+        "blockers": normalized_blockers,
+        "remote_account_status": str(readiness.get("remote_account_status", "") or "").strip(),
+        "wallet_address_matches": wallet_address_matches,
+    }
+
+
 def _external_trial_network_environment(record: Dict[str, Any]) -> str:
     environment = record.get("environment")
     if not isinstance(environment, dict):
@@ -171,6 +267,37 @@ def to_markdown(payload: Dict[str, Any]) -> str:
             lines.append(f"- {key}: {value}")
     else:
         lines.append("- summary: unavailable")
+    tcp_status = str(summary.get("consensus_tcp_evidence_status", "unknown"))
+    if "consensus_gate_status" in summary or "consensus_tcp_evidence_status" in summary:
+        lines.extend(
+            [
+                "",
+                "## Consensus Evidence",
+                f"- consensus_gate_status: {summary.get('consensus_gate_status', 'missing')}",
+                f"- consensus_tcp_evidence_status: {tcp_status}",
+                f"- consensus_formal_tcp_evidence_ready: {summary.get('consensus_formal_tcp_evidence_ready', False)}",
+            ]
+        )
+        if tcp_status == "not_executed_bind_restricted":
+            lines.append(
+                "- Interpretation: layered consensus validation passed, but the full gate did not form formal TCP evidence in this environment because TCP suites were skipped with bind-restricted reasons."
+            )
+            lines.append(
+                "- Note: even if some TCP pytest cases can be run successfully one by one, release judgement still follows the gate/report evidence chain."
+            )
+        elif tcp_status == "passed":
+            lines.append(
+                "- Interpretation: the full gate executed the TCP consensus layers and formal TCP evidence is available for this report."
+            )
+        elif tcp_status == "failed":
+            lines.append(
+                "- Interpretation: the full gate attempted TCP consensus evidence and at least one TCP layer did not pass."
+            )
+        tcp_step_notes = summary.get("consensus_tcp_step_notes", [])
+        if isinstance(tcp_step_notes, list) and tcp_step_notes:
+            lines.append("- TCP step details:")
+            for note in tcp_step_notes:
+                lines.append(f"  - {note}")
     lines.extend(
         [
             "",
@@ -207,6 +334,7 @@ def main() -> int:
     parser.add_argument("--out-md", default="dist/release_report.md")
     parser.add_argument("--run-gates", action="store_true")
     parser.add_argument("--with-stability", action="store_true")
+    parser.add_argument("--with-consensus", action="store_true")
     parser.add_argument("--with-v2-adversarial", action="store_true")
     parser.add_argument("--with-v2-account-recovery", action="store_true")
     parser.add_argument("--allow-bind-restricted-skip", action="store_true")
@@ -286,7 +414,7 @@ def main() -> int:
                     step["summary"] = stability_summary
                 steps.append(step)
 
-        if args.with_v2_account_recovery:
+        if should_run_v2_account_recovery(args):
             with tempfile.TemporaryDirectory(prefix="ez_release_report_recovery_") as td:
                 recovery_out = Path(td) / "v2_account_recovery.json"
                 recovery_cmd = [
@@ -303,6 +431,20 @@ def main() -> int:
                 recovery_summary = _load_json_if_exists(recovery_out)
                 if recovery_summary is not None:
                     step["summary"] = recovery_summary
+                steps.append(step)
+        if args.with_consensus:
+            with tempfile.TemporaryDirectory(prefix="ez_release_report_consensus_") as td:
+                consensus_out = Path(td) / "consensus_gate.json"
+                consensus_cmd = [
+                    sys.executable,
+                    "scripts/consensus_gate.py",
+                    "--json-out",
+                    str(consensus_out),
+                ]
+                step = run_step("consensus_gate", consensus_cmd, cwd=root)
+                consensus_summary = _load_json_if_exists(consensus_out)
+                if consensus_summary is not None:
+                    step["summary"] = consensus_summary
                 steps.append(step)
 
     if args.run_metrics:
@@ -385,6 +527,7 @@ def main() -> int:
             summary["external_trial_record"] = str(resolved_trial_path)
             trial_progress = _external_trial_progress(trial_record)
             contact_card = _external_trial_contact_card(trial_record)
+            tx_send_readiness = _external_trial_tx_send_readiness(trial_record)
             network_environment = _external_trial_network_environment(trial_record)
             summary["external_trial_remaining_steps"] = trial_progress["remaining_steps"]
             summary["external_trial_failed_steps"] = trial_progress["failed_steps"]
@@ -397,6 +540,10 @@ def main() -> int:
             summary["external_trial_contact_card_used_for_send"] = contact_card["used_for_send"]
             summary["external_trial_contact_card_address"] = contact_card["address"]
             summary["external_trial_contact_card_endpoint"] = contact_card["endpoint"]
+            summary["external_trial_tx_send_readiness_captured"] = tx_send_readiness["captured"]
+            summary["external_trial_tx_send_readiness_ready"] = tx_send_readiness["ready"]
+            summary["external_trial_tx_send_readiness_capability"] = tx_send_readiness["capability"]
+            summary["external_trial_tx_send_blockers"] = tx_send_readiness["blockers"]
             if _status_from_step(steps, "external_trial_gate") != "passed":
                 _append_risk(risks, "external trial record does not satisfy required official-testnet rehearsal checks")
                 if trial_progress["failed_steps"]:
@@ -423,6 +570,7 @@ def main() -> int:
                     )
             workflow = trial_record.get("workflow")
             send_passed = isinstance(workflow, dict) and str(workflow.get("send", "pending")).lower() == "passed"
+            send_failed = isinstance(workflow, dict) and str(workflow.get("send", "pending")).lower() == "failed"
             if send_passed and not contact_card["present"]:
                 _append_risk(
                     risks,
@@ -437,6 +585,21 @@ def main() -> int:
                 _append_risk(
                     risks,
                     "external trial send passed but the record is not marked as real-external environment",
+                )
+            if send_passed and not tx_send_readiness["captured"]:
+                _append_risk(
+                    risks,
+                    "external trial send passed without tx_send_readiness evidence; remote preflight proof is missing",
+                )
+            elif send_passed and not tx_send_readiness["ready"]:
+                _append_risk(
+                    risks,
+                    "external trial send passed but tx_send_readiness says the remote send path was not ready",
+                )
+            if send_failed and tx_send_readiness["captured"] and tx_send_readiness["blockers"]:
+                _append_risk(
+                    risks,
+                    "external trial send blockers: " + ", ".join(str(item) for item in tx_send_readiness["blockers"]),
                 )
     else:
         _append_risk(
@@ -459,6 +622,7 @@ def main() -> int:
     summary.setdefault("steps_passed", passed_steps)
     summary.setdefault("steps_failed", failed_steps)
     summary.setdefault("v2_gate_status", _status_from_step(steps, "release_gate"))
+    summary.setdefault("consensus_gate_status", _status_from_step(steps, "consensus_gate"))
     summary.setdefault("v2_adversarial_gate_status", _status_from_step(steps, "v2_adversarial_gate"))
     summary.setdefault("v2_account_recovery_gate_status", _status_from_step(steps, "v2_account_recovery_gate"))
     summary.setdefault("official_testnet_gate_status", _status_from_step(steps, "official_testnet_gate"))
@@ -468,6 +632,18 @@ def main() -> int:
             _append_risk(risks, "V2 adversarial gate did not pass")
     else:
         _append_risk(risks, "V2 adversarial gate not run for this report")
+    if args.with_consensus:
+        if summary["consensus_gate_status"] != "passed":
+            _append_risk(risks, "consensus gate did not pass")
+    else:
+        _append_risk(risks, "consensus gate not run for this report")
+    consensus_step = next((step for step in steps if step["name"] == "consensus_gate"), None)
+    if consensus_step is not None:
+        consensus_summary = consensus_step.get("summary")
+        if isinstance(consensus_summary, dict):
+            consensus_payload = consensus_summary.get("summary", consensus_summary)
+            _merge_consensus_summary(summary, consensus_payload, risks)
+            summary["consensus_tcp_step_notes"] = _consensus_tcp_step_notes(consensus_summary)
     recovery_step = next((step for step in steps if step["name"] == "v2_account_recovery_gate"), None)
     if recovery_step is None:
         _append_risk(risks, "v2-account recovery gate not run for this report")
