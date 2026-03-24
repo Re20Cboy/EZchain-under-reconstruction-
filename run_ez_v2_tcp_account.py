@@ -97,6 +97,7 @@ def run_daemon(
     consensus_endpoint: str,
     wallet_file: str | None,
     wallet_db_path: str | None,
+    reset_ephemeral_state: bool,
 ) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,8 @@ def run_daemon(
         public_key_pem=public_key_pem,
         state_path=str(network_state_path),
     )
+    if reset_ephemeral_state:
+        account.reset_ephemeral_state()
 
     running = True
 
@@ -251,6 +254,11 @@ def main() -> None:
     parser.add_argument("--consensus-endpoint", required=True, help="Remote consensus TCP endpoint")
     parser.add_argument("--wallet-file", default="", help="Optional wallet.json path to reuse as the account identity")
     parser.add_argument("--wallet-db-path", default="", help="Optional sqlite path to reuse as the account wallet database")
+    parser.add_argument(
+        "--reset-ephemeral-state",
+        action="store_true",
+        help="Testing helper: clear pending bundles and cached network state before starting the account daemon",
+    )
     args = parser.parse_args()
 
     run_daemon(
@@ -263,6 +271,7 @@ def main() -> None:
         consensus_endpoint=args.consensus_endpoint,
         wallet_file=str(args.wallet_file).strip() or None,
         wallet_db_path=str(args.wallet_db_path).strip() or None,
+        reset_ephemeral_state=bool(args.reset_ephemeral_state),
     )
 
 

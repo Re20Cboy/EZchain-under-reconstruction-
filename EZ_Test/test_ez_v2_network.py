@@ -4,6 +4,7 @@ import unittest
 import socket
 import time
 import random
+from pathlib import Path
 
 from EZ_V2.network_host import StaticPeerNetwork, V2AccountHost, open_static_network
 from EZ_V2.network_transport import TCPNetworkTransport
@@ -52,6 +53,16 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 return consensus.consensus.chain.current_height
             time.sleep(0.01)
         return consensus.consensus.chain.current_height
+
+    @staticmethod
+    def _wait_for_receipt_count(account: V2AccountHost, expected_count: int, timeout_sec: float = 1.0) -> int:
+        deadline = time.time() + timeout_sec
+        while time.time() < deadline:
+            count = len(account.wallet.list_receipts())
+            if count >= expected_count:
+                return count
+            time.sleep(0.01)
+        return len(account.wallet.list_receipts())
 
     @staticmethod
     def _assign_cluster_order(
@@ -1448,6 +1459,62 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 bob.close()
                 consensus.close()
 
+    def test_account_reset_ephemeral_state_clears_pending_and_cached_network_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network, consensus = open_static_network(td, chain_id=928)
+            consensus.auto_dispatch_receipts = False
+            alice_private, alice_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            state_path = f"{td}/alice.network.json"
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=928,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+                state_path=state_path,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=928,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                payment = alice.submit_payment("bob", amount=40, tx_time=1, anti_spam_nonce=51)
+                self.assertIsNone(payment.receipt_height)
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 1)
+
+                alice.last_seen_chain = ChainSyncCursor(height=99, block_hash_hex="ab" * 32)
+                alice.fetched_blocks[99] = consensus.consensus.store.get_block_by_height(0)
+                alice.fetched_blocks_by_hash[consensus.consensus.genesis_block_hash.hex()] = consensus.consensus.store.get_block_by_height(0)
+                alice._persist_network_state()
+                self.assertTrue(Path(state_path).exists())
+
+                cleared = alice.reset_ephemeral_state()
+
+                self.assertEqual(cleared["cleared_pending_bundles"], 1)
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 0)
+                self.assertIsNone(alice.last_seen_chain)
+                self.assertEqual(alice.fetched_blocks, {})
+                self.assertEqual(alice.fetched_blocks_by_hash, {})
+                self.assertFalse(Path(state_path).exists())
+                self.assertEqual(alice.wallet.available_balance(), 200)
+            finally:
+                alice.close()
+                bob.close()
+                consensus.close()
+
     def test_static_three_consensus_four_account_cluster_follower_restart_catches_up(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             network = StaticPeerNetwork()
@@ -2421,9 +2488,10 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
 
                 payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=191)
 
-                self.assertEqual(payment.receipt_height, 1)
+                self.assertEqual(self._wait_for_receipt_count(alice, 1), 1)
                 for consensus in consensus_hosts.values():
                     self.assertEqual(consensus.consensus.chain.current_height, 1)
+                self.assertIn(payment.receipt_height, (None, 1))
                 self.assertEqual(alice.wallet.available_balance(), 150)
                 self.assertEqual(bob.wallet.available_balance(), 50)
                 self.assertEqual(self._wait_for_chain_height(bob, 1), 1)

@@ -1339,6 +1339,22 @@ class V2AccountHost:
         tmp_path.write_text(dumps_json(payload), encoding="utf-8")
         tmp_path.replace(self.state_path)
 
+    def reset_ephemeral_state(self) -> dict[str, int]:
+        cleared_pending_bundles = self.wallet.clear_pending_bundles()
+        cleared_received_transfers = len(self.received_transfers)
+        cleared_fetched_blocks = len(self.fetched_blocks)
+        self.last_seen_chain = None
+        self.received_transfers = []
+        self.fetched_blocks = {}
+        self.fetched_blocks_by_hash = {}
+        if self.state_path is not None and self.state_path.exists():
+            self.state_path.unlink()
+        return {
+            "cleared_pending_bundles": cleared_pending_bundles,
+            "cleared_received_transfers": cleared_received_transfers,
+            "cleared_fetched_blocks": cleared_fetched_blocks,
+        }
+
     def _await_fetched_block(
         self,
         *,

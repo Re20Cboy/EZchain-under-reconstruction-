@@ -516,6 +516,14 @@ class WalletAccountV2:
         self._persist_records(updated_records)
         return context
 
+    def clear_pending_bundles(self) -> int:
+        pending = list(self.list_pending_bundles())
+        cleared = 0
+        for context in pending:
+            self.rollback_pending_bundle(context.seq)
+            cleared += 1
+        return cleared
+
     def export_transfer_package(self, target_tx: OffChainTx, target_value: ValueRange) -> TransferPackage:
         for record in self.records:
             if (
