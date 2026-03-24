@@ -687,7 +687,11 @@ class V2ConsensusHost:
             round_result["selected_proposer_id"] = winner_id
             round_result["sortition_seed_hex"] = seed.hex()
             return round_result
-        auto_commit = isinstance(self.network, StaticPeerNetwork)
+        # For forwarded MVP bundles, the selected proposer must drive the round
+        # synchronously and return the commit result to the submitter. Leaving
+        # remote TCP forwards in "accepted_pending_consensus" strands the
+        # sender's bundle in pending state with no subsequent trigger to commit.
+        auto_commit = True
         response = self.network.send(
             NetworkEnvelope(
                 msg_type=MSG_CONSENSUS_BUNDLE_FORWARD,

@@ -1,11 +1,35 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import threading
 from typing import Any, Callable, Iterable
 
 from .network_transport import NetworkTransport
-from .networking import NetworkEnvelope, PeerInfo
+from .networking import (
+    MSG_BLOCK_ANNOUNCE,
+    MSG_BLOCK_FETCH_RESP,
+    MSG_BUNDLE_ACK,
+    MSG_CHAIN_STATE_RESP,
+    MSG_CHECKPOINT_RESP,
+    MSG_RECEIPT_DELIVER,
+    MSG_RECEIPT_RESP,
+    MSG_TRANSFER_PACKAGE_DELIVER,
+    NetworkEnvelope,
+    PeerInfo,
+)
+
+
+_INLINE_DELIVERY_TYPES = {
+    MSG_BLOCK_ANNOUNCE,
+    MSG_BLOCK_FETCH_RESP,
+    MSG_BUNDLE_ACK,
+    MSG_CHAIN_STATE_RESP,
+    MSG_CHECKPOINT_RESP,
+    MSG_RECEIPT_DELIVER,
+    MSG_RECEIPT_RESP,
+    MSG_TRANSFER_PACKAGE_DELIVER,
+}
 
 
 class TransportPeerNetwork:
@@ -35,10 +59,18 @@ class TransportPeerNetwork:
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
         self._startup_error: BaseException | None = None
-        self._incoming_lock: asyncio.Lock | None = None
-        self._active_request_sender_id: str | None = None
-        self._active_outbox: list[NetworkEnvelope] | None = None
-        self._active_remote_deliveries: list[NetworkEnvelope] | None = None
+        self._active_request_sender_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            f"transport_peer_active_request_sender_id_{id(self)}",
+            default=None,
+        )
+        self._active_outbox_var: contextvars.ContextVar[list[NetworkEnvelope] | None] = contextvars.ContextVar(
+            f"transport_peer_active_outbox_{id(self)}",
+            default=None,
+        )
+        self._active_remote_deliveries_var: contextvars.ContextVar[list[NetworkEnvelope] | None] = contextvars.ContextVar(
+            f"transport_peer_active_remote_deliveries_{id(self)}",
+            default=None,
+        )
 
     def register(
         self,
@@ -91,10 +123,6 @@ class TransportPeerNetwork:
         thread.join(timeout=self.timeout_sec)
         self._thread = None
         self._loop = None
-        self._incoming_lock = None
-        self._active_request_sender_id = None
-        self._active_outbox = None
-        self._active_remote_deliveries = None
 
     def send(self, envelope: NetworkEnvelope) -> dict[str, Any] | None:
         recipient_id = envelope.recipient_id
@@ -102,18 +130,21 @@ class TransportPeerNetwork:
             raise ValueError("recipient_id required for direct send")
         if recipient_id == self._local_peer_id:
             return self._dispatch_local_delivery(envelope)
+        active_outbox = self._active_outbox_var.get()
+        active_request_sender_id = self._active_request_sender_id_var.get()
+        if active_outbox is not None and recipient_id == active_request_sender_id and envelope.msg_type in _INLINE_DELIVERY_TYPES:
+            active_outbox.append(envelope)
+            return {"ok": True, "queued": "inline"}
         if self._thread is not None and threading.current_thread() is self._thread:
-            if self._active_outbox is None or self._active_remote_deliveries is None:
+            active_remote_deliveries = self._active_remote_deliveries_var.get()
+            if active_remote_deliveries is None:
                 raise RuntimeError("transport_peer_network_outbox_not_available")
-            if recipient_id == self._active_request_sender_id:
-                self._active_outbox.append(envelope)
-                return {"ok": True, "queued": "inline"}
             peer = self.peer_info(recipient_id)
             send_blocking = getattr(self.transport, "send_blocking", None)
             if callable(send_blocking):
                 response = send_blocking(peer.endpoint, envelope, timeout=self.timeout_sec)
                 return self._apply_transport_response(response)
-            self._active_remote_deliveries.append(envelope)
+            active_remote_deliveries.append(envelope)
             return {"ok": True, "queued": "remote"}
         response = self._submit_coroutine(self._send_remote(envelope))
         return self._apply_transport_response(response)
@@ -149,6 +180,8 @@ class TransportPeerNetwork:
     def _apply_transport_response(self, response: dict[str, Any] | None):
         if not isinstance(response, dict):
             return response
+        if "result" not in response:
+            return response
         deliveries = response.get("deliveries", ())
         for envelope in deliveries:
             if isinstance(envelope, NetworkEnvelope):
@@ -169,39 +202,49 @@ class TransportPeerNetwork:
         future = asyncio.run_coroutine_threadsafe(coro, loop)
         return future.result(timeout=self.timeout_sec)
 
+    def _invoke_handler_with_context(self, envelope: NetworkEnvelope) -> tuple[dict[str, Any] | None, list[NetworkEnvelope], list[NetworkEnvelope]]:
+        if self._handler is None:
+            return {"ok": False, "error": "missing_handler"}, [], []
+        active_outbox: list[NetworkEnvelope] = []
+        active_remote_deliveries: list[NetworkEnvelope] = []
+        sender_token = self._active_request_sender_id_var.set(envelope.sender_id)
+        outbox_token = self._active_outbox_var.set(active_outbox)
+        remote_token = self._active_remote_deliveries_var.set(active_remote_deliveries)
+        try:
+            result = self._handler(envelope)
+            return result, active_outbox, active_remote_deliveries
+        finally:
+            self._active_request_sender_id_var.reset(sender_token)
+            self._active_outbox_var.reset(outbox_token)
+            self._active_remote_deliveries_var.reset(remote_token)
+
     async def _handle_envelope(self, envelope: NetworkEnvelope, _remote: str) -> dict[str, Any]:
         if self._handler is None:
             return {"result": {"ok": False, "error": "missing_handler"}, "deliveries": []}
-        if self._incoming_lock is None:
-            raise RuntimeError("transport_peer_network_not_ready")
-        async with self._incoming_lock:
-            self._active_request_sender_id = envelope.sender_id
-            self._active_outbox = []
-            self._active_remote_deliveries = []
-            try:
-                result = self._handler(envelope)
-                for pending in list(self._active_remote_deliveries):
-                    try:
-                        await self._send_remote(pending)
-                    except Exception:
-                        # Remote follow-up deliveries are best-effort. A down
-                        # peer must not turn the original request into a hard
-                        # failure for the caller.
-                        continue
-                return {
-                    "result": result,
-                    "deliveries": list(self._active_outbox),
-                }
-            finally:
-                self._active_request_sender_id = None
-                self._active_outbox = None
-                self._active_remote_deliveries = None
+        try:
+            result, active_outbox, active_remote_deliveries = await asyncio.to_thread(
+                self._invoke_handler_with_context,
+                envelope,
+            )
+            for pending in list(active_remote_deliveries):
+                try:
+                    await self._send_remote(pending)
+                except Exception:
+                    # Remote follow-up deliveries are best-effort. A down
+                    # peer must not turn the original request into a hard
+                    # failure for the caller.
+                    continue
+            return {
+                "result": result,
+                "deliveries": list(active_outbox),
+            }
+        except Exception:
+            raise
 
     def _run_loop(self) -> None:
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
-        self._incoming_lock = asyncio.Lock()
         self.transport.set_handler(self._handle_envelope)
         try:
             loop.run_until_complete(self.transport.start())
