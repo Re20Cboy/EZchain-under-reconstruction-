@@ -278,6 +278,19 @@ class WalletAccountV2:
         self._persist_records(self.records + [record])
         return next(item for item in self.records if item.record_id == record.record_id)
 
+    def has_genesis_value(self, value: ValueRange) -> bool:
+        for record in self.records:
+            anchor = getattr(record.witness_v2, "anchor", None)
+            if not isinstance(anchor, GenesisAnchor):
+                continue
+            if anchor.first_owner_addr != self.address:
+                continue
+            if ValueRange(anchor.value_begin, anchor.value_end) != value:
+                continue
+            if record.value == value:
+                return True
+        return False
+
     def _assign_targets_to_records(self, targets: tuple[ValueRange, ...]) -> dict[str, list[ValueRange]]:
         assignments: dict[str, list[ValueRange]] = {}
         eligible = [

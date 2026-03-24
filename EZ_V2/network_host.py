@@ -31,6 +31,7 @@ from .networking import (
     MSG_CONSENSUS_BUNDLE_FORWARD,
     MSG_CHAIN_STATE_REQ,
     MSG_CHAIN_STATE_RESP,
+    MSG_GENESIS_ALLOCATIONS_REQ,
     MSG_CONSENSUS_FINALIZE,
     MSG_CONSENSUS_PROPOSAL,
     MSG_CONSENSUS_SORTITION_CLAIM,
@@ -142,6 +143,7 @@ class V2NetworkPayment:
 @dataclass(frozen=True, slots=True)
 class V2NetworkRecovery:
     chain_cursor: ChainSyncCursor | None
+    applied_genesis_values: int
     applied_receipts: int
     fetched_blocks: tuple[BlockV2, ...]
     pending_bundle_count: int
@@ -347,6 +349,8 @@ class V2ConsensusHost:
             return self._on_block_announce(envelope)
         if envelope.msg_type == MSG_CHAIN_STATE_REQ:
             return self._on_chain_state_request(envelope)
+        if envelope.msg_type == MSG_GENESIS_ALLOCATIONS_REQ:
+            return self._on_genesis_allocations_request(envelope)
         if envelope.msg_type == MSG_CONSENSUS_PROPOSAL:
             return self._on_consensus_proposal(envelope)
         if envelope.msg_type == MSG_CONSENSUS_BUNDLE_FORWARD:
@@ -471,6 +475,18 @@ class V2ConsensusHost:
             )
         )
         return {"ok": True, **payload}
+
+    def _on_genesis_allocations_request(self, envelope: NetworkEnvelope) -> dict[str, Any]:
+        owner_addr = str(envelope.payload.get("owner_addr", "")).strip()
+        if not owner_addr:
+            return {"ok": False, "error": "owner_addr_required"}
+        allocations = self.consensus.list_genesis_allocations(owner_addr)
+        return {
+            "ok": True,
+            "owner_addr": owner_addr,
+            "genesis_block_hash_hex": self.consensus.genesis_block_hash.hex(),
+            "allocations": [value.to_canonical() for value in allocations],
+        }
 
     def _on_block_fetch_request(self, envelope: NetworkEnvelope) -> dict[str, Any]:
         payload = envelope.payload
@@ -1264,6 +1280,26 @@ class V2AccountHost:
     def register_genesis_value(self, value: ValueRange) -> None:
         self.wallet.add_genesis_value(value)
 
+    def sync_genesis_allocations(self) -> int:
+        response = self._send_to_consensus(MSG_GENESIS_ALLOCATIONS_REQ, {"owner_addr": self.address})
+        if not isinstance(response, dict):
+            raise ValueError("missing_genesis_allocations_response")
+        if response.get("ok") is not True:
+            raise ValueError(str(response.get("error", "genesis_allocations_request_failed")))
+        owner_addr = str(response.get("owner_addr", "")).strip()
+        if owner_addr != self.address:
+            raise ValueError("genesis_allocation_owner_mismatch")
+        applied = 0
+        for item in response.get("allocations", ()):
+            if not isinstance(item, dict):
+                continue
+            value = ValueRange(begin=int(item["begin"]), end=int(item["end"]))
+            if self.wallet.has_genesis_value(value):
+                continue
+            self.wallet.add_genesis_value(value)
+            applied += 1
+        return applied
+
     def _load_network_state(self) -> None:
         if self.state_path is None or not self.state_path.exists():
             return
@@ -1404,10 +1440,12 @@ class V2AccountHost:
         start_height: int | None = None,
         end_height: int | None = None,
     ) -> V2NetworkRecovery:
+        applied_genesis_values = self.sync_genesis_allocations()
         applied_receipts = self.sync_pending_receipts()
         fetched_blocks = self.sync_chain_blocks(start_height=start_height, end_height=end_height)
         return V2NetworkRecovery(
             chain_cursor=self.last_seen_chain,
+            applied_genesis_values=applied_genesis_values,
             applied_receipts=applied_receipts,
             fetched_blocks=fetched_blocks,
             pending_bundle_count=len(self.wallet.list_pending_bundles()),

@@ -30,6 +30,7 @@ MSG_CHECKPOINT_REQ = "checkpoint_req"
 MSG_CHECKPOINT_RESP = "checkpoint_resp"
 MSG_CHAIN_STATE_REQ = "chain_state_req"
 MSG_CHAIN_STATE_RESP = "chain_state_resp"
+MSG_GENESIS_ALLOCATIONS_REQ = "genesis_allocations_req"
 MSG_PEER_INFO = "peer_info"
 MSG_PEER_HEALTH = "peer_health"
 
@@ -112,6 +113,7 @@ __all__ = [
     "MSG_CONSENSUS_VOTE",
     "MSG_CHAIN_STATE_REQ",
     "MSG_CHAIN_STATE_RESP",
+    "MSG_GENESIS_ALLOCATIONS_REQ",
     "MSG_CHECKPOINT_REQ",
     "MSG_CHECKPOINT_RESP",
     "MSG_PEER_HEALTH",

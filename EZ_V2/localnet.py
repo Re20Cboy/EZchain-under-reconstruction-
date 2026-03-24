@@ -177,6 +177,12 @@ class V2ConsensusNode:
         self.store.save_genesis_allocation(owner_addr, value)
         self.runtime.register_genesis_allocation(owner_addr, value)
 
+    def list_genesis_allocations(self, owner_addr: str | None = None) -> tuple[ValueRange, ...] | dict[str, tuple[ValueRange, ...]]:
+        allocations = self.store.list_genesis_allocations()
+        if owner_addr is None:
+            return allocations
+        return allocations.get(str(owner_addr), ())
+
     def submit_bundle(self, submission: BundleSubmission) -> BundleSubmitResult:
         return self.runtime.submit_bundle(submission)
 
