@@ -100,6 +100,7 @@ def run_daemon(
     wallet_db_path: str | None,
     reset_ephemeral_state: bool,
     reset_derived_state: bool,
+    network_timeout_sec: float,
 ) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,7 @@ def run_daemon(
     network = TransportPeerNetwork(
         TCPNetworkTransport(bind_host, port),
         (consensus_peer,),
+        timeout_sec=network_timeout_sec,
     )
     account = V2AccountHost(
         node_id=local_peer.node_id,
@@ -257,6 +259,7 @@ def main() -> None:
     parser.add_argument("--state-file", required=True, help="State file for daemon mode")
     parser.add_argument("--chain-id", type=int, default=1, help="Chain id for the V2 account daemon")
     parser.add_argument("--heartbeat-sec", type=float, default=0.5, help="Heartbeat interval")
+    parser.add_argument("--network-timeout-sec", type=float, default=5.0, help="Transport request timeout in seconds")
     parser.add_argument("--endpoint", default="127.0.0.1:19600", help="TCP listen endpoint for the account node")
     parser.add_argument(
         "--listen-host",
@@ -290,6 +293,7 @@ def main() -> None:
         wallet_db_path=str(args.wallet_db_path).strip() or None,
         reset_ephemeral_state=bool(args.reset_ephemeral_state),
         reset_derived_state=bool(args.reset_derived_state),
+        network_timeout_sec=float(args.network_timeout_sec),
     )
 
 

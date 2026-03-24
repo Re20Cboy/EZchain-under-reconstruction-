@@ -54,6 +54,7 @@ def run_daemon(
     consensus_mode: str,
     validator_ids: tuple[str, ...],
     auto_run_mvp_consensus: bool,
+    network_timeout_sec: float,
 ) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -66,6 +67,7 @@ def run_daemon(
     network = TransportPeerNetwork(
         TCPNetworkTransport(bind_host, port),
         peers,
+        timeout_sec=network_timeout_sec,
     )
     effective_validator_ids = tuple(validator_ids) or tuple(item.node_id for item in peers)
     consensus = V2ConsensusHost(
@@ -122,6 +124,7 @@ def main() -> None:
     parser.add_argument("--state-file", required=True, help="State file for daemon mode")
     parser.add_argument("--chain-id", type=int, default=1, help="Chain id for the V2 consensus daemon")
     parser.add_argument("--heartbeat-sec", type=float, default=0.5, help="Heartbeat interval")
+    parser.add_argument("--network-timeout-sec", type=float, default=5.0, help="Transport request timeout in seconds")
     parser.add_argument("--node-id", default="consensus-0", help="Consensus node id for this daemon")
     parser.add_argument("--endpoint", default="127.0.0.1:19500", help="TCP listen endpoint")
     parser.add_argument(
@@ -166,6 +169,7 @@ def main() -> None:
         consensus_mode=args.consensus_mode,
         validator_ids=tuple(args.validator_id),
         auto_run_mvp_consensus=bool(args.auto_run_mvp_consensus),
+        network_timeout_sec=float(args.network_timeout_sec),
     )
 
 

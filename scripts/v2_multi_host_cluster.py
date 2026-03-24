@@ -36,6 +36,7 @@ def _consensus_spec(
     endpoint: str,
     peers: tuple[str, ...],
     listen_host: str | None = None,
+    network_timeout_sec: float = 20.0,
 ) -> NodeSpec:
     cmd = [
         sys.executable,
@@ -50,6 +51,8 @@ def _consensus_spec(
         node_id,
         "--endpoint",
         endpoint,
+        "--network-timeout-sec",
+        str(network_timeout_sec),
     ]
     if listen_host:
         cmd.extend(["--listen-host", listen_host])
@@ -82,6 +85,7 @@ def _account_spec(
     listen_host: str | None = None,
     reset_ephemeral_state: bool = True,
     reset_derived_state: bool = True,
+    network_timeout_sec: float = 20.0,
 ) -> NodeSpec:
     cmd = [
         sys.executable,
@@ -94,6 +98,8 @@ def _account_spec(
         str(chain_id),
         "--endpoint",
         endpoint,
+        "--network-timeout-sec",
+        str(network_timeout_sec),
         "--consensus-endpoint",
         consensus_endpoint,
         "--wallet-file",
@@ -125,6 +131,7 @@ def build_role_specs(
     ecs_ip: str,
     reset_account_ephemeral_state: bool,
     reset_account_derived_state: bool,
+    network_timeout_sec: float,
 ) -> tuple[NodeSpec, ...]:
     peers = (
         f"consensus-0={mac_ip}:19500",
@@ -145,6 +152,7 @@ def build_role_specs(
                 endpoint=f"{mac_ip}:19500",
                 listen_host="0.0.0.0",
                 peers=peers,
+                network_timeout_sec=network_timeout_sec,
             ),
             _consensus_spec(
                 project_root=project_root,
@@ -157,6 +165,7 @@ def build_role_specs(
                 endpoint=f"{mac_ip}:19501",
                 listen_host="0.0.0.0",
                 peers=peers,
+                network_timeout_sec=network_timeout_sec,
             ),
             _account_spec(
                 project_root=project_root,
@@ -172,6 +181,7 @@ def build_role_specs(
                 wallet_file=".ezchain-mac-account-store/wallet.json",
                 reset_ephemeral_state=reset_account_ephemeral_state,
                 reset_derived_state=reset_account_derived_state,
+                network_timeout_sec=network_timeout_sec,
             ),
         )
     if role == "ecs":
@@ -186,6 +196,7 @@ def build_role_specs(
                 node_id="consensus-2",
                 endpoint=f"{ecs_ip}:19500",
                 peers=peers,
+                network_timeout_sec=network_timeout_sec,
             ),
             _consensus_spec(
                 project_root=project_root,
@@ -197,6 +208,7 @@ def build_role_specs(
                 node_id="consensus-3",
                 endpoint=f"{ecs_ip}:19501",
                 peers=peers,
+                network_timeout_sec=network_timeout_sec,
             ),
             _account_spec(
                 project_root=project_root,
@@ -211,6 +223,7 @@ def build_role_specs(
                 wallet_file=".ezchain-ecs-account-store/wallet.json",
                 reset_ephemeral_state=reset_account_ephemeral_state,
                 reset_derived_state=reset_account_derived_state,
+                network_timeout_sec=network_timeout_sec,
             ),
         )
     raise ValueError(f"unsupported_role:{role}")
@@ -321,6 +334,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--chain-id", type=int, default=821)
     parser.add_argument("--mac-ip", default="100.90.152.124")
     parser.add_argument("--ecs-ip", default="100.119.113.49")
+    parser.add_argument("--network-timeout-sec", type=float, default=20.0)
     parser.add_argument(
         "--no-reset-account-ephemeral-state",
         action="store_true",
@@ -342,6 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ecs_ip=str(args.ecs_ip),
         reset_account_ephemeral_state=not bool(args.no_reset_account_ephemeral_state),
         reset_account_derived_state=not bool(args.no_reset_account_derived_state),
+        network_timeout_sec=float(args.network_timeout_sec),
     )
 
     if args.action == "status":
