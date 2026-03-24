@@ -46,6 +46,7 @@ class TxEngine:
         v2_chain_id: int = 1,
         v2_expiry_height: int = 1000000,
         v2_backend_dir: str | None = None,
+        v2_network_timeout_sec: float = 20.0,
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +62,7 @@ class TxEngine:
         self.max_tx_amount = max_tx_amount
         self.v2_chain_id = v2_chain_id
         self.v2_expiry_height = v2_expiry_height
+        self.v2_network_timeout_sec = max(0.5, float(v2_network_timeout_sec))
         self.v2_genesis_block_hash = b"\x00" * 32
         self.v2_backend_dir = Path(v2_backend_dir) if v2_backend_dir else (self.data_dir / "v2_runtime")
         self.v2_backend_dir.mkdir(parents=True, exist_ok=True)
@@ -861,6 +863,7 @@ class TxEngine:
         network = TransportPeerNetwork(
             TCPNetworkTransport(host, port),
             peers=(sender_peer, consensus_peer, recipient_peer),
+            timeout_sec=self.v2_network_timeout_sec,
         )
         account_host = V2AccountHost(
             node_id=sender_peer.node_id,
