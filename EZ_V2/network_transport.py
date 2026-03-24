@@ -77,7 +77,6 @@ class TCPNetworkTransport(NetworkTransport):
         self.port = port
         self._server: asyncio.base_events.Server | None = None
         self._handler: OnEnvelope | None = None
-        self._clients: dict[str, _TCPClient] = {}
 
     def set_handler(self, handler: OnEnvelope) -> None:
         self._handler = handler
@@ -90,33 +89,15 @@ class TCPNetworkTransport(NetworkTransport):
             self._server.close()
             await self._server.wait_closed()
             self._server = None
-        for client in list(self._clients.values()):
-            await client.close()
-        self._clients.clear()
 
     async def send(self, endpoint: str, envelope: NetworkEnvelope) -> dict | None:
         host, port_s = endpoint.rsplit(":", 1)
-        client = await self._ensure_client(host, int(port_s))
+        client = _TCPClient(host, int(port_s))
         try:
+            await client.connect()
             raw = await client.send_and_recv(encode_envelope(envelope))
-        except Exception:
-            await self._drop_client(endpoint)
-            raise
-        return loads_json(raw.decode("utf-8"))
-
-    async def _ensure_client(self, host: str, port: int) -> _TCPClient:
-        endpoint = f"{host}:{port}"
-        client = self._clients.get(endpoint)
-        if client is not None and client.writer is not None:
-            return client
-        client = _TCPClient(host, port)
-        await client.connect()
-        self._clients[endpoint] = client
-        return client
-
-    async def _drop_client(self, endpoint: str) -> None:
-        client = self._clients.pop(endpoint, None)
-        if client is not None:
+            return loads_json(raw.decode("utf-8"))
+        finally:
             await client.close()
 
     async def _handle_conn(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
