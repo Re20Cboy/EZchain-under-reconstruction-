@@ -285,9 +285,8 @@ class WalletAccountV2:
                 continue
             if anchor.first_owner_addr != self.address:
                 continue
-            if ValueRange(anchor.value_begin, anchor.value_end) != value:
-                continue
-            if record.value == value:
+            anchor_range = ValueRange(anchor.value_begin, anchor.value_end)
+            if anchor_range == value:
                 return True
         return False
 

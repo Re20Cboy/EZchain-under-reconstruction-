@@ -269,7 +269,8 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 minted = ValueRange(0, 199)
                 for consensus in consensus_hosts.values():
                     consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                alice.recover_network_state()
+                bob.recover_network_state()
 
                 seed = keccak256(b"static-mvp-sortition-923")
                 winner_from_0 = consensus_hosts["consensus-0"].select_mvp_proposer(
@@ -725,7 +726,9 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 minted = ValueRange(0, 199)
                 for consensus in consensus_hosts.values():
                     consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                first_recovery = alice.recover_network_state()
+                self.assertEqual(first_recovery.applied_genesis_values, 1)
+                bob.recover_network_state()
 
                 timeout_result = consensus_hosts["consensus-0"].run_mvp_timeout_round(consensus_peer_ids=validator_ids)
                 self.assertEqual(timeout_result["next_round"], 2)
@@ -791,7 +794,9 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 minted = ValueRange(0, 199)
                 for consensus in consensus_hosts.values():
                     consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                first_recovery = alice.recover_network_state()
+                self.assertEqual(first_recovery.applied_genesis_values, 1)
+                bob.recover_network_state()
 
                 payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=41)
                 self.assertIsNone(payment.receipt_height)
@@ -966,7 +971,9 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 minted = ValueRange(0, 199)
                 for consensus in consensus_hosts.values():
                     consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                first_recovery = alice.recover_network_state()
+                self.assertEqual(first_recovery.applied_genesis_values, 1)
+                bob.recover_network_state()
 
                 timeout_result = consensus_hosts["consensus-0"].run_mvp_timeout_round(consensus_peer_ids=validator_ids)
                 self.assertEqual(timeout_result["next_round"], 2)
@@ -2484,14 +2491,27 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 minted = ValueRange(0, 199)
                 for consensus in consensus_hosts.values():
                     consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                first_recovery = alice.recover_network_state()
+                self.assertEqual(first_recovery.applied_genesis_values, 1)
+                bob.recover_network_state()
+
+                consensus_hosts["consensus-0"].select_mvp_proposer = lambda **_: {
+                    "selected_proposer_id": "consensus-0",
+                    "ordered_consensus_peer_ids": ("consensus-0", "consensus-1", "consensus-2", "consensus-3"),
+                    "height": 1,
+                    "round": 1,
+                    "seed_hex": "",
+                    "claims_total": 4,
+                }
 
                 payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=191)
 
-                self.assertEqual(self._wait_for_receipt_count(alice, 1), 1)
                 for consensus in consensus_hosts.values():
                     self.assertEqual(consensus.consensus.chain.current_height, 1)
                 self.assertIn(payment.receipt_height, (None, 1))
+                recovery = alice.recover_network_state()
+                self.assertIn(recovery.applied_receipts, (0, 1))
+                self.assertEqual(self._wait_for_receipt_count(alice, 1), 1)
                 self.assertEqual(alice.wallet.available_balance(), 150)
                 self.assertEqual(bob.wallet.available_balance(), 50)
                 self.assertEqual(self._wait_for_chain_height(bob, 1), 1)

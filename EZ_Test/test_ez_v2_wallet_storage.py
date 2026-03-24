@@ -268,6 +268,38 @@ class EZV2WalletStorageTests(unittest.TestCase):
             )
             wallet.close()
 
+    def test_has_genesis_value_survives_spent_subrange_split(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "wallet.sqlite3")
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            bob_priv, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
+
+            wallet = WalletAccountV2(address=alice_addr, genesis_block_hash=b"\x99" * 32, db_path=db_path)
+            original = ValueRange(0, 199)
+            wallet.add_genesis_value(original)
+            tx = OffChainTx(
+                sender_addr=alice_addr,
+                recipient_addr=bob_addr,
+                value_list=(ValueRange(0, 49),),
+                tx_local_index=0,
+                tx_time=1,
+            )
+            wallet.build_bundle(
+                tx_list=(tx,),
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=81,
+                seq=1,
+                expiry_height=10,
+                fee=1,
+                anti_spam_nonce=13,
+            )
+
+            self.assertTrue(wallet.has_genesis_value(original))
+            wallet.close()
+
 
 if __name__ == "__main__":
     unittest.main()
