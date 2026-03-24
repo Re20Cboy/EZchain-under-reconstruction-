@@ -18,6 +18,7 @@
 ### 开发者
 - 提交前与 RC 测试：`doc/DEV_TESTING.md`
 - V2 默认化判断：`doc/V2_DEFAULT_READINESS.md`
+- V2 容量评估与优化计划：`doc/V2_CAPACITY_ASSESSMENT_AND_PLAN.md`
 - 发布报告与 readiness 现在会单独展示共识 TCP 正式证据状态，不再把
   “consensus gate 已通过”和“TCP 正式证据已形成”混为一件事
 - P2P 现状：`doc/EZ_P2P_Status.md`
