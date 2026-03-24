@@ -1414,7 +1414,9 @@ class V2AccountHost:
             anti_spam_nonce=anti_spam_nonce,
             tx_time=tx_time,
         )
-        self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
+        response = self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
+        if isinstance(response, dict) and response.get("ok") is False:
+            raise ValueError(str(response.get("error", "bundle_submit_failed")))
         receipt = self._latest_receipt_for_seq(submission.envelope.seq)
         return V2NetworkPayment(
             tx_hash_hex=self._tx_hash_hex(tx),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import socket
 import struct
 from typing import Awaitable, Callable
 
@@ -100,6 +101,30 @@ class TCPNetworkTransport(NetworkTransport):
         finally:
             await client.close()
 
+    def send_blocking(self, endpoint: str, envelope: NetworkEnvelope, *, timeout: float = 5.0) -> dict | None:
+        host, port_s = endpoint.rsplit(":", 1)
+        payload = encode_envelope(envelope)
+        with socket.create_connection((host, int(port_s)), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(struct.pack("!I", len(payload)))
+            sock.sendall(payload)
+            header = self._recv_exact(sock, 4)
+            (length,) = struct.unpack("!I", header)
+            raw = self._recv_exact(sock, length)
+        return loads_json(raw.decode("utf-8"))
+
+    @staticmethod
+    def _recv_exact(sock: socket.socket, size: int) -> bytes:
+        chunks: list[bytes] = []
+        remaining = int(size)
+        while remaining > 0:
+            chunk = sock.recv(remaining)
+            if not chunk:
+                raise ConnectionError(f"incomplete_blocking_read:{size - remaining}/{size}")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
     async def _handle_conn(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peername = writer.get_extra_info("peername")
         remote = f"{peername[0]}:{peername[1]}" if isinstance(peername, tuple) else str(peername)
@@ -109,10 +134,16 @@ class TCPNetworkTransport(NetworkTransport):
                 (length,) = struct.unpack("!I", header)
                 payload = await reader.readexactly(length)
                 envelope = decode_envelope(payload)
-                if self._handler is None:
-                    response: dict | None = {"ok": False, "error": "missing_handler"}
-                else:
-                    response = await self._handler(envelope, remote)
+                try:
+                    if self._handler is None:
+                        response: dict | None = {"ok": False, "error": "missing_handler"}
+                    else:
+                        response = await self._handler(envelope, remote)
+                except Exception as exc:
+                    response = {
+                        "ok": False,
+                        "error": f"handler_exception:{type(exc).__name__}:{exc}",
+                    }
                 wire = dumps_json(response or {"ok": True}).encode("utf-8")
                 writer.write(struct.pack("!I", len(wire)))
                 writer.write(wire)

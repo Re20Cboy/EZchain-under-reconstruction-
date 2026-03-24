@@ -2325,6 +2325,120 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 consensus1.close()
                 consensus0.close()
 
+    def test_tcp_mvp_auto_round_commits_payment_from_account_submit(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            alice_private, alice_public = generate_secp256k1_keypair()
+            bob_private, bob_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            bob_addr = address_from_public_key_pem(bob_public)
+
+            try:
+                peers = (
+                    PeerInfo(node_id="consensus-0", role="consensus", endpoint=f"127.0.0.1:{self._reserve_port()}"),
+                    PeerInfo(node_id="consensus-1", role="consensus", endpoint=f"127.0.0.1:{self._reserve_port()}"),
+                    PeerInfo(node_id="consensus-2", role="consensus", endpoint=f"127.0.0.1:{self._reserve_port()}"),
+                    PeerInfo(node_id="consensus-3", role="consensus", endpoint=f"127.0.0.1:{self._reserve_port()}"),
+                    PeerInfo(node_id="alice", role="account", endpoint=f"127.0.0.1:{self._reserve_port()}", metadata={"address": alice_addr}),
+                    PeerInfo(node_id="bob", role="account", endpoint=f"127.0.0.1:{self._reserve_port()}", metadata={"address": bob_addr}),
+                )
+            except PermissionError as exc:
+                raise unittest.SkipTest(f"bind_not_permitted:{exc}") from exc
+            peer_map = {peer.node_id: peer for peer in peers}
+
+            def _network_for(peer_id: str) -> TransportPeerNetwork:
+                return TransportPeerNetwork(
+                    TCPNetworkTransport("127.0.0.1", int(peer_map[peer_id].endpoint.rsplit(":", 1)[1])),
+                    peers,
+                )
+
+            consensus0_network = _network_for("consensus-0")
+            consensus1_network = _network_for("consensus-1")
+            consensus2_network = _network_for("consensus-2")
+            consensus3_network = _network_for("consensus-3")
+            alice_network = _network_for("alice")
+            bob_network = _network_for("bob")
+            validator_ids = ("consensus-0", "consensus-1", "consensus-2", "consensus-3")
+
+            consensus_hosts = {
+                validator_id: V2ConsensusHost(
+                    node_id=validator_id,
+                    endpoint=peer_map[validator_id].endpoint,
+                    store_path=f"{td}/{validator_id}.sqlite3",
+                    network={
+                        "consensus-0": consensus0_network,
+                        "consensus-1": consensus1_network,
+                        "consensus-2": consensus2_network,
+                        "consensus-3": consensus3_network,
+                    }[validator_id],
+                    chain_id=919,
+                    consensus_mode="mvp",
+                    consensus_validator_ids=validator_ids,
+                    auto_run_mvp_consensus=True,
+                )
+                for validator_id in validator_ids
+            }
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint=peer_map["alice"].endpoint,
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=919,
+                network=alice_network,
+                consensus_peer_id="consensus-0",
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint=peer_map["bob"].endpoint,
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=919,
+                network=bob_network,
+                consensus_peer_id="consensus-0",
+                address=bob_addr,
+                private_key_pem=bob_private,
+                public_key_pem=bob_public,
+            )
+            try:
+                try:
+                    consensus0_network.start()
+                    consensus1_network.start()
+                    consensus2_network.start()
+                    consensus3_network.start()
+                    alice_network.start()
+                    bob_network.start()
+                except PermissionError as exc:
+                    raise unittest.SkipTest(f"bind_not_permitted:{exc}") from exc
+                except RuntimeError as exc:
+                    if isinstance(exc.__cause__, PermissionError):
+                        raise unittest.SkipTest(f"bind_not_permitted:{exc.__cause__}") from exc
+                    raise
+
+                minted = ValueRange(0, 199)
+                for consensus in consensus_hosts.values():
+                    consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=191)
+
+                self.assertEqual(payment.receipt_height, 1)
+                for consensus in consensus_hosts.values():
+                    self.assertEqual(consensus.consensus.chain.current_height, 1)
+                self.assertEqual(alice.wallet.available_balance(), 150)
+                self.assertEqual(bob.wallet.available_balance(), 50)
+                self.assertEqual(self._wait_for_chain_height(bob, 1), 1)
+            finally:
+                bob_network.stop()
+                alice_network.stop()
+                consensus3_network.stop()
+                consensus2_network.stop()
+                consensus1_network.stop()
+                consensus0_network.stop()
+                bob.close()
+                alice.close()
+                for consensus in reversed(tuple(consensus_hosts.values())):
+                    consensus.close()
+
     def test_tcp_mvp_timeout_allows_next_proposer_to_commit(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             alice_private, alice_public = generate_secp256k1_keypair()

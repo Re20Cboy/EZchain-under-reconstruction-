@@ -108,6 +108,11 @@ class TransportPeerNetwork:
             if recipient_id == self._active_request_sender_id:
                 self._active_outbox.append(envelope)
                 return {"ok": True, "queued": "inline"}
+            peer = self.peer_info(recipient_id)
+            send_blocking = getattr(self.transport, "send_blocking", None)
+            if callable(send_blocking):
+                response = send_blocking(peer.endpoint, envelope, timeout=self.timeout_sec)
+                return self._apply_transport_response(response)
             self._active_remote_deliveries.append(envelope)
             return {"ok": True, "queued": "remote"}
         response = self._submit_coroutine(self._send_remote(envelope))
