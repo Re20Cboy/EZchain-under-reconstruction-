@@ -81,6 +81,7 @@ def _account_spec(
     wallet_file: str,
     listen_host: str | None = None,
     reset_ephemeral_state: bool = True,
+    reset_derived_state: bool = True,
 ) -> NodeSpec:
     cmd = [
         sys.executable,
@@ -102,6 +103,8 @@ def _account_spec(
         cmd.extend(["--listen-host", listen_host])
     if reset_ephemeral_state:
         cmd.append("--reset-ephemeral-state")
+    if reset_derived_state:
+        cmd.append("--reset-derived-state")
     return NodeSpec(
         name=name,
         kind="account",
@@ -121,6 +124,7 @@ def build_role_specs(
     mac_ip: str,
     ecs_ip: str,
     reset_account_ephemeral_state: bool,
+    reset_account_derived_state: bool,
 ) -> tuple[NodeSpec, ...]:
     peers = (
         f"consensus-0={mac_ip}:19500",
@@ -167,6 +171,7 @@ def build_role_specs(
                 consensus_endpoint=f"{mac_ip}:19500",
                 wallet_file=".ezchain-mac-account-store/wallet.json",
                 reset_ephemeral_state=reset_account_ephemeral_state,
+                reset_derived_state=reset_account_derived_state,
             ),
         )
     if role == "ecs":
@@ -205,6 +210,7 @@ def build_role_specs(
                 consensus_endpoint=f"{ecs_ip}:19500",
                 wallet_file=".ezchain-ecs-account-store/wallet.json",
                 reset_ephemeral_state=reset_account_ephemeral_state,
+                reset_derived_state=reset_account_derived_state,
             ),
         )
     raise ValueError(f"unsupported_role:{role}")
@@ -245,6 +251,9 @@ def _wait_for_state(path: Path, *, timeout_sec: float = 5.0) -> dict:
 def _start_spec(project_root: Path, spec: NodeSpec) -> dict:
     root_dir = project_root / spec.root_dir
     root_dir.mkdir(parents=True, exist_ok=True)
+    state_path = project_root / spec.state_file
+    if state_path.exists():
+        state_path.unlink()
     stdout_path = project_root / spec.stdout_log
     stderr_path = project_root / spec.stderr_log
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
@@ -258,7 +267,7 @@ def _start_spec(project_root: Path, spec: NodeSpec) -> dict:
             start_new_session=True,
             text=True,
         )
-    state = _wait_for_state(project_root / spec.state_file)
+    state = _wait_for_state(state_path)
     return {
         "name": spec.name,
         "kind": spec.kind,
@@ -317,6 +326,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Do not clear pending bundles and cached network state when starting account nodes",
     )
+    parser.add_argument(
+        "--no-reset-account-derived-state",
+        action="store_true",
+        help="Do not rebuild the derived account wallet database when starting account nodes",
+    )
     args = parser.parse_args(argv)
 
     project_root = Path.cwd()
@@ -327,6 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         mac_ip=str(args.mac_ip),
         ecs_ip=str(args.ecs_ip),
         reset_account_ephemeral_state=not bool(args.no_reset_account_ephemeral_state),
+        reset_account_derived_state=not bool(args.no_reset_account_derived_state),
     )
 
     if args.action == "status":

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import signal
 import time
 from pathlib import Path
@@ -98,6 +99,7 @@ def run_daemon(
     wallet_file: str | None,
     wallet_db_path: str | None,
     reset_ephemeral_state: bool,
+    reset_derived_state: bool,
 ) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -115,6 +117,16 @@ def run_daemon(
         wallet_db = _default_wallet_db_path_from_wallet_file(wallet_file_path, address)
     else:
         wallet_db = root / "account_wallet.sqlite3"
+    if reset_derived_state:
+        if wallet_db.exists():
+            wallet_db.unlink()
+        if wallet_db.parent.exists() and wallet_db.parent != root:
+            shutil.rmtree(wallet_db.parent, ignore_errors=True)
+        if network_state_path.exists():
+            network_state_path.unlink()
+        state_path_obj = Path(state_file)
+        if state_path_obj.exists():
+            state_path_obj.unlink()
     wallet_db.parent.mkdir(parents=True, exist_ok=True)
 
     local_peer = PeerInfo(node_id=f"account-{address[-8:]}", role="account", endpoint=endpoint, metadata={"address": address})
@@ -259,6 +271,11 @@ def main() -> None:
         action="store_true",
         help="Testing helper: clear pending bundles and cached network state before starting the account daemon",
     )
+    parser.add_argument(
+        "--reset-derived-state",
+        action="store_true",
+        help="Testing helper: rebuild the derived account wallet database and cached state while preserving wallet.json identity",
+    )
     args = parser.parse_args()
 
     run_daemon(
@@ -272,6 +289,7 @@ def main() -> None:
         wallet_file=str(args.wallet_file).strip() or None,
         wallet_db_path=str(args.wallet_db_path).strip() or None,
         reset_ephemeral_state=bool(args.reset_ephemeral_state),
+        reset_derived_state=bool(args.reset_derived_state),
     )
 
 
