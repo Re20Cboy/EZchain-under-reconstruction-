@@ -88,6 +88,7 @@ class EZV2TCPConsensusDaemonScriptTest(unittest.TestCase):
                 self.assertEqual(state["mode"], "v2-tcp-consensus")
                 self.assertEqual(state["node_id"], "consensus-1")
                 self.assertEqual(state["endpoint"], f"127.0.0.1:{port1}")
+                self.assertEqual(state["listen_endpoint"], f"127.0.0.1:{port1}")
                 self.assertEqual(state["consensus_mode"], "mvp")
                 self.assertTrue(state["auto_run_mvp_consensus"])
                 self.assertEqual(
@@ -111,3 +112,70 @@ class EZV2TCPConsensusDaemonScriptTest(unittest.TestCase):
                         proc.kill()
                         proc.wait(timeout=5.0)
 
+    def test_script_can_bind_on_override_host_while_advertising_tailnet_endpoint(self) -> None:
+        try:
+            port0 = self._reserve_port()
+        except PermissionError as exc:
+            raise unittest.SkipTest(f"bind_not_permitted:{exc}") from exc
+        port1 = self._reserve_port()
+        port2 = self._reserve_port()
+
+        project_root = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory() as td:
+            root_dir = Path(td) / "runtime"
+            state_file = Path(td) / "state.json"
+            cmd = [
+                sys.executable,
+                str(project_root / "run_ez_v2_tcp_consensus.py"),
+                "--root-dir",
+                str(root_dir),
+                "--state-file",
+                str(state_file),
+                "--chain-id",
+                "821",
+                "--node-id",
+                "consensus-0",
+                "--endpoint",
+                f"100.90.152.124:{port0}",
+                "--listen-host",
+                "0.0.0.0",
+                "--peer",
+                f"consensus-0=100.90.152.124:{port0}",
+                "--peer",
+                f"consensus-1=100.101.104.77:{port1}",
+                "--peer",
+                f"consensus-2=100.119.113.49:{port2}",
+                "--consensus-mode",
+                "mvp",
+                "--auto-run-mvp-consensus",
+            ]
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                deadline = time.time() + 5.0
+                state = None
+                while time.time() < deadline:
+                    state = read_state_file(str(state_file))
+                    if state and int(state.get("pid", 0)) == proc.pid:
+                        break
+                    if proc.poll() is not None:
+                        self.fail(f"consensus_daemon_exited_early:{proc.returncode}")
+                    time.sleep(0.05)
+                else:
+                    self.fail("consensus_daemon_state_timeout")
+
+                assert state is not None
+                self.assertEqual(state["endpoint"], f"100.90.152.124:{port0}")
+                self.assertEqual(state["listen_endpoint"], f"0.0.0.0:{port0}")
+            finally:
+                if proc.poll() is None:
+                    proc.send_signal(signal.SIGTERM)
+                    try:
+                        proc.wait(timeout=5.0)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=5.0)

@@ -49,6 +49,7 @@ def run_daemon(
     heartbeat_sec: float,
     node_id: str,
     endpoint: str,
+    listen_host: str | None,
     peer_specs: tuple[str, ...],
     consensus_mode: str,
     validator_ids: tuple[str, ...],
@@ -60,9 +61,10 @@ def run_daemon(
     peers = _build_consensus_peers(node_id=node_id, endpoint=endpoint, peer_specs=peer_specs)
     peer_map = {peer.node_id: peer for peer in peers}
     peer = peer_map[node_id]
-    host, port = _parse_endpoint(endpoint)
+    endpoint_host, port = _parse_endpoint(endpoint)
+    bind_host = str(listen_host).strip() if listen_host else endpoint_host
     network = TransportPeerNetwork(
-        TCPNetworkTransport(host, port),
+        TCPNetworkTransport(bind_host, port),
         peers,
     )
     effective_validator_ids = tuple(validator_ids) or tuple(item.node_id for item in peers)
@@ -98,6 +100,7 @@ def run_daemon(
                     "root_dir": str(root),
                     "node_id": node_id,
                     "endpoint": endpoint,
+                    "listen_endpoint": f"{bind_host}:{port}",
                     "peer_endpoints": {item.node_id: item.endpoint for item in peers},
                     "consensus_mode": consensus_mode,
                     "consensus_validator_ids": list(effective_validator_ids),
@@ -121,6 +124,11 @@ def main() -> None:
     parser.add_argument("--heartbeat-sec", type=float, default=0.5, help="Heartbeat interval")
     parser.add_argument("--node-id", default="consensus-0", help="Consensus node id for this daemon")
     parser.add_argument("--endpoint", default="127.0.0.1:19500", help="TCP listen endpoint")
+    parser.add_argument(
+        "--listen-host",
+        default="",
+        help="Optional local bind host override; useful when the advertised endpoint differs from the local listen interface",
+    )
     parser.add_argument(
         "--peer",
         action="append",
@@ -153,6 +161,7 @@ def main() -> None:
         heartbeat_sec=args.heartbeat_sec,
         node_id=args.node_id,
         endpoint=args.endpoint,
+        listen_host=str(args.listen_host).strip() or None,
         peer_specs=tuple(args.peer),
         consensus_mode=args.consensus_mode,
         validator_ids=tuple(args.validator_id),

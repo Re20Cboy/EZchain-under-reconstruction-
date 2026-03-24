@@ -93,6 +93,7 @@ def run_daemon(
     state_file: str,
     heartbeat_sec: float,
     endpoint: str,
+    listen_host: str | None,
     consensus_endpoint: str,
     wallet_file: str | None,
     wallet_db_path: str | None,
@@ -117,9 +118,10 @@ def run_daemon(
 
     local_peer = PeerInfo(node_id=f"account-{address[-8:]}", role="account", endpoint=endpoint, metadata={"address": address})
     consensus_peer = PeerInfo(node_id="consensus-0", role="consensus", endpoint=consensus_endpoint)
-    host, port = _parse_endpoint(endpoint)
+    endpoint_host, port = _parse_endpoint(endpoint)
+    bind_host = str(listen_host).strip() if listen_host else endpoint_host
     network = TransportPeerNetwork(
-        TCPNetworkTransport(host, port),
+        TCPNetworkTransport(bind_host, port),
         (consensus_peer,),
     )
     account = V2AccountHost(
@@ -202,6 +204,7 @@ def run_daemon(
                     "pid": os.getpid(),
                     "root_dir": str(root),
                     "endpoint": endpoint,
+                    "listen_endpoint": f"{bind_host}:{port}",
                     "consensus_endpoint": consensus_endpoint,
                     "address": address,
                     "identity_source": identity_source,
@@ -240,6 +243,11 @@ def main() -> None:
     parser.add_argument("--chain-id", type=int, default=1, help="Chain id for the V2 account daemon")
     parser.add_argument("--heartbeat-sec", type=float, default=0.5, help="Heartbeat interval")
     parser.add_argument("--endpoint", default="127.0.0.1:19600", help="TCP listen endpoint for the account node")
+    parser.add_argument(
+        "--listen-host",
+        default="",
+        help="Optional local bind host override; useful when the advertised endpoint differs from the local listen interface",
+    )
     parser.add_argument("--consensus-endpoint", required=True, help="Remote consensus TCP endpoint")
     parser.add_argument("--wallet-file", default="", help="Optional wallet.json path to reuse as the account identity")
     parser.add_argument("--wallet-db-path", default="", help="Optional sqlite path to reuse as the account wallet database")
@@ -251,6 +259,7 @@ def main() -> None:
         state_file=args.state_file,
         heartbeat_sec=args.heartbeat_sec,
         endpoint=args.endpoint,
+        listen_host=str(args.listen_host).strip() or None,
         consensus_endpoint=args.consensus_endpoint,
         wallet_file=str(args.wallet_file).strip() or None,
         wallet_db_path=str(args.wallet_db_path).strip() or None,
