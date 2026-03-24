@@ -95,6 +95,7 @@ def run_daemon(
     heartbeat_sec: float,
     endpoint: str,
     listen_host: str | None,
+    consensus_peer_id: str,
     consensus_endpoint: str,
     wallet_file: str | None,
     wallet_db_path: str | None,
@@ -131,7 +132,7 @@ def run_daemon(
     wallet_db.parent.mkdir(parents=True, exist_ok=True)
 
     local_peer = PeerInfo(node_id=f"account-{address[-8:]}", role="account", endpoint=endpoint, metadata={"address": address})
-    consensus_peer = PeerInfo(node_id="consensus-0", role="consensus", endpoint=consensus_endpoint)
+    consensus_peer = PeerInfo(node_id=str(consensus_peer_id), role="consensus", endpoint=consensus_endpoint)
     endpoint_host, port = _parse_endpoint(endpoint)
     bind_host = str(listen_host).strip() if listen_host else endpoint_host
     network = TransportPeerNetwork(
@@ -222,6 +223,7 @@ def run_daemon(
                     "root_dir": str(root),
                     "endpoint": endpoint,
                     "listen_endpoint": f"{bind_host}:{port}",
+                    "consensus_peer_id": consensus_peer.node_id,
                     "consensus_endpoint": consensus_endpoint,
                     "address": address,
                     "identity_source": identity_source,
@@ -266,6 +268,7 @@ def main() -> None:
         default="",
         help="Optional local bind host override; useful when the advertised endpoint differs from the local listen interface",
     )
+    parser.add_argument("--consensus-peer-id", default="consensus-0", help="Consensus peer id for the remote consensus endpoint")
     parser.add_argument("--consensus-endpoint", required=True, help="Remote consensus TCP endpoint")
     parser.add_argument("--wallet-file", default="", help="Optional wallet.json path to reuse as the account identity")
     parser.add_argument("--wallet-db-path", default="", help="Optional sqlite path to reuse as the account wallet database")
@@ -288,6 +291,7 @@ def main() -> None:
         heartbeat_sec=args.heartbeat_sec,
         endpoint=args.endpoint,
         listen_host=str(args.listen_host).strip() or None,
+        consensus_peer_id=str(args.consensus_peer_id).strip() or "consensus-0",
         consensus_endpoint=args.consensus_endpoint,
         wallet_file=str(args.wallet_file).strip() or None,
         wallet_db_path=str(args.wallet_db_path).strip() or None,

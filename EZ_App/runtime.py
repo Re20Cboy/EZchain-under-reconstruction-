@@ -839,6 +839,7 @@ class TxEngine:
         if remote_address and remote_address != wallet["address"]:
             raise ValueError("wallet_address_mismatch_with_account_node")
         consensus_endpoint = str(state.get("consensus_endpoint", "")).strip()
+        consensus_peer_id = str(state.get("consensus_peer_id", "consensus-0")).strip() or "consensus-0"
         if not consensus_endpoint:
             raise ValueError("consensus_endpoint_missing")
         if not recipient_endpoint.strip():
@@ -852,7 +853,7 @@ class TxEngine:
             endpoint="127.0.0.1:0",
             metadata={"address": wallet["address"]},
         )
-        consensus_peer = PeerInfo(node_id="consensus-0", role="consensus", endpoint=consensus_endpoint)
+        consensus_peer = PeerInfo(node_id=consensus_peer_id, role="consensus", endpoint=consensus_endpoint)
         recipient_peer = PeerInfo(
             node_id=self._peer_id_for_address(recipient),
             role="account",

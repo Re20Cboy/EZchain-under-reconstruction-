@@ -225,6 +225,70 @@ class EZV2AppRuntimeTest(unittest.TestCase):
             self.assertEqual(captured["timeout_sec"], 12.5)
             self.assertEqual(result.status, "confirmed")
 
+    def test_remote_send_uses_consensus_peer_id_from_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / ".ezv2"
+            store = WalletStore(str(data_dir))
+            store.create_wallet(password="pw123", name="alice")
+            address = store.summary(protocol_version="v2").address
+            wallet_db_path = str(data_dir / "wallet_state_v2" / address / "wallet_v2.db")
+            state = {
+                "address": address,
+                "consensus_peer_id": "consensus-1",
+                "consensus_endpoint": "127.0.0.1:19501",
+                "wallet_db_path": wallet_db_path,
+            }
+            captured: dict[str, object] = {}
+
+            class FakeNetwork:
+                def __init__(self, transport, peers=(), *, timeout_sec=5.0):
+                    captured["peer_ids"] = tuple(peer.node_id for peer in peers)
+
+                def start(self):
+                    return None
+
+                def stop(self):
+                    return None
+
+            class FakeAccountHost:
+                def __init__(self, **kwargs):
+                    captured["consensus_peer_id"] = kwargs["consensus_peer_id"]
+
+                def recover_network_state(self):
+                    return None
+
+                def submit_payment(self, recipient_peer_id, *, amount, expiry_height, fee, anti_spam_nonce):
+                    return type(
+                        "Payment",
+                        (),
+                        {
+                            "tx_hash_hex": "tx",
+                            "submit_hash_hex": "submit",
+                            "receipt_height": 1,
+                            "receipt_block_hash_hex": "block",
+                        },
+                    )()
+
+                def close(self):
+                    return None
+
+            engine = TxEngine(str(data_dir), max_tx_amount=1000, protocol_version="v2")
+
+            with patch("EZ_App.runtime.TransportPeerNetwork", FakeNetwork), patch("EZ_App.runtime.V2AccountHost", FakeAccountHost):
+                result = engine.remote_send(
+                    store,
+                    password="pw123",
+                    recipient="0x456cb34a89d06b34904eca5b0f27c9fbfddde2b2",
+                    amount=50,
+                    recipient_endpoint="127.0.0.1:19600",
+                    state=state,
+                    client_tx_id="cid-peer-id",
+                )
+
+            self.assertIn("consensus-1", captured["peer_ids"])
+            self.assertEqual(captured["consensus_peer_id"], "consensus-1")
+            self.assertEqual(result.status, "confirmed")
+
     def test_v2_local_app_session_recover_wallet_state_summarizes_incoming_and_receipt_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             shared_backend = Path(td) / "shared_backend"
