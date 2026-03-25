@@ -146,6 +146,28 @@ doc/trials/distributed/
 4. 20 笔顺序交易
 5. 双向交错交易
 
+可直接复用的新本地规模化入口：
+
+- [scripts/v2_tcp_scale_scenario.py](/Users/lx/Documents/New%20project/EZchain-under-reconstruction-/scripts/v2_tcp_scale_scenario.py)
+
+示例：
+
+```bash
+python3 scripts/v2_tcp_scale_scenario.py \
+  --consensus-count 7 \
+  --account-count 20 \
+  --tx-count 200 \
+  --genesis-amount 1000 \
+  --max-amount 50 \
+  --checkpoint-every 25 \
+  --out-json dist/v2_tcp_scale_7c20a_200tx.json
+```
+
+说明：
+
+- 这个脚本跑的是“单机多逻辑节点”的真实 TCP 场景，适合把功能覆盖、随机交易、checkpoint 触发、长跑入口先做起来
+- 它不是最终的多机 fault-domain 替代品，但很适合先把 V2 功能完整性和脚本化执行能力补齐
+
 每轮都要检查：
 
 - 两端余额
@@ -423,4 +445,3 @@ doc/trials/distributed/
 - `量化收益`
 
 而不是直接跳到“默认认为 checkpoint 已经证明有效”。
-
