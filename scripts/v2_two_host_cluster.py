@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import socket
 import signal
 import subprocess
@@ -52,6 +53,65 @@ def _safe_read_json(path: Path) -> dict[str, Any] | None:
     except Exception:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def _list_local_processes() -> tuple[tuple[int, str], ...]:
+    output = subprocess.check_output(
+        ["ps", "-eo", "pid=,command="],
+        text=True,
+        encoding="utf-8",
+    )
+    rows: list[tuple[int, str]] = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        pid_s, _, command = line.partition(" ")
+        try:
+            pid = int(pid_s)
+        except ValueError:
+            continue
+        rows.append((pid, command.strip()))
+    return tuple(rows)
+
+
+def _stop_all_v2_tcp_processes() -> tuple[int, ...]:
+    current_pid = os.getpid()
+    targets: list[int] = []
+    for pid, command in _list_local_processes():
+        if pid == current_pid:
+            continue
+        if "run_ez_v2_tcp_consensus.py" in command or "run_ez_v2_tcp_account.py" in command:
+            targets.append(pid)
+    stopped: list[int] = []
+    for pid in targets:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except ProcessLookupError:
+            continue
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        alive = [pid for pid in stopped if _pid_running(pid)]
+        if not alive:
+            return tuple(stopped)
+        time.sleep(0.1)
+    for pid in tuple(stopped):
+        if _pid_running(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    return tuple(stopped)
+
+
+def _reset_cluster_runtime(project_root: Path, topology: dict[str, Any]) -> None:
+    cluster_dir = str(topology.get("cluster_dir", "")).strip()
+    if not cluster_dir:
+        return
+    target = project_root / cluster_dir
+    if target.exists():
+        shutil.rmtree(target)
 
 
 def _wait_for_state(path: Path, *, timeout_sec: float = 8.0) -> dict[str, Any]:
@@ -712,8 +772,11 @@ def main() -> int:
     if args.action == "bootstrap":
         topology = _topology_from_args(args)
         _write_topology_file(topology_path, topology)
+        stopped_pids = _stop_all_v2_tcp_processes()
+        _reset_cluster_runtime(project_root, topology)
     else:
         topology = _load_topology(topology_path)
+        stopped_pids = ()
     created_wallets = _materialize_wallets(
         project_root,
         topology,
@@ -790,6 +853,7 @@ def main() -> int:
                     "topology_file": str(topology_path),
                     "cluster_name": topology.get("cluster_name"),
                     "cluster_dir": topology.get("cluster_dir"),
+                    "stopped_pids": stopped_pids,
                     "wallets_created_now": created_wallets,
                     "nodes": results,
                 },
