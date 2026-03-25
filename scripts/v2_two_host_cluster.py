@@ -40,6 +40,8 @@ def _pid_running(pid: int) -> bool:
         return False
     try:
         os.kill(pid, 0)
+    except PermissionError:
+        return True
     except OSError:
         return False
     return True
@@ -542,6 +544,26 @@ def _run_tx_batch(
 ) -> dict[str, Any]:
     rng = __import__("random").Random(seed)
     chain_id = int(topology["chain_id"])
+    preflight = _preflight(
+        topology=topology,
+        role=role,
+        timeout_sec=2.0,
+    )
+    if not bool(preflight.get("all_reachable")):
+        return {
+            "role": role,
+            "requested": tx_count,
+            "submitted": 0,
+            "failed": 1,
+            "results": [],
+            "failures": [
+                {
+                    "tx_index": 0,
+                    "error": "remote_endpoints_unreachable",
+                    "preflight": preflight,
+                }
+            ],
+        }
     local_accounts = [item for item in topology["account_nodes"] if item["role"] == role]
     all_accounts = list(topology["account_nodes"])
     account_peers = [

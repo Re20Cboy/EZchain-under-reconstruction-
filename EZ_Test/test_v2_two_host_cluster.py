@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.v2_two_host_cluster import (
+    _pid_running,
     _build_role_specs,
     _build_topology,
     _materialize_wallets,
@@ -15,6 +16,10 @@ from scripts.v2_two_host_cluster import (
 
 
 class V2TwoHostClusterTests(unittest.TestCase):
+    def test_pid_running_treats_permission_error_as_alive(self) -> None:
+        with patch("scripts.v2_two_host_cluster.os.kill", side_effect=PermissionError("nope")):
+            self.assertTrue(_pid_running(123))
+
     def test_topology_from_args_matches_cli_shape(self) -> None:
         class Args:
             cluster_name = "demo-cli"
@@ -301,6 +306,50 @@ class V2TwoHostClusterTests(unittest.TestCase):
         self.assertEqual(result["submitted"], 1)
         self.assertEqual(result["failed"], 0)
         self.assertGreaterEqual(max(balance_calls.values()), 3)
+
+    def test_run_tx_batch_reports_preflight_failures_before_sending(self) -> None:
+        topology = _build_topology(
+            cluster_name="demo",
+            chain_id=821,
+            mac_consensus_count=2,
+            mac_account_count=2,
+            ecs_consensus_count=1,
+            ecs_account_count=1,
+            mac_consensus_host="100.90.152.124",
+            mac_account_host="100.90.152.124",
+            ecs_consensus_host="118.178.171.23",
+            ecs_account_host="118.178.171.23",
+            genesis_amount=500,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
+        )
+
+        with tempfile.TemporaryDirectory() as td, patch(
+            "scripts.v2_two_host_cluster._preflight",
+            return_value={
+                "role": "mac",
+                "all_reachable": False,
+                "probes": [{"endpoint": "118.178.171.23:29600", "ok": False, "error": "TimeoutError:timed out"}],
+            },
+        ):
+            result = _run_tx_batch(
+                project_root=Path(td),
+                topology=topology,
+                role="mac",
+                password="pw123",
+                tx_count=3,
+                max_amount=50,
+                seed=1,
+                settle_timeout_sec=0.1,
+                settle_grace_sec=0.0,
+                stop_on_failure=True,
+            )
+
+        self.assertEqual(result["submitted"], 0)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["failures"][0]["error"], "remote_endpoints_unreachable")
 
 
 if __name__ == "__main__":
