@@ -233,6 +233,47 @@ def _load_topology(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _topology_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    return _build_topology(
+        cluster_name=str(args.cluster_name),
+        chain_id=int(args.chain_id),
+        mac_consensus_count=int(args.mac_consensus_count),
+        mac_account_count=int(args.mac_account_count),
+        ecs_consensus_count=int(args.ecs_consensus_count),
+        ecs_account_count=int(args.ecs_account_count),
+        mac_consensus_host=str(args.mac_consensus_host),
+        mac_account_host=str(args.mac_account_host),
+        ecs_consensus_host=str(args.ecs_consensus_host),
+        ecs_account_host=str(args.ecs_account_host),
+        genesis_amount=int(args.genesis_amount),
+        mac_consensus_base_port=(
+            int(args.consensus_base_port)
+            if int(args.mac_consensus_base_port) < 0
+            else int(args.mac_consensus_base_port)
+        ),
+        ecs_consensus_base_port=(
+            int(args.consensus_base_port)
+            if int(args.ecs_consensus_base_port) < 0
+            else int(args.ecs_consensus_base_port)
+        ),
+        mac_account_base_port=(
+            int(args.account_base_port)
+            if int(args.mac_account_base_port) < 0
+            else int(args.mac_account_base_port)
+        ),
+        ecs_account_base_port=(
+            int(args.account_base_port)
+            if int(args.ecs_account_base_port) < 0
+            else int(args.ecs_account_base_port)
+        ),
+    )
+
+
+def _write_topology_file(path: Path, topology: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(topology, indent=2), encoding="utf-8")
+
+
 def _write_genesis_allocations(project_root: Path, topology: dict[str, Any]) -> str:
     cluster_dir = str(topology.get("cluster_dir", ".ezchain-twohost/default"))
     target = project_root / cluster_dir / "genesis_allocations.json"
@@ -624,7 +665,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Configurable two-host EZchain V2 cluster controller for Mac + ECS")
     parser.add_argument(
         "action",
-        choices=("init-topology", "start", "stop", "restart", "status", "tx-batch", "preflight"),
+        choices=("init-topology", "bootstrap", "start", "stop", "restart", "status", "tx-batch", "preflight"),
     )
     parser.add_argument("--role", choices=("mac", "ecs"), help="Which machine role this invocation controls")
     parser.add_argument("--topology-file", default="configs/v2_two_host_topology.json")
@@ -661,47 +702,18 @@ def main() -> int:
     topology_path = project_root / str(args.topology_file)
 
     if args.action == "init-topology":
-        topology = _build_topology(
-            cluster_name=str(args.cluster_name),
-            chain_id=int(args.chain_id),
-            mac_consensus_count=int(args.mac_consensus_count),
-            mac_account_count=int(args.mac_account_count),
-            ecs_consensus_count=int(args.ecs_consensus_count),
-            ecs_account_count=int(args.ecs_account_count),
-            mac_consensus_host=str(args.mac_consensus_host),
-            mac_account_host=str(args.mac_account_host),
-            ecs_consensus_host=str(args.ecs_consensus_host),
-            ecs_account_host=str(args.ecs_account_host),
-            genesis_amount=int(args.genesis_amount),
-            mac_consensus_base_port=(
-                int(args.consensus_base_port)
-                if int(args.mac_consensus_base_port) < 0
-                else int(args.mac_consensus_base_port)
-            ),
-            ecs_consensus_base_port=(
-                int(args.consensus_base_port)
-                if int(args.ecs_consensus_base_port) < 0
-                else int(args.ecs_consensus_base_port)
-            ),
-            mac_account_base_port=(
-                int(args.account_base_port)
-                if int(args.mac_account_base_port) < 0
-                else int(args.mac_account_base_port)
-            ),
-            ecs_account_base_port=(
-                int(args.account_base_port)
-                if int(args.ecs_account_base_port) < 0
-                else int(args.ecs_account_base_port)
-            ),
-        )
-        topology_path.parent.mkdir(parents=True, exist_ok=True)
-        topology_path.write_text(json.dumps(topology, indent=2), encoding="utf-8")
+        topology = _topology_from_args(args)
+        _write_topology_file(topology_path, topology)
         print(json.dumps({"status": "written", "topology_file": str(topology_path), "topology": topology}, indent=2))
         return 0
 
     if not args.role:
         raise SystemExit("--role is required for this action")
-    topology = _load_topology(topology_path)
+    if args.action == "bootstrap":
+        topology = _topology_from_args(args)
+        _write_topology_file(topology_path, topology)
+    else:
+        topology = _load_topology(topology_path)
     created_wallets = _materialize_wallets(
         project_root,
         topology,
@@ -758,6 +770,26 @@ def main() -> int:
                 {
                     "role": args.role,
                     "action": "restart",
+                    "wallets_created_now": created_wallets,
+                    "nodes": results,
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.action == "bootstrap":
+        [_stop_spec(project_root, spec) for spec in reversed(specs)]
+        time.sleep(0.5)
+        results = [_start_spec(project_root, spec) for spec in specs]
+        print(
+            json.dumps(
+                {
+                    "role": args.role,
+                    "action": "bootstrap",
+                    "topology_file": str(topology_path),
+                    "cluster_name": topology.get("cluster_name"),
+                    "cluster_dir": topology.get("cluster_dir"),
                     "wallets_created_now": created_wallets,
                     "nodes": results,
                 },

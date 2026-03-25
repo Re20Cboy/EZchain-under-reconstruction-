@@ -5,10 +5,44 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.v2_two_host_cluster import _build_role_specs, _build_topology, _materialize_wallets, _run_tx_batch
+from scripts.v2_two_host_cluster import (
+    _build_role_specs,
+    _build_topology,
+    _materialize_wallets,
+    _run_tx_batch,
+    _topology_from_args,
+)
 
 
 class V2TwoHostClusterTests(unittest.TestCase):
+    def test_topology_from_args_matches_cli_shape(self) -> None:
+        class Args:
+            cluster_name = "demo-cli"
+            chain_id = 821
+            mac_consensus_count = 3
+            mac_account_count = 2
+            ecs_consensus_count = 4
+            ecs_account_count = 5
+            mac_consensus_host = "100.90.152.124"
+            mac_account_host = "100.90.152.124"
+            ecs_consensus_host = "118.178.171.23"
+            ecs_account_host = "118.178.171.23"
+            genesis_amount = 500
+            consensus_base_port = 19500
+            account_base_port = 19600
+            mac_consensus_base_port = -1
+            ecs_consensus_base_port = 29500
+            mac_account_base_port = -1
+            ecs_account_base_port = 29600
+
+        topology = _topology_from_args(Args())
+        self.assertEqual(topology["cluster_name"], "demo-cli")
+        self.assertEqual(topology["cluster_dir"], ".ezchain-twohost/demo-cli")
+        self.assertEqual(topology["consensus_nodes"][0]["endpoint"], "100.90.152.124:19500")
+        self.assertEqual(topology["consensus_nodes"][3]["endpoint"], "118.178.171.23:29500")
+        self.assertEqual(topology["account_nodes"][0]["endpoint"], "100.90.152.124:19600")
+        self.assertEqual(topology["account_nodes"][2]["consensus_endpoint"], "127.0.0.1:29500")
+
     def test_build_topology_uses_requested_per_host_counts(self) -> None:
         topology = _build_topology(
             cluster_name="demo",
