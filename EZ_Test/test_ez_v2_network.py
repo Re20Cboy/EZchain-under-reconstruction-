@@ -516,6 +516,102 @@ class EZV2NetworkSmokeTest(unittest.TestCase):
                 for consensus in reversed(consensus_hosts):
                     consensus.close()
 
+    def test_static_network_mvp_windowed_auto_round_batches_two_senders_into_one_block(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            validator_ids = ("consensus-0", "consensus-1", "consensus-2", "consensus-3")
+            consensus_hosts = tuple(
+                V2ConsensusHost(
+                    node_id=validator_id,
+                    endpoint=f"mem://{validator_id}",
+                    store_path=f"{td}/{validator_id}.sqlite3",
+                    network=network,
+                    chain_id=931,
+                    consensus_mode="mvp",
+                    consensus_validator_ids=validator_ids,
+                    auto_run_mvp_consensus=True,
+                    auto_run_mvp_consensus_window_sec=0.2,
+                )
+                for validator_id in validator_ids
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=931,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            carol = V2AccountHost(
+                node_id="carol",
+                endpoint="mem://carol",
+                wallet_db_path=f"{td}/carol.sqlite3",
+                chain_id=931,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=931,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            try:
+                minted_alice = ValueRange(0, 199)
+                minted_carol = ValueRange(200, 399)
+                for consensus in consensus_hosts:
+                    consensus.register_genesis_value(alice.address, minted_alice)
+                    consensus.register_genesis_value(carol.address, minted_carol)
+                alice.register_genesis_value(minted_alice)
+                carol.register_genesis_value(minted_carol)
+
+                for consensus in consensus_hosts:
+                    if consensus.peer.node_id == "consensus-0":
+                        consensus.select_mvp_proposer = lambda **_: {
+                            "selected_proposer_id": "consensus-0",
+                            "ordered_consensus_peer_ids": ("consensus-0", "consensus-1", "consensus-2", "consensus-3"),
+                            "height": 1,
+                            "round": 1,
+                            "seed_hex": "",
+                            "claims_total": 4,
+                        }
+
+                first = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=301)
+                second = carol.submit_payment("bob", amount=30, tx_time=2, anti_spam_nonce=302)
+
+                self.assertIsNone(first.receipt_height)
+                self.assertIsNone(second.receipt_height)
+                tick = consensus_hosts[0].drive_auto_mvp_consensus_tick(force=True)
+
+                self.assertIsNotNone(tick)
+                assert tick is not None
+                self.assertEqual(tick["status"], "committed")
+                self.assertEqual(tick["height"], 1)
+                for consensus in consensus_hosts:
+                    self.assertEqual(consensus.consensus.chain.current_height, 1)
+
+                block = consensus_hosts[0].consensus.store.get_block_by_height(1)
+                assert block is not None
+                self.assertEqual(len(block.diff_package.sidecars), 2)
+                self.assertEqual(len(block.diff_package.diff_entries), 2)
+
+                alice.recover_network_state()
+                carol.recover_network_state()
+                bob.recover_network_state()
+                self.assertEqual(self._wait_for_receipt_count(alice, 1), 1)
+                self.assertEqual(self._wait_for_receipt_count(carol, 1), 1)
+                self.assertEqual(alice.wallet.available_balance(), 150)
+                self.assertEqual(carol.wallet.available_balance(), 170)
+                self.assertEqual(bob.wallet.available_balance(), 80)
+            finally:
+                bob.close()
+                carol.close()
+                alice.close()
+                for consensus in reversed(consensus_hosts):
+                    consensus.close()
+
     def test_static_network_mvp_auto_round_forwards_bundle_to_selected_proposer_and_commits(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             network = StaticPeerNetwork()

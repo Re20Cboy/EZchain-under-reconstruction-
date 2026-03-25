@@ -77,6 +77,7 @@ def run_daemon(
     consensus_mode: str,
     validator_ids: tuple[str, ...],
     auto_run_mvp_consensus: bool,
+    auto_run_mvp_consensus_window_sec: float,
     network_timeout_sec: float,
     genesis_allocations_file: str | None,
 ) -> None:
@@ -103,6 +104,7 @@ def run_daemon(
         consensus_mode=consensus_mode,
         consensus_validator_ids=effective_validator_ids,
         auto_run_mvp_consensus=auto_run_mvp_consensus,
+        auto_run_mvp_consensus_window_sec=auto_run_mvp_consensus_window_sec,
     )
     if genesis_allocations_file:
         for owner_addr, value in _load_genesis_allocations(genesis_allocations_file):
@@ -121,6 +123,8 @@ def run_daemon(
     started_at = int(time.time())
     try:
         while running:
+            if auto_run_mvp_consensus and auto_run_mvp_consensus_window_sec > 0:
+                consensus.drive_auto_mvp_consensus_tick()
             write_state_file(
                 state_file,
                 {
@@ -183,6 +187,12 @@ def main() -> None:
         help="Automatically route and commit mvp consensus bundles through the selected proposer",
     )
     parser.add_argument(
+        "--auto-run-mvp-consensus-window-sec",
+        type=float,
+        default=0.0,
+        help="Optional batch window before an auto-run mvp proposer starts the round; 0 keeps immediate behavior",
+    )
+    parser.add_argument(
         "--genesis-allocations-file",
         default="",
         help="Optional JSON file containing repeated {owner_addr, begin, end} genesis allocations",
@@ -201,6 +211,7 @@ def main() -> None:
         consensus_mode=args.consensus_mode,
         validator_ids=tuple(args.validator_id),
         auto_run_mvp_consensus=bool(args.auto_run_mvp_consensus),
+        auto_run_mvp_consensus_window_sec=float(args.auto_run_mvp_consensus_window_sec),
         network_timeout_sec=float(args.network_timeout_sec),
         genesis_allocations_file=str(args.genesis_allocations_file).strip() or None,
     )

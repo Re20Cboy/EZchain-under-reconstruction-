@@ -104,6 +104,7 @@ class V2TwoHostClusterTests(unittest.TestCase):
                 topology=topology,
                 role="mac",
                 network_timeout_sec=20.0,
+                mvp_batch_window_sec=0.5,
                 reset_account_ephemeral_state=True,
                 reset_account_derived_state=True,
             )
@@ -111,6 +112,7 @@ class V2TwoHostClusterTests(unittest.TestCase):
         self.assertEqual(len([spec for spec in specs if spec.kind == "consensus"]), 2)
         self.assertEqual(len([spec for spec in specs if spec.kind == "account"]), 2)
         self.assertTrue(all("--genesis-allocations-file" in spec.command for spec in specs if spec.kind == "consensus"))
+        self.assertTrue(all("--auto-run-mvp-consensus-window-sec" in spec.command for spec in specs if spec.kind == "consensus"))
         self.assertTrue(all("--consensus-peer-id" in spec.command for spec in specs if spec.kind == "account"))
 
     def test_materialize_wallets_creates_local_wallet_files_for_role(self) -> None:

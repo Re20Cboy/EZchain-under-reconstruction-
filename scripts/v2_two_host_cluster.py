@@ -371,6 +371,7 @@ def _build_role_specs(
     topology: dict[str, Any],
     role: str,
     network_timeout_sec: float,
+    mvp_batch_window_sec: float,
     reset_account_ephemeral_state: bool,
     reset_account_derived_state: bool,
 ) -> tuple[NodeSpec, ...]:
@@ -402,6 +403,8 @@ def _build_role_specs(
             str(item.get("listen_host", "0.0.0.0")),
             "--network-timeout-sec",
             str(network_timeout_sec),
+            "--auto-run-mvp-consensus-window-sec",
+            str(mvp_batch_window_sec),
             "--genesis-allocations-file",
             genesis_allocations_file,
         ]
@@ -803,6 +806,7 @@ def main() -> int:
     parser.add_argument("--genesis-amount", type=int, default=500)
     parser.add_argument("--password", default="pw123")
     parser.add_argument("--network-timeout-sec", type=float, default=20.0)
+    parser.add_argument("--mvp-batch-window-sec", type=float, default=0.5)
     parser.add_argument("--tx-count", type=int, default=10)
     parser.add_argument("--max-amount", type=int, default=50)
     parser.add_argument("--seed", type=int, default=821)
@@ -844,6 +848,7 @@ def main() -> int:
         topology=topology,
         role=str(args.role),
         network_timeout_sec=float(args.network_timeout_sec),
+        mvp_batch_window_sec=float(args.mvp_batch_window_sec),
         reset_account_ephemeral_state=not bool(args.no_reset_account_ephemeral_state),
         reset_account_derived_state=not bool(args.no_reset_account_derived_state),
     )

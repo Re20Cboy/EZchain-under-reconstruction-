@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
+import threading
+import time
 from typing import Any, Callable
 
 from .consensus import (
@@ -223,6 +225,7 @@ class V2ConsensusHost:
         consensus_mode: str = "legacy",
         consensus_validator_ids: tuple[str, ...] | None = None,
         auto_run_mvp_consensus: bool = False,
+        auto_run_mvp_consensus_window_sec: float = 0.0,
     ):
         self.network = network
         self.peer = PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint)
@@ -232,10 +235,14 @@ class V2ConsensusHost:
         self.adapter = adapter or LocalCommitAdapter(self.consensus)
         self.consensus_mode = str(consensus_mode)
         self.auto_run_mvp_consensus = bool(auto_run_mvp_consensus)
+        self.auto_run_mvp_consensus_window_sec = max(0.0, float(auto_run_mvp_consensus_window_sec))
         self.fetched_blocks: dict[int, BlockV2] = {}
         self.fetched_blocks_by_hash: dict[str, BlockV2] = {}
         self._pending_previews: dict[str, PendingConsensusPreview] = {}
         self._mvp_sortition_claims: dict[tuple[int, int, bytes], Any] = {}
+        self._auto_run_snapshot_key: bytes | None = None
+        self._auto_run_not_before: float | None = None
+        self._auto_run_lock = threading.RLock()
         self._consensus_core: ConsensusCore | None = None
         self._consensus_store: SQLiteConsensusStore | None = None
         self._consensus_validator_ids: tuple[str, ...] = tuple()
@@ -648,15 +655,104 @@ class V2ConsensusHost:
         submission: BundleSubmission,
         sender_peer_id: str | None,
     ) -> BlockV2:
-        self.consensus.submit_bundle(submission)
-        block, _ = self.consensus.preview_block()
-        preview = self._pending_previews.get(block.block_hash.hex())
-        if preview is None:
-            preview = PendingConsensusPreview(block=block, sender_peer_ids={})
-            self._pending_previews[block.block_hash.hex()] = preview
-        if sender_peer_id:
-            preview.sender_peer_ids[submission.sidecar.sender_addr] = sender_peer_id
-        return block
+        with self._auto_run_lock:
+            self.consensus.submit_bundle(submission)
+            block, _ = self.consensus.preview_block()
+            preview = self._pending_previews.get(block.block_hash.hex())
+            if preview is None:
+                preview = PendingConsensusPreview(block=block, sender_peer_ids={})
+                self._pending_previews[block.block_hash.hex()] = preview
+            if sender_peer_id:
+                preview.sender_peer_ids[submission.sidecar.sender_addr] = sender_peer_id
+            self._schedule_auto_mvp_round()
+            return block
+
+    def _derive_mvp_round_seed(self, *, height: int, round: int) -> bytes:
+        return keccak256(
+            b"ezchain-v2-mvp-round-seed"
+            + int(self.consensus.chain.chain_id).to_bytes(8, "big", signed=False)
+            + int(self._consensus_epoch_id).to_bytes(8, "big", signed=False)
+            + int(height).to_bytes(8, "big", signed=False)
+            + int(round).to_bytes(8, "big", signed=False)
+            + self.consensus.chain.current_block_hash
+        )
+
+    def _current_mvp_snapshot(self) -> dict[str, Any] | None:
+        submissions = self.consensus.chain.bundle_pool.snapshot()
+        if not submissions:
+            return None
+        target_height = self.consensus.chain.current_height + 1
+        target_round = max(1, self._consensus_core.pacemaker.current_round) if self._consensus_core is not None else 1
+        seed = self._derive_mvp_round_seed(height=target_height, round=target_round)
+        snapshot_key = keccak256(
+            b"ezchain-v2-mvp-snapshot"
+            + seed
+            + b"".join(submission.envelope.bundle_hash for submission in submissions)
+        )
+        return {
+            "submissions": submissions,
+            "height": target_height,
+            "round": target_round,
+            "seed": seed,
+            "snapshot_key": snapshot_key,
+        }
+
+    def _schedule_auto_mvp_round(self) -> None:
+        if not self.auto_run_mvp_consensus or self.auto_run_mvp_consensus_window_sec <= 0:
+            return
+        snapshot = self._current_mvp_snapshot()
+        if snapshot is None:
+            self._auto_run_snapshot_key = None
+            self._auto_run_not_before = None
+            return
+        self._auto_run_snapshot_key = snapshot["snapshot_key"]
+        self._auto_run_not_before = time.time() + self.auto_run_mvp_consensus_window_sec
+
+    def drive_auto_mvp_consensus_tick(self, *, force: bool = False) -> dict[str, Any] | None:
+        if not self.auto_run_mvp_consensus or self.consensus_mode != "mvp" or self._consensus_core is None:
+            return None
+        if self.auto_run_mvp_consensus_window_sec <= 0 and not force:
+            return None
+        with self._auto_run_lock:
+            snapshot = self._current_mvp_snapshot()
+            if snapshot is None:
+                self._auto_run_snapshot_key = None
+                self._auto_run_not_before = None
+                return None
+            now = time.time()
+            snapshot_key = snapshot["snapshot_key"]
+            if self._auto_run_snapshot_key != snapshot_key:
+                self._auto_run_snapshot_key = snapshot_key
+                self._auto_run_not_before = now + self.auto_run_mvp_consensus_window_sec
+                if not force:
+                    return None
+            if not force:
+                not_before = self._auto_run_not_before
+                if not_before is None or now < not_before:
+                    return None
+            selection = self.select_mvp_proposer(
+                consensus_peer_ids=self._consensus_validator_ids or (self.peer.node_id,),
+                seed=snapshot["seed"],
+                height=snapshot["height"],
+                round=snapshot["round"],
+            )
+            winner_id = str(selection["selected_proposer_id"])
+            if winner_id != self.peer.node_id:
+                return {
+                    "ok": True,
+                    "status": "waiting_for_remote_proposer",
+                    "selected_proposer_id": winner_id,
+                    "height": snapshot["height"],
+                    "round": snapshot["round"],
+                    "sortition_seed_hex": snapshot["seed"].hex(),
+                }
+            ordered_ids = tuple(selection["ordered_consensus_peer_ids"])
+            result = self.run_mvp_consensus_round(consensus_peer_ids=ordered_ids)
+            result["selected_proposer_id"] = winner_id
+            result["sortition_seed_hex"] = snapshot["seed"].hex()
+            self._auto_run_snapshot_key = None
+            self._auto_run_not_before = None
+            return result
 
     def _auto_route_mvp_bundle(
         self,
@@ -668,11 +764,7 @@ class V2ConsensusHost:
             raise ValueError("consensus_mvp_disabled")
         target_height = self.consensus.chain.current_height + 1
         target_round = max(1, self._consensus_core.pacemaker.current_round)
-        seed = self._derive_mvp_sortition_seed(
-            bundle_hash=submission.envelope.bundle_hash,
-            height=target_height,
-            round=target_round,
-        )
+        seed = self._derive_mvp_round_seed(height=target_height, round=target_round)
         selection = self.select_mvp_proposer(
             consensus_peer_ids=self._consensus_validator_ids or (self.peer.node_id,),
             seed=seed,
@@ -681,6 +773,37 @@ class V2ConsensusHost:
         )
         winner_id = str(selection["selected_proposer_id"])
         ordered_ids = tuple(selection["ordered_consensus_peer_ids"])
+        if self.auto_run_mvp_consensus_window_sec > 0:
+            if winner_id == self.peer.node_id:
+                block = self._track_pending_mvp_bundle(submission=submission, sender_peer_id=sender_peer_id)
+                return {
+                    "ok": True,
+                    "status": "accepted_pending_consensus",
+                    "selected_proposer_id": winner_id,
+                    "sortition_seed_hex": seed.hex(),
+                    "height": block.header.height,
+                    "block_hash": block.block_hash.hex(),
+                }
+            response = self.network.send(
+                NetworkEnvelope(
+                    msg_type=MSG_CONSENSUS_BUNDLE_FORWARD,
+                    sender_id=self.peer.node_id,
+                    recipient_id=winner_id,
+                    payload={
+                        "submission": submission,
+                        "sender_peer_id": sender_peer_id,
+                        "ordered_consensus_peer_ids": ordered_ids,
+                        "sortition_seed": seed,
+                        "auto_commit": False,
+                    },
+                )
+            )
+            if not isinstance(response, dict):
+                raise ValueError("missing_forward_response")
+            response = dict(response)
+            response["selected_proposer_id"] = winner_id
+            response["sortition_seed_hex"] = seed.hex()
+            return response
         if winner_id == self.peer.node_id:
             self._track_pending_mvp_bundle(submission=submission, sender_peer_id=sender_peer_id)
             round_result = self.run_mvp_consensus_round(consensus_peer_ids=ordered_ids)
@@ -712,15 +835,6 @@ class V2ConsensusHost:
         response["selected_proposer_id"] = winner_id
         response["sortition_seed_hex"] = seed.hex()
         return response
-
-    def _derive_mvp_sortition_seed(self, *, bundle_hash: bytes, height: int, round: int) -> bytes:
-        return keccak256(
-            b"ezchain-v2-mvp-sortition-seed"
-            + int(self.consensus.chain.chain_id).to_bytes(8, "big", signed=False)
-            + int(height).to_bytes(8, "big", signed=False)
-            + int(round).to_bytes(8, "big", signed=False)
-            + bundle_hash
-        )
 
     def run_mvp_consensus_round(
         self,
