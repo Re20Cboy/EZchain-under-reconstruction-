@@ -585,13 +585,18 @@ def _run_tx_batch(
             v2_chain_id=chain_id,
         )
 
-    def _wait_for_sender_settlement(account: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    def _wait_for_sender_settlement(
+        account: dict[str, Any],
+        *,
+        min_receipt_count: int | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         deadline = time.time() + settle_timeout_sec
         wallet_dir = project_root / str(account["wallet_dir"])
         store = WalletStore(str(wallet_dir))
         engine = _engine_for_account(wallet_dir)
         last_balance: dict[str, Any] | None = None
         last_state: dict[str, Any] | None = None
+        pending_cleared_at: float | None = None
         while time.time() < deadline:
             state = _safe_read_json(project_root / str(account["state_file"]))
             if not state:
@@ -600,8 +605,18 @@ def _run_tx_batch(
             last_state = state
             balance = engine.remote_balance(store, password=password, state=state)
             last_balance = balance
-            if int(balance.get("pending_bundle_count", 0)) == 0:
-                return balance, state
+            pending_count = int(balance.get("pending_bundle_count", 0))
+            receipt_count = int(state.get("receipt_count", 0))
+            if pending_count == 0:
+                if min_receipt_count is None or receipt_count >= min_receipt_count:
+                    return balance, state
+                if pending_cleared_at is None:
+                    pending_cleared_at = time.time()
+                elif time.time() - pending_cleared_at >= settle_grace_sec:
+                    # Receipt sync can trail the wallet pending clear slightly.
+                    # Keep polling within the same settle window before leaving the
+                    # result as submitted.
+                    pass
             time.sleep(0.2)
         return last_balance, last_state
 
@@ -657,7 +672,11 @@ def _run_tx_batch(
                 "submit_hash": result.submit_hash,
             }
             results.append(result_payload)
-            settled_balance, settled_state = _wait_for_sender_settlement(sender)
+            min_receipt_count = pre_receipt_count + 1 if result.status != "confirmed" else None
+            settled_balance, settled_state = _wait_for_sender_settlement(
+                sender,
+                min_receipt_count=min_receipt_count,
+            )
             if settled_balance is None or int(settled_balance.get("pending_bundle_count", 0)) != 0:
                 failures.append(
                     {
