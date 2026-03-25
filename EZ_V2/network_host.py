@@ -993,14 +993,21 @@ class V2ConsensusHost:
             receipt = self.consensus.get_receipt(entry.new_leaf.addr, entry.bundle_envelope.seq).receipt
             if receipt is None:
                 continue
-            self.network.send(
-                NetworkEnvelope(
-                    msg_type=MSG_RECEIPT_DELIVER,
-                    sender_id=self.peer.node_id,
-                    recipient_id=sender_peer_id,
-                    payload={"receipt": receipt},
+            try:
+                self.network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_RECEIPT_DELIVER,
+                        sender_id=self.peer.node_id,
+                        recipient_id=sender_peer_id,
+                        payload={"receipt": receipt},
+                    )
                 )
-            )
+            except Exception:
+                # Receipt push is opportunistic. Production-style topologies may
+                # not pre-register account peers on consensus hosts; in that
+                # case the account can still recover the receipt by polling the
+                # consensus endpoint after block finalization.
+                continue
 
     def _remember_fetched_block(self, block: BlockV2) -> None:
         self.fetched_blocks[block.header.height] = block
