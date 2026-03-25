@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import time
@@ -12,6 +13,7 @@ from EZ_V2.network_host import V2ConsensusHost
 from EZ_V2.network_transport import TCPNetworkTransport
 from EZ_V2.networking import PeerInfo
 from EZ_V2.transport_peer import TransportPeerNetwork
+from EZ_V2.values import ValueRange
 
 
 def _parse_endpoint(endpoint: str) -> tuple[str, int]:
@@ -41,6 +43,27 @@ def _build_consensus_peers(*, node_id: str, endpoint: str, peer_specs: tuple[str
     return peers
 
 
+def _load_genesis_allocations(path: str) -> tuple[tuple[str, ValueRange], ...]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    items = payload.get("allocations", payload) if isinstance(payload, dict) else payload
+    if not isinstance(items, list):
+        raise ValueError("genesis_allocations_file_invalid")
+    allocations: list[tuple[str, ValueRange]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("genesis_allocation_entry_invalid")
+        owner_addr = str(item.get("owner_addr", "")).strip()
+        if not owner_addr:
+            raise ValueError("genesis_allocation_owner_addr_required")
+        allocations.append(
+            (
+                owner_addr,
+                ValueRange(begin=int(item["begin"]), end=int(item["end"])),
+            )
+        )
+    return tuple(allocations)
+
+
 def run_daemon(
     *,
     root_dir: str,
@@ -55,6 +78,7 @@ def run_daemon(
     validator_ids: tuple[str, ...],
     auto_run_mvp_consensus: bool,
     network_timeout_sec: float,
+    genesis_allocations_file: str | None,
 ) -> None:
     root = Path(root_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -80,6 +104,9 @@ def run_daemon(
         consensus_validator_ids=effective_validator_ids,
         auto_run_mvp_consensus=auto_run_mvp_consensus,
     )
+    if genesis_allocations_file:
+        for owner_addr, value in _load_genesis_allocations(genesis_allocations_file):
+            consensus.register_genesis_value(owner_addr, value)
 
     running = True
 
@@ -155,6 +182,11 @@ def main() -> None:
         action="store_true",
         help="Automatically route and commit mvp consensus bundles through the selected proposer",
     )
+    parser.add_argument(
+        "--genesis-allocations-file",
+        default="",
+        help="Optional JSON file containing repeated {owner_addr, begin, end} genesis allocations",
+    )
     args = parser.parse_args()
 
     run_daemon(
@@ -170,6 +202,7 @@ def main() -> None:
         validator_ids=tuple(args.validator_id),
         auto_run_mvp_consensus=bool(args.auto_run_mvp_consensus),
         network_timeout_sec=float(args.network_timeout_sec),
+        genesis_allocations_file=str(args.genesis_allocations_file).strip() or None,
     )
 
 
