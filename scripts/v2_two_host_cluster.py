@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import signal
 import subprocess
 import sys
@@ -75,6 +76,12 @@ def _v2_address_for_mnemonic(mnemonic: str) -> str:
     return address_from_public_key_pem(public_key_pem)
 
 
+def _cluster_dir_name(cluster_name: str) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(cluster_name).strip())
+    normalized = "-".join(part for part in normalized.split("-") if part)
+    return normalized or "default"
+
+
 def _build_topology(
     *,
     cluster_name: str,
@@ -88,20 +95,23 @@ def _build_topology(
     ecs_consensus_host: str,
     ecs_account_host: str,
     genesis_amount: int,
-    consensus_base_port: int,
-    account_base_port: int,
+    mac_consensus_base_port: int,
+    ecs_consensus_base_port: int,
+    mac_account_base_port: int,
+    ecs_account_base_port: int,
 ) -> dict[str, Any]:
     if mac_consensus_count + ecs_consensus_count < 3:
         raise ValueError("total consensus nodes must be at least 3")
     if mac_account_count + ecs_account_count < 2:
         raise ValueError("total account nodes must be at least 2")
 
+    cluster_dir = f".ezchain-twohost/{_cluster_dir_name(cluster_name)}"
     consensus_nodes: list[dict[str, Any]] = []
     account_nodes: list[dict[str, Any]] = []
 
     consensus_index = 0
-    mac_consensus_port = consensus_base_port
-    ecs_consensus_port = consensus_base_port
+    mac_consensus_port = mac_consensus_base_port
+    ecs_consensus_port = ecs_consensus_base_port
     for _ in range(mac_consensus_count):
         node_id = f"consensus-{consensus_index}"
         consensus_nodes.append(
@@ -110,10 +120,10 @@ def _build_topology(
                 "role": "mac",
                 "endpoint": f"{mac_consensus_host}:{mac_consensus_port}",
                 "listen_host": "0.0.0.0",
-                "root_dir": f".ezchain-twohost/{node_id}",
-                "state_file": f".ezchain-twohost/{node_id}/state.json",
-                "stdout_log": f".ezchain-twohost/{node_id}/stdout.log",
-                "stderr_log": f".ezchain-twohost/{node_id}/stderr.log",
+                "root_dir": f"{cluster_dir}/{node_id}",
+                "state_file": f"{cluster_dir}/{node_id}/state.json",
+                "stdout_log": f"{cluster_dir}/{node_id}/stdout.log",
+                "stderr_log": f"{cluster_dir}/{node_id}/stderr.log",
             }
         )
         consensus_index += 1
@@ -126,18 +136,18 @@ def _build_topology(
                 "role": "ecs",
                 "endpoint": f"{ecs_consensus_host}:{ecs_consensus_port}",
                 "listen_host": "0.0.0.0",
-                "root_dir": f".ezchain-twohost/{node_id}",
-                "state_file": f".ezchain-twohost/{node_id}/state.json",
-                "stdout_log": f".ezchain-twohost/{node_id}/stdout.log",
-                "stderr_log": f".ezchain-twohost/{node_id}/stderr.log",
+                "root_dir": f"{cluster_dir}/{node_id}",
+                "state_file": f"{cluster_dir}/{node_id}/state.json",
+                "stdout_log": f"{cluster_dir}/{node_id}/stdout.log",
+                "stderr_log": f"{cluster_dir}/{node_id}/stderr.log",
             }
         )
         consensus_index += 1
         ecs_consensus_port += 1
 
     account_index = 0
-    mac_account_port = account_base_port
-    ecs_account_port = account_base_port
+    mac_account_port = mac_account_base_port
+    ecs_account_port = ecs_account_base_port
     cursor = 0
     for role, count, host, start_port in (
         ("mac", mac_account_count, mac_account_host, mac_account_port),
@@ -148,8 +158,10 @@ def _build_topology(
         primary_consensus_id = (
             role_consensus[0]["node_id"] if role_consensus else consensus_nodes[0]["node_id"]
         )
-        primary_consensus_endpoint = (
-            role_consensus[0]["endpoint"] if role_consensus else consensus_nodes[0]["endpoint"]
+        primary_consensus_local_endpoint = (
+            f"127.0.0.1:{role_consensus[0]['endpoint'].rsplit(':', 1)[1]}"
+            if role_consensus
+            else f"127.0.0.1:{consensus_nodes[0]['endpoint'].rsplit(':', 1)[1]}"
         )
         for _ in range(count):
             node_id = f"account-{account_index:02d}"
@@ -164,18 +176,18 @@ def _build_topology(
                     "role": role,
                     "endpoint": f"{host}:{port}",
                     "listen_host": "0.0.0.0",
-                    "wallet_dir": f".ezchain-twohost/wallets/{node_id}",
-                    "wallet_file": f".ezchain-twohost/wallets/{node_id}/wallet.json",
-                    "root_dir": f".ezchain-twohost/{node_id}",
-                    "state_file": f".ezchain-twohost/{node_id}/state.json",
-                    "stdout_log": f".ezchain-twohost/{node_id}/stdout.log",
-                    "stderr_log": f".ezchain-twohost/{node_id}/stderr.log",
+                    "wallet_dir": f"{cluster_dir}/wallets/{node_id}",
+                    "wallet_file": f"{cluster_dir}/wallets/{node_id}/wallet.json",
+                    "root_dir": f"{cluster_dir}/{node_id}",
+                    "state_file": f"{cluster_dir}/{node_id}/state.json",
+                    "stdout_log": f"{cluster_dir}/{node_id}/stdout.log",
+                    "stderr_log": f"{cluster_dir}/{node_id}/stderr.log",
                     "mnemonic": mnemonic,
                     "address": address,
                     "genesis_begin": begin,
                     "genesis_end": end,
                     "consensus_peer_id": primary_consensus_id,
-                    "consensus_endpoint": primary_consensus_endpoint,
+                    "consensus_endpoint": primary_consensus_local_endpoint,
                 }
             )
             account_index += 1
@@ -192,15 +204,20 @@ def _build_topology(
 
     return {
         "cluster_name": cluster_name,
+        "cluster_dir": cluster_dir,
         "chain_id": chain_id,
         "roles": {
             "mac": {
                 "consensus_host": mac_consensus_host,
                 "account_host": mac_account_host,
+                "consensus_base_port": mac_consensus_base_port,
+                "account_base_port": mac_account_base_port,
             },
             "ecs": {
                 "consensus_host": ecs_consensus_host,
                 "account_host": ecs_account_host,
+                "consensus_base_port": ecs_consensus_base_port,
+                "account_base_port": ecs_account_base_port,
             },
         },
         "consensus_nodes": consensus_nodes,
@@ -217,7 +234,8 @@ def _load_topology(path: Path) -> dict[str, Any]:
 
 
 def _write_genesis_allocations(project_root: Path, topology: dict[str, Any]) -> str:
-    target = project_root / ".ezchain-twohost" / "genesis_allocations.json"
+    cluster_dir = str(topology.get("cluster_dir", ".ezchain-twohost/default"))
+    target = project_root / cluster_dir / "genesis_allocations.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         json.dumps({"allocations": topology["genesis_allocations"]}, indent=2),
@@ -417,13 +435,51 @@ def _run_tx_batch(
     tx_count: int,
     max_amount: int,
     seed: int,
+    settle_timeout_sec: float,
+    settle_grace_sec: float,
+    stop_on_failure: bool,
 ) -> dict[str, Any]:
     rng = __import__("random").Random(seed)
     chain_id = int(topology["chain_id"])
     local_accounts = [item for item in topology["account_nodes"] if item["role"] == role]
     all_accounts = list(topology["account_nodes"])
+    account_peers = [
+        {
+            "node_id": str(item["node_id"]),
+            "address": str(item["address"]),
+            "endpoint": str(item["endpoint"]),
+        }
+        for item in all_accounts
+    ]
     results: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+
+    def _engine_for_account(wallet_dir: Path) -> TxEngine:
+        return TxEngine(
+            str(wallet_dir),
+            max_tx_amount=100000000,
+            protocol_version="v2",
+            v2_chain_id=chain_id,
+        )
+
+    def _wait_for_sender_settlement(account: dict[str, Any]) -> dict[str, Any] | None:
+        deadline = time.time() + settle_timeout_sec
+        wallet_dir = project_root / str(account["wallet_dir"])
+        store = WalletStore(str(wallet_dir))
+        engine = _engine_for_account(wallet_dir)
+        last_balance: dict[str, Any] | None = None
+        while time.time() < deadline:
+            state = _safe_read_json(project_root / str(account["state_file"]))
+            if not state:
+                time.sleep(0.1)
+                continue
+            balance = engine.remote_balance(store, password=password, state=state)
+            last_balance = balance
+            if int(balance.get("pending_bundle_count", 0)) == 0:
+                return balance
+            time.sleep(0.2)
+        return last_balance
+
     for index in range(1, tx_count + 1):
         spendable: list[tuple[dict[str, Any], dict[str, Any]]] = []
         for account in local_accounts:
@@ -433,14 +489,9 @@ def _run_tx_batch(
                 continue
             wallet_dir = project_root / str(account["wallet_dir"])
             store = WalletStore(str(wallet_dir))
-            engine = TxEngine(
-                str(wallet_dir),
-                max_tx_amount=100000000,
-                protocol_version="v2",
-                v2_chain_id=chain_id,
-            )
+            engine = _engine_for_account(wallet_dir)
             balance = engine.remote_balance(store, password=password, state=state)
-            if int(balance.get("available_balance", 0)) > 0:
+            if int(balance.get("available_balance", 0)) > 0 and int(balance.get("pending_bundle_count", 0)) == 0:
                 spendable.append((account, balance))
         if not spendable:
             failures.append({"tx_index": index, "error": "no_local_spendable_account"})
@@ -455,12 +506,9 @@ def _run_tx_batch(
             continue
         amount = rng.randint(1, min(max_amount, int(balance["available_balance"])))
         store = WalletStore(str(wallet_dir))
-        engine = TxEngine(
-            str(wallet_dir),
-            max_tx_amount=100000000,
-            protocol_version="v2",
-            v2_chain_id=chain_id,
-        )
+        engine = _engine_for_account(wallet_dir)
+        runtime_state = dict(state)
+        runtime_state["account_peers"] = account_peers
         try:
             result = engine.remote_send(
                 store,
@@ -468,7 +516,7 @@ def _run_tx_batch(
                 recipient=str(recipient["address"]),
                 amount=amount,
                 recipient_endpoint=str(recipient["endpoint"]),
-                state=state,
+                state=runtime_state,
                 client_tx_id=f"{role}-batch-{seed}-{index}",
             )
             results.append(
@@ -483,6 +531,20 @@ def _run_tx_batch(
                     "submit_hash": result.submit_hash,
                 }
             )
+            settled = _wait_for_sender_settlement(sender)
+            if settled is None or int(settled.get("pending_bundle_count", 0)) != 0:
+                failures.append(
+                    {
+                        "tx_index": index,
+                        "sender_node_id": sender["node_id"],
+                        "recipient_node_id": recipient["node_id"],
+                        "amount": amount,
+                        "error": "sender_pending_bundle_did_not_settle",
+                    }
+                )
+                break
+            if settle_grace_sec > 0:
+                time.sleep(settle_grace_sec)
         except Exception as exc:
             failures.append(
                 {
@@ -493,6 +555,8 @@ def _run_tx_batch(
                     "error": str(exc),
                 }
             )
+            if stop_on_failure:
+                break
     return {
         "role": role,
         "requested": tx_count,
@@ -503,11 +567,64 @@ def _run_tx_batch(
     }
 
 
+def _probe_endpoint(endpoint: str, *, timeout_sec: float = 2.0) -> dict[str, Any]:
+    host, port_s = endpoint.rsplit(":", 1)
+    port = int(port_s)
+    started_at = time.time()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout_sec)
+    try:
+        sock.connect((host, port))
+        return {
+            "endpoint": endpoint,
+            "ok": True,
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        }
+    except Exception as exc:
+        return {
+            "endpoint": endpoint,
+            "ok": False,
+            "error": f"{type(exc).__name__}:{exc}",
+            "elapsed_ms": int((time.time() - started_at) * 1000),
+        }
+    finally:
+        sock.close()
+
+
+def _preflight(
+    *,
+    topology: dict[str, Any],
+    role: str,
+    timeout_sec: float,
+) -> dict[str, Any]:
+    remote_consensus = [
+        item["endpoint"]
+        for item in topology["consensus_nodes"]
+        if item["role"] != role
+    ]
+    remote_accounts = [
+        item["endpoint"]
+        for item in topology["account_nodes"]
+        if item["role"] != role
+    ]
+    probes = [
+        _probe_endpoint(str(endpoint), timeout_sec=timeout_sec)
+        for endpoint in (*remote_consensus, *remote_accounts)
+    ]
+    return {
+        "role": role,
+        "remote_consensus_endpoints": remote_consensus,
+        "remote_account_endpoints": remote_accounts,
+        "all_reachable": all(item["ok"] for item in probes),
+        "probes": probes,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Configurable two-host EZchain V2 cluster controller for Mac + ECS")
     parser.add_argument(
         "action",
-        choices=("init-topology", "start", "stop", "restart", "status", "tx-batch"),
+        choices=("init-topology", "start", "stop", "restart", "status", "tx-batch", "preflight"),
     )
     parser.add_argument("--role", choices=("mac", "ecs"), help="Which machine role this invocation controls")
     parser.add_argument("--topology-file", default="configs/v2_two_host_topology.json")
@@ -523,12 +640,19 @@ def main() -> int:
     parser.add_argument("--ecs-account-host", default="118.178.171.23")
     parser.add_argument("--consensus-base-port", type=int, default=19500)
     parser.add_argument("--account-base-port", type=int, default=19600)
+    parser.add_argument("--mac-consensus-base-port", type=int, default=-1)
+    parser.add_argument("--ecs-consensus-base-port", type=int, default=-1)
+    parser.add_argument("--mac-account-base-port", type=int, default=-1)
+    parser.add_argument("--ecs-account-base-port", type=int, default=-1)
     parser.add_argument("--genesis-amount", type=int, default=500)
     parser.add_argument("--password", default="pw123")
     parser.add_argument("--network-timeout-sec", type=float, default=20.0)
     parser.add_argument("--tx-count", type=int, default=10)
     parser.add_argument("--max-amount", type=int, default=50)
     parser.add_argument("--seed", type=int, default=821)
+    parser.add_argument("--settle-timeout-sec", type=float, default=12.0)
+    parser.add_argument("--settle-grace-sec", type=float, default=0.5)
+    parser.add_argument("--continue-on-failure", action="store_true")
     parser.add_argument("--no-reset-account-ephemeral-state", action="store_true")
     parser.add_argument("--no-reset-account-derived-state", action="store_true")
     args = parser.parse_args()
@@ -549,8 +673,26 @@ def main() -> int:
             ecs_consensus_host=str(args.ecs_consensus_host),
             ecs_account_host=str(args.ecs_account_host),
             genesis_amount=int(args.genesis_amount),
-            consensus_base_port=int(args.consensus_base_port),
-            account_base_port=int(args.account_base_port),
+            mac_consensus_base_port=(
+                int(args.consensus_base_port)
+                if int(args.mac_consensus_base_port) < 0
+                else int(args.mac_consensus_base_port)
+            ),
+            ecs_consensus_base_port=(
+                int(args.consensus_base_port)
+                if int(args.ecs_consensus_base_port) < 0
+                else int(args.ecs_consensus_base_port)
+            ),
+            mac_account_base_port=(
+                int(args.account_base_port)
+                if int(args.mac_account_base_port) < 0
+                else int(args.mac_account_base_port)
+            ),
+            ecs_account_base_port=(
+                int(args.account_base_port)
+                if int(args.ecs_account_base_port) < 0
+                else int(args.ecs_account_base_port)
+            ),
         )
         topology_path.parent.mkdir(parents=True, exist_ok=True)
         topology_path.write_text(json.dumps(topology, indent=2), encoding="utf-8")
@@ -584,6 +726,19 @@ def main() -> int:
                     "wallets_created_now": created_wallets,
                     "nodes": [_status_spec(project_root, spec) for spec in specs],
                 },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.action == "preflight":
+        print(
+            json.dumps(
+                _preflight(
+                    topology=topology,
+                    role=str(args.role),
+                    timeout_sec=min(5.0, float(args.network_timeout_sec)),
+                ),
                 indent=2,
             )
         )
@@ -634,6 +789,9 @@ def main() -> int:
         tx_count=int(args.tx_count),
         max_amount=int(args.max_amount),
         seed=int(args.seed),
+        settle_timeout_sec=float(args.settle_timeout_sec),
+        settle_grace_sec=float(args.settle_grace_sec),
+        stop_on_failure=not bool(args.continue_on_failure),
     )
     print(json.dumps(batch, indent=2))
     return 0

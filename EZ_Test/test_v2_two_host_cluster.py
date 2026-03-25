@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts.v2_two_host_cluster import _build_role_specs, _build_topology, _materialize_wallets
+from scripts.v2_two_host_cluster import _build_role_specs, _build_topology, _materialize_wallets, _run_tx_batch
 
 
 class V2TwoHostClusterTests(unittest.TestCase):
@@ -21,8 +22,10 @@ class V2TwoHostClusterTests(unittest.TestCase):
             ecs_consensus_host="118.178.171.23",
             ecs_account_host="118.178.171.23",
             genesis_amount=500,
-            consensus_base_port=19500,
-            account_base_port=19600,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
         )
 
         self.assertEqual(len(topology["consensus_nodes"]), 7)
@@ -32,6 +35,11 @@ class V2TwoHostClusterTests(unittest.TestCase):
         self.assertEqual(len([n for n in topology["account_nodes"] if n["role"] == "mac"]), 2)
         self.assertEqual(len([n for n in topology["account_nodes"] if n["role"] == "ecs"]), 5)
         self.assertEqual(len(topology["genesis_allocations"]), 7)
+        self.assertEqual(topology["cluster_dir"], ".ezchain-twohost/demo")
+        self.assertEqual(topology["consensus_nodes"][0]["endpoint"], "100.90.152.124:19500")
+        self.assertEqual(topology["consensus_nodes"][3]["endpoint"], "118.178.171.23:29500")
+        self.assertEqual(topology["account_nodes"][0]["consensus_endpoint"], "127.0.0.1:19500")
+        self.assertEqual(topology["account_nodes"][2]["consensus_endpoint"], "127.0.0.1:29500")
 
     def test_build_role_specs_for_mac_uses_generated_topology(self) -> None:
         topology = _build_topology(
@@ -46,8 +54,10 @@ class V2TwoHostClusterTests(unittest.TestCase):
             ecs_consensus_host="118.178.171.23",
             ecs_account_host="118.178.171.23",
             genesis_amount=500,
-            consensus_base_port=19500,
-            account_base_port=19600,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
         )
         with tempfile.TemporaryDirectory() as td:
             specs = _build_role_specs(
@@ -77,8 +87,10 @@ class V2TwoHostClusterTests(unittest.TestCase):
             ecs_consensus_host="118.178.171.23",
             ecs_account_host="118.178.171.23",
             genesis_amount=500,
-            consensus_base_port=19500,
-            account_base_port=19600,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
         )
         with tempfile.TemporaryDirectory() as td:
             project_root = Path(td)
@@ -91,6 +103,170 @@ class V2TwoHostClusterTests(unittest.TestCase):
                     self.assertTrue(wallet_file.exists())
                 else:
                     self.assertFalse(wallet_file.exists())
+
+    def test_run_tx_batch_enriches_state_with_all_account_peers(self) -> None:
+        topology = _build_topology(
+            cluster_name="demo",
+            chain_id=821,
+            mac_consensus_count=2,
+            mac_account_count=2,
+            ecs_consensus_count=1,
+            ecs_account_count=1,
+            mac_consensus_host="100.90.152.124",
+            mac_account_host="100.90.152.124",
+            ecs_consensus_host="118.178.171.23",
+            ecs_account_host="118.178.171.23",
+            genesis_amount=500,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
+        )
+        captured: dict[str, object] = {}
+        balance_calls: dict[str, int] = {}
+
+        class FakeStore:
+            def __init__(self, path: str):
+                self.path = path
+
+        class FakeEngine:
+            def __init__(self, *args, **kwargs):
+                return None
+
+            def remote_balance(self, store, password: str, state):
+                node_id = Path(store.path).name
+                balance_calls[node_id] = balance_calls.get(node_id, 0) + 1
+                if balance_calls[node_id] == 1:
+                    return {"available_balance": 100, "pending_bundle_count": 0}
+                return {"available_balance": 90, "pending_bundle_count": 0}
+
+            def remote_send(self, store, password: str, *, recipient, amount, recipient_endpoint, state, client_tx_id):
+                captured["state"] = state
+                captured["recipient_endpoint"] = recipient_endpoint
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "status": "submitted",
+                        "receipt_height": None,
+                        "tx_hash": "tx",
+                        "submit_hash": "submit",
+                    },
+                )()
+
+        def fake_state(path: Path):
+            return {
+                "address": "0xsender",
+                "pending_bundle_count": 0,
+                "consensus_endpoint": "127.0.0.1:19500",
+                "wallet_db_path": "wallet.db",
+            }
+
+        with tempfile.TemporaryDirectory() as td, patch("scripts.v2_two_host_cluster.WalletStore", FakeStore), patch(
+            "scripts.v2_two_host_cluster.TxEngine", FakeEngine
+        ), patch("scripts.v2_two_host_cluster._safe_read_json", side_effect=fake_state):
+            result = _run_tx_batch(
+                project_root=Path(td),
+                topology=topology,
+                role="mac",
+                password="pw123",
+                tx_count=1,
+                max_amount=50,
+                seed=7,
+                settle_timeout_sec=0.1,
+                settle_grace_sec=0.0,
+                stop_on_failure=True,
+            )
+
+        self.assertEqual(result["submitted"], 1)
+        self.assertEqual(result["failed"], 0)
+        account_peers = captured["state"]["account_peers"]
+        self.assertEqual(len(account_peers), len(topology["account_nodes"]))
+        self.assertIn(
+            {
+                "node_id": topology["account_nodes"][-1]["node_id"],
+                "address": topology["account_nodes"][-1]["address"],
+                "endpoint": topology["account_nodes"][-1]["endpoint"],
+            },
+            account_peers,
+        )
+
+    def test_run_tx_batch_waits_for_pending_bundle_to_settle(self) -> None:
+        topology = _build_topology(
+            cluster_name="demo",
+            chain_id=821,
+            mac_consensus_count=2,
+            mac_account_count=2,
+            ecs_consensus_count=1,
+            ecs_account_count=1,
+            mac_consensus_host="100.90.152.124",
+            mac_account_host="100.90.152.124",
+            ecs_consensus_host="118.178.171.23",
+            ecs_account_host="118.178.171.23",
+            genesis_amount=500,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
+        )
+        balance_calls: dict[str, int] = {}
+
+        class FakeStore:
+            def __init__(self, path: str):
+                self.path = path
+
+        class FakeEngine:
+            def __init__(self, *args, **kwargs):
+                return None
+
+            def remote_balance(self, store, password: str, state):
+                node_id = Path(store.path).name
+                balance_calls[node_id] = balance_calls.get(node_id, 0) + 1
+                if balance_calls[node_id] == 1:
+                    return {"available_balance": 100, "pending_bundle_count": 0}
+                if balance_calls[node_id] == 2:
+                    return {"available_balance": 50, "pending_bundle_count": 1}
+                return {"available_balance": 50, "pending_bundle_count": 0}
+
+            def remote_send(self, store, password: str, *, recipient, amount, recipient_endpoint, state, client_tx_id):
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "status": "submitted",
+                        "receipt_height": None,
+                        "tx_hash": "tx",
+                        "submit_hash": "submit",
+                    },
+                )()
+
+        def fake_state(path: Path):
+            return {
+                "address": "0xsender",
+                "pending_bundle_count": 0,
+                "consensus_endpoint": "127.0.0.1:19500",
+                "wallet_db_path": "wallet.db",
+            }
+
+        with tempfile.TemporaryDirectory() as td, patch("scripts.v2_two_host_cluster.WalletStore", FakeStore), patch(
+            "scripts.v2_two_host_cluster.TxEngine", FakeEngine
+        ), patch("scripts.v2_two_host_cluster._safe_read_json", side_effect=fake_state):
+            result = _run_tx_batch(
+                project_root=Path(td),
+                topology=topology,
+                role="mac",
+                password="pw123",
+                tx_count=1,
+                max_amount=50,
+                seed=9,
+                settle_timeout_sec=0.5,
+                settle_grace_sec=0.0,
+                stop_on_failure=True,
+            )
+
+        self.assertEqual(result["submitted"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertGreaterEqual(max(balance_calls.values()), 3)
 
 
 if __name__ == "__main__":

@@ -854,16 +854,44 @@ class TxEngine:
             metadata={"address": wallet["address"]},
         )
         consensus_peer = PeerInfo(node_id=consensus_peer_id, role="consensus", endpoint=consensus_endpoint)
-        recipient_peer = PeerInfo(
-            node_id=self._peer_id_for_address(recipient),
-            role="account",
-            endpoint=recipient_endpoint,
-            metadata={"address": recipient},
-        )
+        account_peers: list[PeerInfo] = []
+        seen_account_peer_ids: set[str] = {sender_peer.node_id}
+        account_peer_id_by_address: dict[str, str] = {}
+        for item in tuple(state.get("account_peers", ())):
+            if not isinstance(item, dict):
+                continue
+            address = str(item.get("address", "")).strip()
+            endpoint = str(item.get("endpoint", "")).strip()
+            if not address or not endpoint or address == wallet["address"]:
+                continue
+            self._parse_endpoint(endpoint)
+            node_id = str(item.get("node_id", "")).strip() or self._peer_id_for_address(address)
+            if node_id in seen_account_peer_ids or address in account_peer_id_by_address:
+                continue
+            account_peers.append(
+                PeerInfo(
+                    node_id=node_id,
+                    role="account",
+                    endpoint=endpoint,
+                    metadata={"address": address},
+                )
+            )
+            seen_account_peer_ids.add(node_id)
+            account_peer_id_by_address[address] = node_id
+        recipient_peer_id = account_peer_id_by_address.get(recipient, self._peer_id_for_address(recipient))
+        if recipient not in account_peer_id_by_address:
+            account_peers.append(
+                PeerInfo(
+                    node_id=recipient_peer_id,
+                    role="account",
+                    endpoint=recipient_endpoint,
+                    metadata={"address": recipient},
+                )
+            )
         host, port = self._parse_endpoint(sender_peer.endpoint)
         network = TransportPeerNetwork(
             TCPNetworkTransport(host, port),
-            peers=(sender_peer, consensus_peer, recipient_peer),
+            peers=(sender_peer, consensus_peer, *account_peers),
             timeout_sec=self.v2_network_timeout_sec,
         )
         account_host = V2AccountHost(
@@ -881,7 +909,7 @@ class TxEngine:
             network.start()
             account_host.recover_network_state()
             payment = account_host.submit_payment(
-                recipient_peer.node_id,
+                recipient_peer_id,
                 amount=amount,
                 expiry_height=self.v2_expiry_height,
                 fee=0,

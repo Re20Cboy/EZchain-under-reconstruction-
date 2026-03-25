@@ -1430,7 +1430,7 @@ class V2AccountHost:
     ) -> V2NetworkPayment:
         recipient_peer = self.network.peer_info(recipient_peer_id)
         recipient_addr = str(recipient_peer.metadata["address"])
-        submission, _, tx = self.wallet.build_payment_bundle(
+        submission, context, tx = self.wallet.build_payment_bundle(
             recipient_addr=recipient_addr,
             amount=amount,
             private_key_pem=self.private_key_pem,
@@ -1441,9 +1441,16 @@ class V2AccountHost:
             anti_spam_nonce=anti_spam_nonce,
             tx_time=tx_time,
         )
-        response = self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
-        if isinstance(response, dict) and response.get("ok") is False:
-            raise ValueError(str(response.get("error", "bundle_submit_failed")))
+        try:
+            response = self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
+            if isinstance(response, dict) and response.get("ok") is False:
+                raise ValueError(str(response.get("error", "bundle_submit_failed")))
+        except Exception:
+            try:
+                self.wallet.rollback_pending_bundle(context.seq)
+            except Exception:
+                pass
+            raise
         receipt = self._latest_receipt_for_seq(submission.envelope.seq)
         return V2NetworkPayment(
             tx_hash_hex=self._tx_hash_hex(tx),
