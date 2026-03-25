@@ -585,23 +585,25 @@ def _run_tx_batch(
             v2_chain_id=chain_id,
         )
 
-    def _wait_for_sender_settlement(account: dict[str, Any]) -> dict[str, Any] | None:
+    def _wait_for_sender_settlement(account: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         deadline = time.time() + settle_timeout_sec
         wallet_dir = project_root / str(account["wallet_dir"])
         store = WalletStore(str(wallet_dir))
         engine = _engine_for_account(wallet_dir)
         last_balance: dict[str, Any] | None = None
+        last_state: dict[str, Any] | None = None
         while time.time() < deadline:
             state = _safe_read_json(project_root / str(account["state_file"]))
             if not state:
                 time.sleep(0.1)
                 continue
+            last_state = state
             balance = engine.remote_balance(store, password=password, state=state)
             last_balance = balance
             if int(balance.get("pending_bundle_count", 0)) == 0:
-                return balance
+                return balance, state
             time.sleep(0.2)
-        return last_balance
+        return last_balance, last_state
 
     for index in range(1, tx_count + 1):
         spendable: list[tuple[dict[str, Any], dict[str, Any]]] = []
@@ -632,6 +634,7 @@ def _run_tx_batch(
         engine = _engine_for_account(wallet_dir)
         runtime_state = dict(state)
         runtime_state["account_peers"] = account_peers
+        pre_receipt_count = int(state.get("receipt_count", 0))
         try:
             result = engine.remote_send(
                 store,
@@ -642,20 +645,20 @@ def _run_tx_batch(
                 state=runtime_state,
                 client_tx_id=f"{role}-batch-{seed}-{index}",
             )
-            results.append(
-                {
-                    "tx_index": index,
-                    "sender_node_id": sender["node_id"],
-                    "recipient_node_id": recipient["node_id"],
-                    "amount": amount,
-                    "status": result.status,
-                    "receipt_height": result.receipt_height,
-                    "tx_hash": result.tx_hash,
-                    "submit_hash": result.submit_hash,
-                }
-            )
-            settled = _wait_for_sender_settlement(sender)
-            if settled is None or int(settled.get("pending_bundle_count", 0)) != 0:
+            result_payload = {
+                "tx_index": index,
+                "sender_node_id": sender["node_id"],
+                "recipient_node_id": recipient["node_id"],
+                "amount": amount,
+                "status": result.status,
+                "receipt_height": result.receipt_height,
+                "receipt_block_hash": getattr(result, "receipt_block_hash", None),
+                "tx_hash": result.tx_hash,
+                "submit_hash": result.submit_hash,
+            }
+            results.append(result_payload)
+            settled_balance, settled_state = _wait_for_sender_settlement(sender)
+            if settled_balance is None or int(settled_balance.get("pending_bundle_count", 0)) != 0:
                 failures.append(
                     {
                         "tx_index": index,
@@ -666,6 +669,17 @@ def _run_tx_batch(
                     }
                 )
                 break
+            settled_receipt_count = int((settled_state or {}).get("receipt_count", pre_receipt_count))
+            chain_cursor = (settled_state or {}).get("chain_cursor") if isinstance(settled_state, dict) else None
+            if settled_receipt_count > pre_receipt_count:
+                result_payload["status"] = "confirmed"
+                if isinstance(chain_cursor, dict):
+                    height = chain_cursor.get("height")
+                    block_hash_hex = chain_cursor.get("block_hash_hex")
+                    if result_payload.get("receipt_height") is None and height is not None:
+                        result_payload["receipt_height"] = int(height)
+                    if not result_payload.get("receipt_block_hash") and block_hash_hex:
+                        result_payload["receipt_block_hash"] = str(block_hash_hex)
             if settle_grace_sec > 0:
                 time.sleep(settle_grace_sec)
         except Exception as exc:

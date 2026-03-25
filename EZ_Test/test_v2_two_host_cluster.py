@@ -307,6 +307,99 @@ class V2TwoHostClusterTests(unittest.TestCase):
         self.assertEqual(result["failed"], 0)
         self.assertGreaterEqual(max(balance_calls.values()), 3)
 
+    def test_run_tx_batch_upgrades_submitted_result_to_confirmed_after_settlement_receipt(self) -> None:
+        topology = _build_topology(
+            cluster_name="demo",
+            chain_id=821,
+            mac_consensus_count=2,
+            mac_account_count=2,
+            ecs_consensus_count=1,
+            ecs_account_count=1,
+            mac_consensus_host="100.90.152.124",
+            mac_account_host="100.90.152.124",
+            ecs_consensus_host="118.178.171.23",
+            ecs_account_host="118.178.171.23",
+            genesis_amount=500,
+            mac_consensus_base_port=19500,
+            ecs_consensus_base_port=29500,
+            mac_account_base_port=19600,
+            ecs_account_base_port=29600,
+        )
+        balance_calls: dict[str, int] = {}
+        state_calls: dict[str, int] = {}
+
+        class FakeStore:
+            def __init__(self, path: str):
+                self.path = path
+
+        class FakeEngine:
+            def __init__(self, *args, **kwargs):
+                return None
+
+            def remote_balance(self, store, password: str, state):
+                node_id = Path(store.path).name
+                balance_calls[node_id] = balance_calls.get(node_id, 0) + 1
+                if balance_calls[node_id] == 1:
+                    return {"available_balance": 100, "pending_bundle_count": 0}
+                if balance_calls[node_id] == 2:
+                    return {"available_balance": 80, "pending_bundle_count": 1}
+                return {"available_balance": 80, "pending_bundle_count": 0}
+
+            def remote_send(self, store, password: str, *, recipient, amount, recipient_endpoint, state, client_tx_id):
+                return type(
+                    "Result",
+                    (),
+                    {
+                        "status": "submitted",
+                        "receipt_height": None,
+                        "receipt_block_hash": None,
+                        "tx_hash": "tx",
+                        "submit_hash": "submit",
+                    },
+                )()
+
+        def fake_state(path: Path):
+            node_id = path.parent.name
+            state_calls[node_id] = state_calls.get(node_id, 0) + 1
+            receipt_count = 0
+            chain_cursor = {"height": 0, "block_hash_hex": "00"}
+            if state_calls[node_id] >= 3:
+                receipt_count = 1
+                chain_cursor = {"height": 7, "block_hash_hex": "abc123"}
+            return {
+                "address": "0xsender",
+                "pending_bundle_count": 0,
+                "consensus_endpoint": "127.0.0.1:19500",
+                "wallet_db_path": "wallet.db",
+                "receipt_count": receipt_count,
+                "chain_cursor": chain_cursor,
+            }
+
+        with tempfile.TemporaryDirectory() as td, patch("scripts.v2_two_host_cluster.WalletStore", FakeStore), patch(
+            "scripts.v2_two_host_cluster.TxEngine", FakeEngine
+        ), patch("scripts.v2_two_host_cluster._safe_read_json", side_effect=fake_state), patch(
+            "scripts.v2_two_host_cluster._preflight",
+            return_value={"role": "mac", "all_reachable": True, "probes": []},
+        ):
+            result = _run_tx_batch(
+                project_root=Path(td),
+                topology=topology,
+                role="mac",
+                password="pw123",
+                tx_count=1,
+                max_amount=50,
+                seed=9,
+                settle_timeout_sec=0.5,
+                settle_grace_sec=0.0,
+                stop_on_failure=True,
+            )
+
+        self.assertEqual(result["submitted"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(result["results"][0]["status"], "confirmed")
+        self.assertEqual(result["results"][0]["receipt_height"], 7)
+        self.assertEqual(result["results"][0]["receipt_block_hash"], "abc123")
+
     def test_run_tx_batch_reports_preflight_failures_before_sending(self) -> None:
         topology = _build_topology(
             cluster_name="demo",
