@@ -658,10 +658,16 @@ class V2ConsensusHost:
         with self._auto_run_lock:
             self.consensus.submit_bundle(submission)
             block, _ = self.consensus.preview_block()
+            carried_sender_peer_ids: dict[str, str] = {}
+            for existing in self._pending_previews.values():
+                carried_sender_peer_ids.update(existing.sender_peer_ids)
             preview = self._pending_previews.get(block.block_hash.hex())
             if preview is None:
-                preview = PendingConsensusPreview(block=block, sender_peer_ids={})
-                self._pending_previews[block.block_hash.hex()] = preview
+                preview = PendingConsensusPreview(block=block, sender_peer_ids=carried_sender_peer_ids)
+                self._pending_previews = {block.block_hash.hex(): preview}
+            else:
+                preview.sender_peer_ids.update(carried_sender_peer_ids)
+            self._pending_previews[block.block_hash.hex()] = preview
             if sender_peer_id:
                 preview.sender_peer_ids[submission.sidecar.sender_addr] = sender_peer_id
             self._schedule_auto_mvp_round()
@@ -1582,6 +1588,8 @@ class V2AccountHost:
             self._send_to_consensus(MSG_RECEIPT_REQ, {"sender_addr": self.address, "seq": pending.seq})
             if self._latest_receipt_for_seq(pending.seq) is not None:
                 applied += 1
+                continue
+            self.wallet.mark_receipt_missing(pending.seq)
         return applied
 
     def recover_network_state(

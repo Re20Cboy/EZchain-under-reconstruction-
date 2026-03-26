@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from math import inf
 from dataclasses import replace
 
 from .chain import (
@@ -163,19 +164,115 @@ class WalletAccountV2:
             ),
         )
 
+    def _has_exact_local_checkpoint(self, record: LocalValueRecord) -> bool:
+        return any(checkpoint.matches(record.value, self.address) for checkpoint in self.checkpoints)
+
+    def _witness_total_units(self, witness: WitnessV2) -> int:
+        total = len(witness.confirmed_bundle_chain)
+        anchor = witness.anchor
+        if isinstance(anchor, PriorWitnessLink):
+            return total + self._witness_total_units(anchor.prior_witness)
+        return total
+
+    def _witness_units_to_checkpoint(self, witness: WitnessV2) -> int:
+        total = len(witness.confirmed_bundle_chain)
+        anchor = witness.anchor
+        if isinstance(anchor, CheckpointAnchor):
+            return total
+        if isinstance(anchor, PriorWitnessLink):
+            child = self._witness_units_to_checkpoint(anchor.prior_witness)
+            if child == inf:
+                return inf
+            return total + child
+        return inf
+
+    def _selection_plan_cost(
+        self,
+        spendable_records: tuple[LocalValueRecord, ...],
+        plan: tuple[tuple[int, int], ...],
+    ) -> tuple:
+        split_count = 0
+        effective_anchor_cost = 0
+        total_witness_units = 0
+        checkpoint_miss_count = 0
+        freshness_penalty = 0
+        range_order: list[tuple[int, int]] = []
+        for record_index, take_size in plan:
+            record = spendable_records[record_index]
+            if take_size < record.value.size:
+                split_count += 1
+            has_checkpoint = self._has_exact_local_checkpoint(record)
+            checkpoint_miss_count += 0 if has_checkpoint else 1
+            distance_to_checkpoint = self._witness_units_to_checkpoint(record.witness_v2)
+            effective_anchor_cost += 0 if has_checkpoint else distance_to_checkpoint
+            total_witness_units += self._witness_total_units(record.witness_v2)
+            freshness_penalty -= record.acquisition_height
+            range_order.append((record.value.begin, take_size))
+        return (
+            len(plan),
+            split_count,
+            checkpoint_miss_count,
+            effective_anchor_cost,
+            total_witness_units,
+            freshness_penalty,
+            tuple(sorted(range_order)),
+        )
+
     def select_payment_ranges(self, amount: int) -> tuple[ValueRange, ...]:
         if amount <= 0:
             raise ValueError("amount must be positive")
-        remaining = amount
-        selected: list[ValueRange] = []
-        for record in self._sorted_spendable_records():
-            if remaining <= 0:
-                break
-            take_size = min(record.value.size, remaining)
-            selected.append(ValueRange(record.value.begin, record.value.begin + take_size - 1))
-            remaining -= take_size
-        if remaining > 0:
+        spendable_records = tuple(self._sorted_spendable_records())
+        exact_plans: dict[int, tuple[tuple[int, int], ...]] = {0: ()}
+        best_plan: tuple[tuple[int, int], ...] | None = None
+
+        for record_index, record in enumerate(spendable_records):
+            record_size = record.value.size
+            prior_plans = dict(exact_plans)
+
+            for subtotal, plan in prior_plans.items():
+                remaining = amount - subtotal
+                if 0 < remaining < record_size:
+                    candidate = plan + ((record_index, remaining),)
+                    if (
+                        best_plan is None
+                        or self._selection_plan_cost(spendable_records, candidate)
+                        < self._selection_plan_cost(spendable_records, best_plan)
+                    ):
+                        best_plan = candidate
+
+            for subtotal, plan in prior_plans.items():
+                new_total = subtotal + record_size
+                if new_total > amount:
+                    continue
+                candidate = plan + ((record_index, record_size),)
+                existing = exact_plans.get(new_total)
+                if (
+                    existing is None
+                    or self._selection_plan_cost(spendable_records, candidate)
+                    < self._selection_plan_cost(spendable_records, existing)
+                ):
+                    exact_plans[new_total] = candidate
+
+            exact_match = exact_plans.get(amount)
+            if (
+                exact_match is not None
+                and (
+                    best_plan is None
+                    or self._selection_plan_cost(spendable_records, exact_match)
+                    < self._selection_plan_cost(spendable_records, best_plan)
+                )
+            ):
+                best_plan = exact_match
+
+        if best_plan is None:
             raise ValueError("insufficient_balance")
+        selected = tuple(
+            ValueRange(
+                spendable_records[record_index].value.begin,
+                spendable_records[record_index].value.begin + take_size - 1,
+            )
+            for record_index, take_size in best_plan
+        )
         return tuple(sorted(selected, key=lambda item: (item.begin, item.end)))
 
     def _apply_confirmed_unit_to_records(
@@ -414,6 +511,8 @@ class WalletAccountV2:
     ) -> tuple[BundleSubmission, PendingBundleContext, OffChainTx]:
         if amount <= 0:
             raise ValueError("amount must be positive")
+        if self.list_pending_bundles():
+            raise ValueError("wallet already has a pending bundle")
         now = int(time.time()) if tx_time is None else tx_time
         payment_values = self.select_payment_ranges(amount)
         tx = OffChainTx(
