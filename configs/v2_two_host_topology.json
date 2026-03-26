@@ -1,0 +1,325 @@
+{
+  "cluster_name": "real-two-host-v2",
+  "cluster_dir": ".ezchain-twohost/real-two-host-v2",
+  "chain_id": 821,
+  "roles": {
+    "mac": {
+      "consensus_host": "100.90.152.124",
+      "account_host": "100.90.152.124",
+      "consensus_base_port": 19500,
+      "account_base_port": 19600
+    },
+    "ecs": {
+      "consensus_host": "118.178.171.23",
+      "account_host": "118.178.171.23",
+      "consensus_base_port": 19500,
+      "account_base_port": 19600
+    }
+  },
+  "consensus_nodes": [
+    {
+      "node_id": "consensus-0",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19500",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-0",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-0/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-0/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-0/stderr.log"
+    },
+    {
+      "node_id": "consensus-1",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19501",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-1",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-1/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-1/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-1/stderr.log"
+    },
+    {
+      "node_id": "consensus-2",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19502",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-2",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-2/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-2/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-2/stderr.log"
+    },
+    {
+      "node_id": "consensus-3",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19500",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-3",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-3/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-3/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-3/stderr.log"
+    },
+    {
+      "node_id": "consensus-4",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19501",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-4",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-4/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-4/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-4/stderr.log"
+    },
+    {
+      "node_id": "consensus-5",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19502",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-5",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-5/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-5/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-5/stderr.log"
+    },
+    {
+      "node_id": "consensus-6",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19503",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/consensus-6",
+      "state_file": ".ezchain-twohost/real-two-host-v2/consensus-6/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/consensus-6/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/consensus-6/stderr.log"
+    }
+  ],
+  "account_nodes": [
+    {
+      "node_id": "account-00",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19600",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-00",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-00/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-00",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-00/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-00/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-00/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-00",
+      "address": "0x68dfd7e3d83b50b4c4e14c1b6dc6c9ffdada111a",
+      "genesis_begin": 0,
+      "genesis_end": 499,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-01",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19601",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-01",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-01/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-01",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-01/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-01/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-01/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-01",
+      "address": "0x4cd9a431877e2ba33a93099ccab900968e0cdba7",
+      "genesis_begin": 500,
+      "genesis_end": 999,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-02",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19602",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-02",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-02/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-02",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-02/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-02/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-02/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-02",
+      "address": "0x29bb1b9fe16d87fcc44f8d265d0346467ba65a66",
+      "genesis_begin": 1000,
+      "genesis_end": 1499,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-03",
+      "role": "mac",
+      "endpoint": "100.90.152.124:19603",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-03",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-03/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-03",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-03/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-03/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-03/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-03",
+      "address": "0x1c63ae7d42ddcf6619a32ab618fc221b7828372c",
+      "genesis_begin": 1500,
+      "genesis_end": 1999,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-04",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19600",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-04",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-04/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-04",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-04/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-04/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-04/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-04",
+      "address": "0xaaaa25060d6649944738e1790168d40f0648518b",
+      "genesis_begin": 2000,
+      "genesis_end": 2499,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-05",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19601",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-05",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-05/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-05",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-05/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-05/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-05/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-05",
+      "address": "0x2d79a2cb06ce8cc45273f9aa1901d68e51a35797",
+      "genesis_begin": 2500,
+      "genesis_end": 2999,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-06",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19602",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-06",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-06/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-06",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-06/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-06/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-06/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-06",
+      "address": "0xdb9d1f27a6e53c5fd097658fe01bc8e5723e2266",
+      "genesis_begin": 3000,
+      "genesis_end": 3499,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-07",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19603",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-07",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-07/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-07",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-07/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-07/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-07/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-07",
+      "address": "0x139b51eb347a318e77d2745a2e6ed8ba85bbbed8",
+      "genesis_begin": 3500,
+      "genesis_end": 3999,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-08",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19604",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-08",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-08/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-08",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-08/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-08/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-08/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-08",
+      "address": "0x5f7230edeb0c738a87ecbb8dc4778ed0b07c81e8",
+      "genesis_begin": 4000,
+      "genesis_end": 4499,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    },
+    {
+      "node_id": "account-09",
+      "role": "ecs",
+      "endpoint": "118.178.171.23:19605",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/real-two-host-v2/wallets/account-09",
+      "wallet_file": ".ezchain-twohost/real-two-host-v2/wallets/account-09/wallet.json",
+      "root_dir": ".ezchain-twohost/real-two-host-v2/account-09",
+      "state_file": ".ezchain-twohost/real-two-host-v2/account-09/state.json",
+      "stdout_log": ".ezchain-twohost/real-two-host-v2/account-09/stdout.log",
+      "stderr_log": ".ezchain-twohost/real-two-host-v2/account-09/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster real-two-host-v2 account-09",
+      "address": "0x2a78d6f8cd5b7cba24af270dff1d6bc4f76999df",
+      "genesis_begin": 4500,
+      "genesis_end": 4999,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:19500"
+    }
+  ],
+  "genesis_allocations": [
+    {
+      "owner_addr": "0x68dfd7e3d83b50b4c4e14c1b6dc6c9ffdada111a",
+      "begin": 0,
+      "end": 499
+    },
+    {
+      "owner_addr": "0x4cd9a431877e2ba33a93099ccab900968e0cdba7",
+      "begin": 500,
+      "end": 999
+    },
+    {
+      "owner_addr": "0x29bb1b9fe16d87fcc44f8d265d0346467ba65a66",
+      "begin": 1000,
+      "end": 1499
+    },
+    {
+      "owner_addr": "0x1c63ae7d42ddcf6619a32ab618fc221b7828372c",
+      "begin": 1500,
+      "end": 1999
+    },
+    {
+      "owner_addr": "0xaaaa25060d6649944738e1790168d40f0648518b",
+      "begin": 2000,
+      "end": 2499
+    },
+    {
+      "owner_addr": "0x2d79a2cb06ce8cc45273f9aa1901d68e51a35797",
+      "begin": 2500,
+      "end": 2999
+    },
+    {
+      "owner_addr": "0xdb9d1f27a6e53c5fd097658fe01bc8e5723e2266",
+      "begin": 3000,
+      "end": 3499
+    },
+    {
+      "owner_addr": "0x139b51eb347a318e77d2745a2e6ed8ba85bbbed8",
+      "begin": 3500,
+      "end": 3999
+    },
+    {
+      "owner_addr": "0x5f7230edeb0c738a87ecbb8dc4778ed0b07c81e8",
+      "begin": 4000,
+      "end": 4499
+    },
+    {
+      "owner_addr": "0x2a78d6f8cd5b7cba24af270dff1d6bc4f76999df",
+      "begin": 4500,
+      "end": 4999
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+meta:
+  config_version: 1
+
+network:
+  name: "testnet"
+  bootstrap_nodes: ["100.90.152.124:19500"]
+  consensus_nodes: 4
+  account_nodes: 2
+  start_port: 19600
+
+app:
+  data_dir: ".ezchain-mac-account-store"
+  log_dir: ".ezchain-mac-account-store/logs"
+  api_host: "127.0.0.1"
+  api_port: 8788
+  api_token_file: ".ezchain-mac-account-store/api.token"
+  protocol_version: "v2"
+
+security:
+  max_payload_bytes: 65536
+  max_tx_amount: 100000000
+  nonce_ttl_seconds: 600

@@ -203,6 +203,7 @@ yarn-error.log*
 *.tmp
 *.temp
 .ezchain/
+.ezchain-*/
 .ezchain_v2/
 .ezchain*/api.token
 .ezchain*/v2_runtime/
@@ -221,6 +222,9 @@ codex-skills/
 
 # Trial record locks
 doc/trials/*.lock
+
+# Local release rehearsal notes
+doc/releases/*local*
 
 # Demo files and test data
 EZ_Test/demo_*.py

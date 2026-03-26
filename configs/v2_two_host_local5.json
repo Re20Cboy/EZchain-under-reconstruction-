@@ -1,0 +1,223 @@
+{
+  "cluster_name": "local-dryrun-5",
+  "cluster_dir": ".ezchain-twohost/local-dryrun-5",
+  "chain_id": 821,
+  "roles": {
+    "mac": {
+      "consensus_host": "127.0.0.1",
+      "account_host": "127.0.0.1",
+      "consensus_base_port": 27500,
+      "account_base_port": 27600
+    },
+    "ecs": {
+      "consensus_host": "127.0.0.1",
+      "account_host": "127.0.0.1",
+      "consensus_base_port": 28500,
+      "account_base_port": 28600
+    }
+  },
+  "consensus_nodes": [
+    {
+      "node_id": "consensus-0",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27500",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-0",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-0/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-0/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-0/stderr.log"
+    },
+    {
+      "node_id": "consensus-1",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27501",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-1",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-1/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-1/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-1/stderr.log"
+    },
+    {
+      "node_id": "consensus-2",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27502",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-2",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-2/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-2/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-2/stderr.log"
+    },
+    {
+      "node_id": "consensus-3",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28500",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-3",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-3/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-3/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-3/stderr.log"
+    },
+    {
+      "node_id": "consensus-4",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28501",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-4",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-4/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-4/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-4/stderr.log"
+    },
+    {
+      "node_id": "consensus-5",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28502",
+      "listen_host": "0.0.0.0",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/consensus-5",
+      "state_file": ".ezchain-twohost/local-dryrun-5/consensus-5/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/consensus-5/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/consensus-5/stderr.log"
+    }
+  ],
+  "account_nodes": [
+    {
+      "node_id": "account-00",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27600",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-00",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-00/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-00",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-00/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-00/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-00/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-00",
+      "address": "0x06db4728dd6b52c0fd4b67dfcde4e926310ade2b",
+      "genesis_begin": 0,
+      "genesis_end": 499,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:27500"
+    },
+    {
+      "node_id": "account-01",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27601",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-01",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-01/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-01",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-01/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-01/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-01/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-01",
+      "address": "0x8dcbb1697527d0595fd47911fe8fd78bb7446a1f",
+      "genesis_begin": 500,
+      "genesis_end": 999,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:27500"
+    },
+    {
+      "node_id": "account-02",
+      "role": "mac",
+      "endpoint": "127.0.0.1:27602",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-02",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-02/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-02",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-02/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-02/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-02/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-02",
+      "address": "0xbf4c68736e5d3710d95c5794d84e1aeb50273f13",
+      "genesis_begin": 1000,
+      "genesis_end": 1499,
+      "consensus_peer_id": "consensus-0",
+      "consensus_endpoint": "127.0.0.1:27500"
+    },
+    {
+      "node_id": "account-03",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28600",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-03",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-03/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-03",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-03/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-03/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-03/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-03",
+      "address": "0x82153fe72e1ae400222be9d48987699afbc9fec2",
+      "genesis_begin": 1500,
+      "genesis_end": 1999,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:28500"
+    },
+    {
+      "node_id": "account-04",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28601",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-04",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-04/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-04",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-04/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-04/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-04/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-04",
+      "address": "0x9827f0bb543e426bc76d9b89039c1568707ae041",
+      "genesis_begin": 2000,
+      "genesis_end": 2499,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:28500"
+    },
+    {
+      "node_id": "account-05",
+      "role": "ecs",
+      "endpoint": "127.0.0.1:28602",
+      "listen_host": "0.0.0.0",
+      "wallet_dir": ".ezchain-twohost/local-dryrun-5/wallets/account-05",
+      "wallet_file": ".ezchain-twohost/local-dryrun-5/wallets/account-05/wallet.json",
+      "root_dir": ".ezchain-twohost/local-dryrun-5/account-05",
+      "state_file": ".ezchain-twohost/local-dryrun-5/account-05/state.json",
+      "stdout_log": ".ezchain-twohost/local-dryrun-5/account-05/stdout.log",
+      "stderr_log": ".ezchain-twohost/local-dryrun-5/account-05/stderr.log",
+      "mnemonic": "ezchain v2 two host cluster local-dryrun-5 account-05",
+      "address": "0xedd34d45b873596d1389a415d0d35e17566d2407",
+      "genesis_begin": 2500,
+      "genesis_end": 2999,
+      "consensus_peer_id": "consensus-3",
+      "consensus_endpoint": "127.0.0.1:28500"
+    }
+  ],
+  "genesis_allocations": [
+    {
+      "owner_addr": "0x06db4728dd6b52c0fd4b67dfcde4e926310ade2b",
+      "begin": 0,
+      "end": 499
+    },
+    {
+      "owner_addr": "0x8dcbb1697527d0595fd47911fe8fd78bb7446a1f",
+      "begin": 500,
+      "end": 999
+    },
+    {
+      "owner_addr": "0xbf4c68736e5d3710d95c5794d84e1aeb50273f13",
+      "begin": 1000,
+      "end": 1499
+    },
+    {
+      "owner_addr": "0x82153fe72e1ae400222be9d48987699afbc9fec2",
+      "begin": 1500,
+      "end": 1999
+    },
+    {
+      "owner_addr": "0x9827f0bb543e426bc76d9b89039c1568707ae041",
+      "begin": 2000,
+      "end": 2499
+    },
+    {
+      "owner_addr": "0xedd34d45b873596d1389a415d0d35e17566d2407",
+      "begin": 2500,
+      "end": 2999
+    }
+  ]
+}
