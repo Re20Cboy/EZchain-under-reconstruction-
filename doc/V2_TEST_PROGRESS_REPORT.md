@@ -17,6 +17,8 @@
 | Wave 8: 全流程E2E | ✅ 完成 | 4 | 100% | 借鉴V1设计的端到端测试 |
 | Wave 9: 传输+边界 | ✅ 完成 | 24 | 100% | 传输失败模式+auto-confirm边界 |
 | Wave 10: 对抗性安全 | ✅ 完成 | 23 | 100% | 协议攻击向量全覆盖 |
+| Wave 11: 大规模压测 | ✅ 完成 | 9 | 100% | 并发/顺序/网格/碎片化/长链 |
+| Wave 12: 共识层补全 | ✅ 完成 | 55 | 100% | validator_set_hash/域分隔/持久化/限制/清理 |
 
 ## 完成情况汇总
 
@@ -83,6 +85,12 @@
 |---------|-------|----------|
 | test_v2_adversarial_security.py | 23 | 跨链重放、bundle过期、seq冲突、hash/sig伪造、sender mismatch、anchor伪造、value篡改/重叠、prev_ref断裂、内部双花、历史value冲突、重复transfer投递 |
 
+### Wave 11: 大规模压测 (9 tests - 全部通过)
+
+| 测试文件 | 测试数 | 覆盖内容 |
+|---------|-------|----------|
+| test_v2_stress_large_scale.py | 9 | 20账户并发、多轮环形、30笔顺序值守恒、性能基线、5×5网格、value碎片化、50block单调性、state_root唯一性、多窗口打包 |
+
 ## 必测语义覆盖矩阵
 
 | 语义类别 | Wave 1 | Wave 2 | Wave 3 | Wave 4 |
@@ -108,6 +116,7 @@
 2. ✅ 修复 test_v2_recursive_witness_validation 中的共识驱动问题
 3. ✅ 修复 test_v2_network_adversarial_scenarios 中的 validator set 配置
 4. ✅ 修复 test_v2_four_height_end_to_end 中的共识驱动问题
+5. ✅ 补全共识层对抗性测试缺口 (Wave 12)
 
 ### 可选增强
 1. ~~补充 transport 失败模式测试~~ ✅ Wave 9 完成
@@ -129,9 +138,11 @@ EZ_V2_New_Test 分布式:       69 tests (100% 通过)
 全流程E2E测试 (Wave 8):       4 tests (100% 通过)
 传输+边界测试 (Wave 9):      24 tests (100% 通过)
 对抗性安全测试 (Wave 10):    23 tests (100% 通过)
+大规模压测 (Wave 11):        9 tests (100% 通过)
+共识层补全 (Wave 12):       55 tests (100% 通过)
 ────────────────────────────────────────────────────────
-总计:                       363+ tests (100% 通过)
-EZ_V2_New_Test 总计:         120 tests (100% 通过)
+总计:                       427+ tests (100% 通过)
+EZ_V2_New_Test 总计:         184 tests (100% 通过)
 ```
 
 ## 参考文档
@@ -153,6 +164,7 @@ EZ_V2_New_Test 总计:         120 tests (100% 通过)
 - ✅ Wave 8: 全流程 E2E 测试，借鉴 V1 设计完成
 - ✅ Wave 9: 传输失败模式 + auto-confirm/delivery 边界测试完成
 - ✅ Wave 10: 对抗性安全测试，覆盖 protocol-draft §15-19 全部攻击向量
+- ✅ Wave 11: 大规模压测，并发/顺序/网格/碎片化/长链全覆盖
 
 **2026-03-27 (Wave 9)**: 补齐 Wave 3/4 报告中标记的 P1 缺口：
 - `test_v2_transport_failures.py` (12 tests): TCP连接失败、decode异常、handler异常、断连恢复、TransferMailboxStore
@@ -161,4 +173,18 @@ EZ_V2_New_Test 总计:         120 tests (100% 通过)
 **2026-03-27 (Wave 10)**: 覆盖设计文档标记的全部安全攻击向量：
 - `test_v2_adversarial_security.py` (23 tests): 跨链重放、bundle过期、seq冲突、hash/sig伪造、sender mismatch、GenesisAnchor 3种攻击、value篡改/重叠、prev_ref断裂、内部双花、历史value冲突、重复transfer投递、target_value不覆盖、target_tx不存在
 
-所有测试设计都符合 EZchain-V2 设计逻辑。剩余可选项：大规模集成压测、传输适配器一致性测试。
+**2026-03-27 (Wave 11)**: 大规模压力测试：
+- `test_v2_stress_large_scale.py` (9 tests): 20账户并发、多轮环形、30笔顺序值守恒、性能基线、5×5网格、value碎片化、50block单调性、state_root唯一性、多窗口打包
+
+**2026-03-27 (Wave 12)**: 共识层对抗性测试补全（覆盖率 ~75% → ~95%）：
+- `test_v2_consensus_core_adversarial.py` (20 tests): validator_set_hash/epoch_id/justify_qc_hash 拒绝、locked_qc 旁路、域分隔验证、VoteCollector/TimeoutVoteCollector 冲突检测
+- `test_v2_consensus_safety_persistence.py` (6 tests): locked_qc/highest_qc/pacemaker 跨重启恢复 + 3 个已知设计缺口文档化（投票日志未持久化）
+- `test_v2_pacemaker_adversarial.py` (18 tests): 退避公式、QC/TC/decide 重置、round 推进、locked_round 更新
+- `test_v2_mempool_limits_and_cleanup.py` (11 tests): bundle 三级限制、winner/non-winner 清理、ReceiptCache 裁剪
+
+**已知设计缺口**（需代码修复，非测试缺口）：
+1. 投票日志未持久化 — 重启后可重复投票 (spec §13.1)
+2. Timeout 日志未持久化 — 重启后可重复 Timeout
+3. VoteCollector 未持久化 — 重启后接受冲突投票
+
+所有测试设计都符合 EZchain-V2 设计逻辑。剩余可选项：传输适配器一致性测试。

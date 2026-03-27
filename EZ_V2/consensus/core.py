@@ -42,6 +42,15 @@ class ConsensusCore:
         self.pacemaker = persisted.pacemaker_state
         self.store.highest_qc = persisted.highest_qc
         self.store.locked_qc = persisted.locked_qc
+        # Restore vote/timeout logs from persistent storage
+        for h, r, phase, vid, bhash in self.store.load_vote_records():
+            if vid == self.local_validator_id:
+                self._local_vote_choice[(h, r, phase)] = bhash
+            self.vote_collector._restore_vote(h, r, phase, vid, bhash)
+        for h, r, vid, qc_r, qc_h in self.store.load_timeout_records():
+            if vid == self.local_validator_id:
+                self._local_timeout_rounds.add((h, r))
+            self.timeout_vote_collector._restore_timeout(h, r, vid, qc_r, qc_h)
 
     @property
     def highest_qc(self) -> QC | None:
@@ -87,6 +96,8 @@ class ConsensusCore:
         self.pacemaker = self.pacemaker.note_qc(qc.round, lock_round=lock_round)
         if qc.phase is VotePhase.PRECOMMIT:
             self.store.update_locked_qc(qc)
+            self.store.prune_vote_log(qc.round)
+            self.store.prune_timeout_log(qc.round)
         if qc.phase is VotePhase.COMMIT:
             self.pacemaker = self.pacemaker.note_decide(qc.round)
         self._persist_runtime_state()
@@ -105,6 +116,8 @@ class ConsensusCore:
         if existing is not None and existing != proposal.block_hash:
             raise ValueError("local validator already voted for another block in this phase")
         self._local_vote_choice[vote_key] = proposal.block_hash
+        self.store.save_vote_record(proposal.height, proposal.round, phase.value,
+                                   self.local_validator_id, proposal.block_hash)
         return Vote(
             chain_id=self.chain_id,
             epoch_id=self.epoch_id,
@@ -118,6 +131,8 @@ class ConsensusCore:
 
     def accept_vote(self, vote: Vote) -> QC | None:
         qc = self.vote_collector.add_vote(vote, self.validator_set)
+        self.store.save_vote_record(vote.height, vote.round, vote.phase.value,
+                                   vote.voter_id, vote.block_hash)
         if qc is None:
             return None
         self.store.save_qc(qc_hash(qc), qc)
@@ -125,6 +140,8 @@ class ConsensusCore:
         self.pacemaker = self.pacemaker.note_qc(qc.round, lock_round=lock_round)
         if qc.phase is VotePhase.PRECOMMIT:
             self.store.update_locked_qc(qc)
+            self.store.prune_vote_log(qc.round)
+            self.store.prune_timeout_log(qc.round)
         if qc.phase is VotePhase.COMMIT:
             self.pacemaker = self.pacemaker.note_decide(qc.round)
         self._persist_runtime_state()
@@ -138,6 +155,9 @@ class ConsensusCore:
             raise ValueError("local validator already timed out this round")
         self._local_timeout_rounds.add(round_key)
         highest_qc = self.highest_qc
+        self.store.save_timeout_record(height, round, self.local_validator_id,
+                                      None if highest_qc is None else highest_qc.round,
+                                      None if highest_qc is None else qc_hash(highest_qc))
         return TimeoutVote(
             chain_id=self.chain_id,
             epoch_id=self.epoch_id,
@@ -151,6 +171,9 @@ class ConsensusCore:
 
     def accept_timeout_vote(self, timeout_vote: TimeoutVote) -> TC | None:
         tc = self.timeout_vote_collector.add_timeout_vote(timeout_vote, self.validator_set)
+        self.store.save_timeout_record(timeout_vote.height, timeout_vote.round,
+                                      timeout_vote.voter_id,
+                                      timeout_vote.high_qc_round, timeout_vote.high_qc_hash)
         if tc is None:
             return None
         self.store.save_tc(tc_hash(tc), tc)

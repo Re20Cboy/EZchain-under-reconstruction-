@@ -37,6 +37,14 @@ class VoteCollector:
             signers=tuple(sorted(signers)),
         )
 
+    def _restore_vote(self, height: int, round_: int, phase: str, voter_id: str, block_hash: bytes) -> None:
+        """Restore a vote record from persistent storage (used on restart)."""
+        signer_key = (height, round_, phase, voter_id)
+        self._vote_choice_by_signer[signer_key] = block_hash
+        target_key = (height, round_, phase, block_hash)
+        signers = self._votes_by_target.setdefault(target_key, set())
+        signers.add(voter_id)
+
 
 @dataclass(slots=True)
 class TimeoutVoteCollector:
@@ -79,6 +87,17 @@ class TimeoutVoteCollector:
             high_qc_round=high_qc_round,
             high_qc_hash=high_qc_hash,
         )
+
+    def _restore_timeout(
+        self, height: int, round_: int, voter_id: str, high_qc_round: int | None, high_qc_hash: bytes | None,
+    ) -> None:
+        """Restore a timeout vote record from persistent storage (used on restart)."""
+        self._timeout_choice_by_signer[(height, round_, voter_id)] = (high_qc_round, high_qc_hash)
+        self._signers_by_round.setdefault((height, round_), set()).add(voter_id)
+        candidate = (high_qc_round, high_qc_hash)
+        current = self._highest_qc_by_round.get((height, round_))
+        if current is None or _is_higher_qc(candidate, current):
+            self._highest_qc_by_round[(height, round_)] = candidate
 
 
 def _is_higher_qc(candidate: tuple[int | None, bytes | None], current: tuple[int | None, bytes | None]) -> bool:

@@ -94,7 +94,7 @@ def _full_payment(runtime: V2Runtime, sender_wallet: WalletAccountV2,
     if not archived:
         return result, None
 
-    record = archived[0]
+    record = archived[-1]  # 使用最近的 archived record
     package = sender_wallet.export_transfer_package(
         delivery.confirmed_unit.bundle_sidecar.tx_list[0],
         record.value,
@@ -273,7 +273,7 @@ class TestSequentialPaymentChain(unittest.TestCase):
             total_transferred = TOTAL_PAYMENTS * AMOUNT
 
             self.assertEqual(bob_balance, total_transferred)
-            self.assertEqual(alice_balance + bob_balance, INITIAL_VALUE.size())
+            self.assertEqual(alice_balance + bob_balance, INITIAL_VALUE.size)
             self.assertEqual(result.block.header.height, TOTAL_PAYMENTS)
 
         finally:
@@ -313,7 +313,7 @@ class TestSequentialPaymentChain(unittest.TestCase):
             alice_balance = alice.available_balance()
             bob_balance = bob.available_balance()
             self.assertEqual(bob_balance, TOTAL_PAYMENTS * AMOUNT)
-            self.assertEqual(alice_balance + bob_balance, INITIAL_VALUE.size())
+            self.assertEqual(alice_balance + bob_balance, INITIAL_VALUE.size)
 
             logger.info(f"{TOTAL_PAYMENTS} full-cycle payments: {elapsed:.3f}s "
                         f"({TOTAL_PAYMENTS / max(elapsed, 0.001):.1f} ops/sec)")
@@ -439,11 +439,15 @@ class TestLargeValueRangeFragmentation(unittest.TestCase):
 
             self.assertEqual(bob_balance, expected_bob)
             self.assertEqual(carol_balance, expected_carol)
-            self.assertEqual(alice_balance + bob_balance + carol_balance, INITIAL_VALUE.size())
+            self.assertEqual(alice_balance + bob_balance + carol_balance, INITIAL_VALUE.size)
 
-            # 验证 alice 的 record 状态
+            # 验证 alice 的 record 状态（包括剩余的未消费 value + 10 笔 ARCHIVED）
             records = list(alice.list_records())
-            self.assertEqual(len(records), TOTAL_PAYMENTS)
+            archived = [r for r in records if r.local_status == LocalValueStatus.ARCHIVED]
+            self.assertEqual(len(archived), TOTAL_PAYMENTS)
+            # 应该还有一笔未消费的 value
+            spendable = [r for r in records if r.local_status == LocalValueStatus.VERIFIED_SPENDABLE]
+            self.assertTrue(len(spendable) >= 1)
 
         finally:
             alice.close()
@@ -476,7 +480,7 @@ class TestLongChainStateCorrectness(unittest.TestCase):
         try:
             last_height = 0
             for i in range(50):
-                result = _full_payment(
+                result, _ = _full_payment(
                     runtime, alice, alice_priv, alice_pub, bob_addr,
                     amount=1, nonce=1000 + i, tx_time=1000 + i,
                 )
@@ -507,7 +511,7 @@ class TestLongChainStateCorrectness(unittest.TestCase):
         try:
             state_roots = []
             for i in range(20):
-                result = _full_payment(
+                result, _ = _full_payment(
                     runtime, alice, alice_priv, alice_pub, bob_addr,
                     amount=5, nonce=2000 + i, tx_time=2000 + i,
                 )

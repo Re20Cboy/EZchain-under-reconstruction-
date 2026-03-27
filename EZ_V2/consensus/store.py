@@ -23,6 +23,8 @@ class InMemoryConsensusStore:
     highest_qc: QC | None = None
     locked_qc: QC | None = None
     pacemaker_state: PacemakerState = field(default_factory=PacemakerState)
+    _vote_log: dict[tuple[int, int, str, str], bytes] = field(default_factory=dict)
+    _timeout_log: dict[tuple[int, int, str], tuple[int | None, bytes | None]] = field(default_factory=dict)
 
     def save_proposal(self, proposal_hash_value: bytes, proposal: Proposal) -> None:
         self.proposals[proposal_hash_value] = proposal
@@ -48,6 +50,30 @@ class InMemoryConsensusStore:
             highest_qc=self.highest_qc,
             locked_qc=self.locked_qc,
         )
+
+    def save_vote_record(self, height: int, round_: int, phase: str, voter_id: str, block_hash: bytes) -> None:
+        self._vote_log[(height, round_, phase, voter_id)] = block_hash
+
+    def load_vote_records(self) -> list[tuple[int, int, str, str, bytes]]:
+        return [(h, r, p, v, b) for (h, r, p, v), b in self._vote_log.items()]
+
+    def prune_vote_log(self, keep_round: int) -> None:
+        keys_to_remove = [k for k in self._vote_log if k[1] < keep_round]
+        for k in keys_to_remove:
+            del self._vote_log[k]
+
+    def save_timeout_record(
+        self, height: int, round_: int, voter_id: str, high_qc_round: int | None, high_qc_hash: bytes | None,
+    ) -> None:
+        self._timeout_log[(height, round_, voter_id)] = (high_qc_round, high_qc_hash)
+
+    def load_timeout_records(self) -> list[tuple[int, int, str, int | None, bytes | None]]:
+        return [(h, r, v, qc_r, qc_h) for (h, r, v), (qc_r, qc_h) in self._timeout_log.items()]
+
+    def prune_timeout_log(self, keep_round: int) -> None:
+        keys_to_remove = [k for k in self._timeout_log if k[1] < keep_round]
+        for k in keys_to_remove:
+            del self._timeout_log[k]
 
     def close(self) -> None:
         return None
@@ -103,6 +129,24 @@ class SQLiteConsensusStore:
                 CREATE TABLE IF NOT EXISTS consensus_tcs (
                     tc_hash BLOB PRIMARY KEY,
                     tc_json TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS consensus_vote_log (
+                    height INTEGER NOT NULL,
+                    round INTEGER NOT NULL,
+                    phase TEXT NOT NULL,
+                    voter_id TEXT NOT NULL,
+                    block_hash BLOB NOT NULL,
+                    PRIMARY KEY (height, round, phase, voter_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS consensus_timeout_log (
+                    height INTEGER NOT NULL,
+                    round INTEGER NOT NULL,
+                    voter_id TEXT NOT NULL,
+                    high_qc_round INTEGER,
+                    high_qc_hash BLOB,
+                    PRIMARY KEY (height, round, voter_id)
                 );
                 """
             )
@@ -186,6 +230,62 @@ class SQLiteConsensusStore:
                 (sqlite3.Binary(tc_hash_value), _dumps_json(tc)),
             )
         self._persist_runtime_state()
+
+    def save_vote_record(self, height: int, round_: int, phase: str, voter_id: str, block_hash: bytes) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO consensus_vote_log (height, round, phase, voter_id, block_hash)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(height, round, phase, voter_id) DO UPDATE SET block_hash = excluded.block_hash
+                """,
+                (height, round_, phase, voter_id, sqlite3.Binary(block_hash)),
+            )
+
+    def load_vote_records(self) -> list[tuple[int, int, str, str, bytes]]:
+        rows = self._conn.execute(
+            "SELECT height, round, phase, voter_id, block_hash FROM consensus_vote_log"
+        ).fetchall()
+        return [(r[0], r[1], r[2], r[3], bytes(r[4])) for r in rows]
+
+    def prune_vote_log(self, keep_round: int) -> None:
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM consensus_vote_log WHERE round < ?", (keep_round,)
+            )
+
+    def save_timeout_record(
+        self, height: int, round_: int, voter_id: str, high_qc_round: int | None, high_qc_hash: bytes | None,
+    ) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO consensus_timeout_log (height, round, voter_id, high_qc_round, high_qc_hash)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(height, round, voter_id) DO UPDATE SET
+                    high_qc_round = excluded.high_qc_round,
+                    high_qc_hash = excluded.high_qc_hash
+                """,
+                (
+                    height, round_, voter_id, high_qc_round,
+                    None if high_qc_hash is None else sqlite3.Binary(high_qc_hash),
+                ),
+            )
+
+    def load_timeout_records(self) -> list[tuple[int, int, str, int | None, bytes | None]]:
+        rows = self._conn.execute(
+            "SELECT height, round, voter_id, high_qc_round, high_qc_hash FROM consensus_timeout_log"
+        ).fetchall()
+        return [
+            (r[0], r[1], r[2], r[3], None if r[4] is None else bytes(r[4]))
+            for r in rows
+        ]
+
+    def prune_timeout_log(self, keep_round: int) -> None:
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM consensus_timeout_log WHERE round < ?", (keep_round,)
+            )
 
     def update_locked_qc(self, qc: QC) -> None:
         if self.locked_qc is None or qc.round >= self.locked_qc.round:

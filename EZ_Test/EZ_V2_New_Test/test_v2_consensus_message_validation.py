@@ -17,9 +17,12 @@ from __future__ import annotations
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 
+from EZ_V2.chain import ChainStateV2
 from EZ_V2.network_host import StaticPeerNetwork, V2AccountHost, V2ConsensusHost
 from EZ_V2.values import ValueRange
+from EZ_V2.wallet import WalletAccountV2
 
 
 class EZV2ConsensusMessageValidationTests(unittest.TestCase):
@@ -39,16 +42,48 @@ class EZV2ConsensusMessageValidationTests(unittest.TestCase):
             time.sleep(0.01)
         return consensus.consensus.chain.current_height
 
-    def test_block_with_invalid_signature_is_rejected(self) -> None:
+    def test_bundle_with_invalid_signature_is_rejected(self) -> None:
         """
-        [security] 验证带无效签名的区块被拒绝
+        [security] 验证带无效签名的 Bundle 在提交阶段被拒绝
 
-        设计文档：consensus-mvp-spec.md 第7.3节 "proposal的proposer签名必须覆盖..."
+        设计文档：protocol-draft.md 第8.3节
+        "可执行 Bundle 必须通过签名与 sender 公钥校验"
         """
-        # 这个测试需要在实际实现中加入签名验证机制后才能真正测试
-        # 当前测试框架可能还不支持直接修改block签名
-        # 这里先做框架预留，等实现完成后补充具体验证逻辑
-        pass
+        with tempfile.TemporaryDirectory() as td:
+            from EZ_V2.crypto import generate_secp256k1_keypair, address_from_public_key_pem
+
+            private_key_pem, public_key_pem = generate_secp256k1_keypair()
+            sender_addr = address_from_public_key_pem(public_key_pem)
+            wallet = WalletAccountV2(
+                address=sender_addr,
+                genesis_block_hash=b"\xaa" * 32,
+                db_path=f"{td}/alice.sqlite3",
+            )
+            wallet.add_genesis_value(ValueRange(0, 199))
+
+            try:
+                chain = ChainStateV2(chain_id=10000)
+
+                submission, _, _ = wallet.build_payment_bundle(
+                    recipient_addr="bob-signature-test",
+                    amount=50,
+                    private_key_pem=private_key_pem,
+                    public_key_pem=public_key_pem,
+                    chain_id=10000,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=70001,
+                    tx_time=1,
+                )
+                tampered = replace(
+                    submission,
+                    envelope=replace(submission.envelope, anti_spam_nonce=submission.envelope.anti_spam_nonce + 1),
+                )
+
+                with self.assertRaisesRegex(ValueError, "invalid bundle signature"):
+                    chain.submit_bundle(tampered)
+            finally:
+                wallet.close()
 
     def test_seq_mismatch_is_rejected(self) -> None:
         """
@@ -62,97 +97,69 @@ class EZV2ConsensusMessageValidationTests(unittest.TestCase):
         2. 只接受seq=2的Bundle
         """
         with tempfile.TemporaryDirectory() as td:
-            network = StaticPeerNetwork()
-            validator_ids = ("consensus-0", "consensus-1", "consensus-2", "consensus-3")
-            consensus_hosts = tuple(
-                V2ConsensusHost(
-                    node_id=validator_id,
-                    endpoint=f"mem://{validator_id}",
-                    store_path=f"{td}/{validator_id}.sqlite3",
-                    network=network,
-                    chain_id=10001,
-                    consensus_mode="mvp",
-                    consensus_validator_ids=validator_ids,
-                    auto_run_mvp_consensus=True,
-                    auto_run_mvp_consensus_window_sec=0.1,
-                )
-                for validator_id in validator_ids
-            )
+            from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
 
-            alice = V2AccountHost(
-                node_id="alice",
-                endpoint="mem://alice",
-                wallet_db_path=f"{td}/alice.sqlite3",
-                chain_id=10001,
-                network=network,
-                consensus_peer_id="consensus-0",
-            )
-            bob = V2AccountHost(
-                node_id="bob",
-                endpoint="mem://bob",
-                wallet_db_path=f"{td}/bob.sqlite3",
-                chain_id=10001,
-                network=network,
-                consensus_peer_id="consensus-0",
-            )
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            bob_priv, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
 
+            alice = WalletAccountV2(
+                address=alice_addr,
+                genesis_block_hash=b"\xbb" * 32,
+                db_path=f"{td}/alice.sqlite3",
+            )
             try:
-                minted = ValueRange(0, 199)
-                for consensus in consensus_hosts:
-                    consensus.register_genesis_value(alice.address, minted)
-                alice.register_genesis_value(minted)
+                alice.add_genesis_value(ValueRange(0, 199))
+                chain = ChainStateV2(chain_id=10001)
 
-                # 第一笔交易：seq应为1（自动递增）
-                payment1 = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=10001)
+                first_submission, _, _ = alice.build_payment_bundle(
+                    recipient_addr=bob_addr,
+                    amount=50,
+                    private_key_pem=alice_priv,
+                    public_key_pem=alice_pub,
+                    chain_id=10001,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=10001,
+                    tx_time=1,
+                )
+                chain.submit_bundle(first_submission)
+                _, receipts = chain.build_block(timestamp=2)
+                alice.on_receipt_confirmed(receipts[alice.address])
 
-                # 驱动共识到高度1
-                for consensus in consensus_hosts:
-                    try:
-                        result = consensus.drive_auto_mvp_consensus_tick(force=True)
-                        if result and result.get("status") == "committed":
-                            break
-                    except Exception:
-                        pass
+                mismatched_submission, _, _ = alice.build_payment_bundle(
+                    recipient_addr=bob_addr,
+                    amount=30,
+                    private_key_pem=alice_priv,
+                    public_key_pem=alice_pub,
+                    chain_id=10001,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=10002,
+                    tx_time=2,
+                    seq=3,
+                )
+                with self.assertRaisesRegex(ValueError, "bundle seq is not currently executable"):
+                    chain.submit_bundle(mismatched_submission)
+                alice.rollback_pending_bundle(3)
 
-                for consensus in consensus_hosts:
-                    self._wait_for_consensus_height(consensus, 1, timeout_sec=2.0)
-
-                # 等待并同步receipt
-                alice.sync_pending_receipts()
-
-                # 验证：Alice现在有receipt
-                receipts = alice.wallet.list_receipts()
-                self.assertGreaterEqual(len(receipts), 1, "Alice should have at least one receipt")
-
-                # 验证：Alice的confirmed_seq现在是1
-                # 下一次提交必须是seq=2
-
-                # 第二笔交易：使用seq=2
-                payment2 = alice.submit_payment("bob", amount=30, tx_time=2, anti_spam_nonce=10002)
-
-                # 驱动共识到高度2
-                for consensus in consensus_hosts:
-                    try:
-                        result = consensus.drive_auto_mvp_consensus_tick(force=True)
-                        if result and result.get("status") == "committed":
-                            break
-                    except Exception:
-                        pass
-
-                for consensus in consensus_hosts:
-                    self._wait_for_consensus_height(consensus, 2, timeout_sec=2.0)
-
-                alice.sync_pending_receipts()
-
-                # 验证：Alice现在有2个receipt
-                receipts = alice.wallet.list_receipts()
-                self.assertGreaterEqual(len(receipts), 2, "Alice should have at least 2 receipts after two payments")
-
+                valid_submission, _, _ = alice.build_payment_bundle(
+                    recipient_addr=bob_addr,
+                    amount=30,
+                    private_key_pem=alice_priv,
+                    public_key_pem=alice_pub,
+                    chain_id=10001,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=10003,
+                    tx_time=3,
+                    seq=2,
+                )
+                sender_addr = chain.submit_bundle(valid_submission)
+                self.assertEqual(sender_addr, alice.address)
             finally:
-                bob.close()
                 alice.close()
-                for consensus in reversed(consensus_hosts):
-                    consensus.close()
 
     def test_duplicate_sender_in_same_block_rejected(self) -> None:
         """
