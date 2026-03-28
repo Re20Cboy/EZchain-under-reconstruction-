@@ -5,8 +5,10 @@ import unittest
 from dataclasses import replace
 
 from EZ_V2.network_host import StaticPeerNetwork, V2AccountHost, V2ConsensusHost
-from EZ_V2.networking import MSG_CONSENSUS_BUNDLE_FORWARD, NetworkEnvelope
-from EZ_V2.types import ConfirmedBundleUnit
+from EZ_V2.crypto import keccak256
+from EZ_V2.encoding import canonical_encode
+from EZ_V2.networking import MSG_BLOCK_ANNOUNCE, MSG_BUNDLE_SUBMIT, MSG_CONSENSUS_BUNDLE_FORWARD, NetworkEnvelope
+from EZ_V2.types import ConfirmedBundleUnit, OffChainTx
 from EZ_V2.values import LocalValueStatus, ValueRange
 from EZ_V2.wallet import WalletAccountV2
 
@@ -252,6 +254,152 @@ class EZV2DistributedProcessAdversarialTests(unittest.TestCase):
                 bob.close()
                 alice.close()
                 consensus.close()
+
+    def test_flow_receipt_delivery_survives_missing_recipient_handler(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td}/consensus.sqlite3",
+                network=network,
+                chain_id=5204,
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=5204,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=5204,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            try:
+                minted = ValueRange(0, 99)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                missing_recipient = "0x" + "99" * 20
+                submission, _ = alice.wallet.build_bundle(
+                    tx_list=(
+                        OffChainTx(
+                            sender_addr=alice.address,
+                            recipient_addr=missing_recipient,
+                            value_list=(ValueRange(0, 49),),
+                            tx_local_index=0,
+                            tx_time=1,
+                        ),
+                        OffChainTx(
+                            sender_addr=alice.address,
+                            recipient_addr=bob.address,
+                            value_list=(ValueRange(50, 99),),
+                            tx_local_index=1,
+                            tx_time=1,
+                        ),
+                    ),
+                    private_key_pem=alice.private_key_pem,
+                    public_key_pem=alice.public_key_pem,
+                    chain_id=5204,
+                    seq=1,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=806,
+                    created_at=1,
+                )
+
+                response = network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_BUNDLE_SUBMIT,
+                        sender_id="alice",
+                        recipient_id="consensus-0",
+                        payload={"submission": submission},
+                    )
+                )
+
+                self.assertIsInstance(response, dict)
+                assert isinstance(response, dict)
+                self.assertTrue(response.get("ok", False))
+                self.assertEqual(response.get("status"), "accepted")
+                self.assertEqual(len(alice.wallet.list_receipts()), 1)
+                self.assertEqual(bob.wallet.available_balance(), 50)
+                self.assertEqual(len(bob.received_transfers), 1)
+            finally:
+                bob.close()
+                alice.close()
+                consensus.close()
+
+    def test_flow_block_announce_rejects_same_height_conflicting_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td}/consensus.sqlite3",
+                network=network,
+                chain_id=5205,
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=5205,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=5205,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            try:
+                minted = ValueRange(0, 99)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+                payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=807)
+                self.assertEqual(payment.receipt_height, 1)
+
+                response = consensus.handle_envelope(
+                    NetworkEnvelope(
+                        msg_type=MSG_BLOCK_ANNOUNCE,
+                        sender_id="consensus-1",
+                        recipient_id="consensus-0",
+                        payload={
+                            "height": 1,
+                            "block_hash": ("ab" * 32),
+                        },
+                    )
+                )
+
+                self.assertEqual(response["ok"], False)
+                self.assertEqual(response["error"], "announced_block_hash_conflict")
+            finally:
+                bob.close()
+                alice.close()
+                consensus.close()
+
+    def test_tx_hash_uses_canonical_encoding(self) -> None:
+        tx = OffChainTx(
+            sender_addr="alice",
+            recipient_addr="bob",
+            value_list=(ValueRange(10, 19),),
+            tx_local_index=3,
+            tx_time=9,
+        )
+
+        self.assertEqual(
+            V2AccountHost._tx_hash_hex(tx),
+            keccak256(canonical_encode(tx)).hex(),
+        )
 
 
 if __name__ == "__main__":

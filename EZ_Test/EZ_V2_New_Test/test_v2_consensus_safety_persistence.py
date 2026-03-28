@@ -434,6 +434,54 @@ class TestVoteLogPruning(unittest.TestCase):
         self.assertEqual(records[0][1], 4)  # round == 4
         store.close()
 
+    def test_commit_votes_survive_precommit_prune_and_restart(self):
+        db = self.db
+        vset = self.vset
+        block_hash = hashlib.sha256(b"commit-context-block").digest()
+
+        store1 = SQLiteConsensusStore(db)
+        core1 = _make_core(store1)
+
+        precommit_qc = _make_qc(vset, round_=3, phase=VotePhase.PRECOMMIT, block_hash=block_hash)
+        core1.observe_qc(precommit_qc)
+        for voter_id in ("v0", "v1"):
+            qc = core1.accept_vote(
+                Vote(
+                    chain_id=8888,
+                    epoch_id=0,
+                    height=1,
+                    round=3,
+                    voter_id=voter_id,
+                    validator_set_hash=vset.validator_set_hash,
+                    block_hash=block_hash,
+                    phase=VotePhase.COMMIT,
+                )
+            )
+            self.assertIsNone(qc)
+        store1.close()
+
+        store2 = SQLiteConsensusStore(db)
+        core2 = _make_core(store2)
+        commit_qc = core2.accept_vote(
+            Vote(
+                chain_id=8888,
+                epoch_id=0,
+                height=1,
+                round=3,
+                voter_id="v2",
+                validator_set_hash=vset.validator_set_hash,
+                block_hash=block_hash,
+                phase=VotePhase.COMMIT,
+            )
+        )
+
+        self.assertIsNotNone(commit_qc)
+        assert commit_qc is not None
+        self.assertEqual(commit_qc.phase, VotePhase.COMMIT)
+        self.assertEqual(commit_qc.round, 3)
+        self.assertEqual(commit_qc.block_hash, block_hash)
+        store2.close()
+
 
 class TestVoteLogMultiRoundPersistence(unittest.TestCase):
     """Verify vote log works correctly across multiple rounds and phases."""

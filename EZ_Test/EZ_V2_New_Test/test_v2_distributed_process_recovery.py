@@ -82,7 +82,8 @@ class EZV2DistributedProcessRecoveryTests(unittest.TestCase):
 
                 recovery = alice.recover_network_state()
                 self.assertEqual(recovery.applied_receipts, 1)
-                self.assertEqual([block.header.height for block in recovery.fetched_blocks], [1])
+                self.assertIn([block.header.height for block in recovery.fetched_blocks], ([], [1]))
+                self.assertEqual(sorted(alice.fetched_blocks), [1])
                 self.assertEqual(recovery.chain_cursor.height if recovery.chain_cursor else None, 1)
                 self.assertEqual(alice.wallet.available_balance(), 160)
                 self.assertEqual(bob.wallet.available_balance(), 40)
@@ -243,6 +244,84 @@ class EZV2DistributedProcessRecoveryTests(unittest.TestCase):
                 self.assertEqual(carol.wallet.available_balance(), 100)
             finally:
                 carol.close()
+                bob.close()
+                alice.close()
+                consensus.close()
+
+    def test_flow_mvp_commit_survives_restart_when_winner_crashes_before_receipt_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            store_path = f"{td}/consensus.sqlite3"
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=store_path,
+                network=network,
+                chain_id=5105,
+                consensus_mode="mvp",
+                consensus_validator_ids=("consensus-0",),
+            )
+            alice_private, alice_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=5105,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+                state_path=f"{td}/alice.network.json",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=5105,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                first = alice.submit_payment("bob", amount=40, tx_time=1, anti_spam_nonce=901)
+                self.assertIsNone(first.receipt_height)
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 1)
+
+                def crash_before_receipt_delivery(block, *, sender_peer_ids):
+                    raise RuntimeError("simulated_crash_after_commit")
+
+                consensus._dispatch_finalized_receipts = crash_before_receipt_delivery
+                with self.assertRaisesRegex(RuntimeError, "simulated_crash_after_commit"):
+                    consensus.run_mvp_consensus_round(consensus_peer_ids=(consensus.peer.node_id,))
+
+                self.assertEqual(consensus.consensus.chain.current_height, 1)
+                self.assertIsNotNone(consensus.consensus.get_receipt(alice.address, 1).receipt)
+                consensus.close()
+
+                consensus = V2ConsensusHost(
+                    node_id="consensus-0",
+                    endpoint="mem://consensus-0",
+                    store_path=store_path,
+                    network=network,
+                    chain_id=5105,
+                    consensus_mode="mvp",
+                    consensus_validator_ids=("consensus-0",),
+                )
+
+                recovery = alice.recover_network_state()
+                self.assertEqual(recovery.applied_receipts, 1)
+                self.assertIn([block.header.height for block in recovery.fetched_blocks], ([], [1]))
+                self.assertEqual(sorted(alice.fetched_blocks), [1])
+                self.assertEqual(recovery.chain_cursor.height if recovery.chain_cursor else None, 1)
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 0)
+                self.assertEqual(alice.wallet.available_balance(), 160)
+                self.assertEqual(bob.wallet.available_balance(), 40)
+            finally:
                 bob.close()
                 alice.close()
                 consensus.close()

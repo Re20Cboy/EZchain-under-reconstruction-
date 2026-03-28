@@ -218,6 +218,7 @@ class EZV2BundlePoolTests(unittest.TestCase):
         seq: int = 1,
         chain_id: int = 7001,
         fee: int = 1,
+        expiry_height: int = 100,
     ) -> tuple[BundleSubmission, bytes, bytes]:
         """辅助方法：创建BundleSubmission"""
         priv, pub = generate_secp256k1_keypair()
@@ -240,7 +241,7 @@ class EZV2BundlePoolTests(unittest.TestCase):
             version=1,
             chain_id=chain_id,
             seq=seq,
-            expiry_height=100,
+            expiry_height=expiry_height,
             fee=fee,
             anti_spam_nonce=123,
             bundle_hash=compute_bundle_hash(sidecar),
@@ -388,6 +389,73 @@ class EZV2BundlePoolTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             pool.submit(submission2, current_height=1, confirmed_seq=0)
+
+    def test_bundle_pool_rejects_conflicting_same_seq_even_with_higher_fee(self) -> None:
+        """验证不同sidecar不能仅靠更高fee覆盖现有pending bundle"""
+        pool = BundlePool(chain_id=7001)
+        submission1, priv1, pub1 = self._make_submission(fee=1)
+
+        pool.submit(submission1, current_height=1, confirmed_seq=0)
+
+        tx = OffChainTx(
+            address_from_public_key_pem(pub1),
+            "carol",
+            (ValueRange(0, 49),),
+            0,
+            1,
+        )
+        sidecar = BundleSidecar(sender_addr=address_from_public_key_pem(pub1), tx_list=(tx,))
+        envelope = BundleEnvelope(
+            version=1,
+            chain_id=7001,
+            seq=1,
+            expiry_height=100,
+            fee=2,
+            anti_spam_nonce=126,
+            bundle_hash=compute_bundle_hash(sidecar),
+        )
+        signed = sign_bundle_envelope(envelope, priv1)
+
+        submission2 = BundleSubmission(
+            envelope=signed,
+            sidecar=sidecar,
+            sender_public_key_pem=pub1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "sender already has a different pending bundle"):
+            pool.submit(submission2, current_height=1, confirmed_seq=0)
+
+    def test_bundle_pool_rejects_old_fee_replay_after_same_bundle_fee_bump(self) -> None:
+        """验证同bundle_hash被更高fee替换后，旧fee重放不会把pending降级"""
+        pool = BundlePool(chain_id=7001)
+        submission1, priv1, pub1 = self._make_submission(fee=0)
+
+        pool.submit(submission1, current_height=1, confirmed_seq=0)
+
+        bumped_envelope = BundleEnvelope(
+            version=submission1.envelope.version,
+            chain_id=submission1.envelope.chain_id,
+            seq=submission1.envelope.seq,
+            expiry_height=submission1.envelope.expiry_height,
+            fee=2,
+            anti_spam_nonce=submission1.envelope.anti_spam_nonce + 1,
+            bundle_hash=submission1.envelope.bundle_hash,
+        )
+        bumped_submission = BundleSubmission(
+            envelope=sign_bundle_envelope(bumped_envelope, priv1),
+            sidecar=submission1.sidecar,
+            sender_public_key_pem=pub1,
+        )
+
+        pool.submit(bumped_submission, current_height=1, confirmed_seq=0)
+
+        with self.assertRaisesRegex(ValueError, "replacement bundle fee too low"):
+            pool.submit(submission1, current_height=1, confirmed_seq=0)
+
+        snapshot = pool.snapshot()
+        self.assertEqual(len(snapshot), 1)
+        self.assertEqual(snapshot[0].envelope.bundle_hash, submission1.envelope.bundle_hash)
+        self.assertEqual(snapshot[0].envelope.fee, 2)
 
     def test_bundle_pool_snapshot_returns_ordered_by_addr_key(self) -> None:
         """验证snapshot按addr_key排序"""
@@ -549,6 +617,23 @@ class EZV2ChainStateTests(unittest.TestCase):
         # 验证是独立对象
         self.assertIsNot(copy, chain)
         self.assertIsNot(copy.tree, chain.tree)
+
+    def test_apply_block_rejects_bundle_expired_at_block_height(self) -> None:
+        """验证follower不会接受被恶意proposer塞入区块的过期bundle"""
+        proposer = ChainStateV2(chain_id=7001)
+        submission, _, _ = EZV2BundlePoolTests()._make_submission(expiry_height=0)
+
+        block, _ = proposer._execute_submissions(
+            submissions=[submission],
+            timestamp=1,
+            proposer_sig=b"",
+            consensus_extra=b"",
+            remove_from_pool=False,
+        )
+
+        follower = ChainStateV2(chain_id=7001)
+        with self.assertRaisesRegex(ValueError, "bundle expired"):
+            follower.apply_block(block)
 
 
 if __name__ == "__main__":

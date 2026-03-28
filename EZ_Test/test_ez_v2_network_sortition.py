@@ -40,6 +40,57 @@ class EZV2NetworkSortitionTests(unittest.TestCase):
             return None
         return account.last_seen_chain.height
 
+    def test_mvp_validator_keys_depend_on_persisted_cluster_secret(self) -> None:
+        validator_ids = ("consensus-0", "consensus-1", "consensus-2")
+        with tempfile.TemporaryDirectory() as td_a, tempfile.TemporaryDirectory() as td_b:
+            network_a = StaticPeerNetwork()
+            host_a = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td_a}/consensus-0.sqlite3",
+                network=network_a,
+                chain_id=925,
+                consensus_mode="mvp",
+                consensus_validator_ids=validator_ids,
+            )
+            first_vrf_pubkey = host_a._consensus_core.validator_set.get("consensus-0").vrf_pubkey
+            first_vote_pubkey = host_a._consensus_core.validator_set.get("consensus-0").consensus_vote_pubkey
+            host_a.close()
+
+            network_a_restart = StaticPeerNetwork()
+            host_a_restart = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td_a}/consensus-0.sqlite3",
+                network=network_a_restart,
+                chain_id=925,
+                consensus_mode="mvp",
+                consensus_validator_ids=validator_ids,
+            )
+            restart_vrf_pubkey = host_a_restart._consensus_core.validator_set.get("consensus-0").vrf_pubkey
+            restart_vote_pubkey = host_a_restart._consensus_core.validator_set.get("consensus-0").consensus_vote_pubkey
+
+            network_b = StaticPeerNetwork()
+            host_b = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td_b}/consensus-0.sqlite3",
+                network=network_b,
+                chain_id=925,
+                consensus_mode="mvp",
+                consensus_validator_ids=validator_ids,
+            )
+            other_vrf_pubkey = host_b._consensus_core.validator_set.get("consensus-0").vrf_pubkey
+            other_vote_pubkey = host_b._consensus_core.validator_set.get("consensus-0").consensus_vote_pubkey
+            try:
+                self.assertEqual(restart_vrf_pubkey, first_vrf_pubkey)
+                self.assertEqual(restart_vote_pubkey, first_vote_pubkey)
+                self.assertNotEqual(other_vrf_pubkey, first_vrf_pubkey)
+                self.assertNotEqual(other_vote_pubkey, first_vote_pubkey)
+            finally:
+                host_b.close()
+                host_a_restart.close()
+
     def test_static_network_mvp_sortition_selects_consistent_proposer_and_commits(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             network = StaticPeerNetwork()

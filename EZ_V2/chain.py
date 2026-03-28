@@ -228,6 +228,8 @@ class BundlePool:
         if existing:
             if existing.envelope.seq != submission.envelope.seq:
                 raise ValueError("sender already has a different pending bundle")
+            if existing.envelope.bundle_hash != submission.envelope.bundle_hash:
+                raise ValueError("sender already has a different pending bundle")
             if submission.envelope.fee <= existing.envelope.fee:
                 raise ValueError("replacement bundle fee too low")
         self._pending_by_sender[sender_addr] = submission
@@ -502,6 +504,8 @@ class ChainStateV2:
                 raise ValueError("bundle hash mismatch")
             if not verify_bundle_envelope(entry.bundle_envelope, public_key):
                 raise ValueError("bundle signature invalid")
+            if entry.bundle_envelope.expiry_height < block.header.height:
+                raise ValueError("bundle expired")
             old_leaf = self.account_leaves.get(sender_addr)
             expected_prev_ref = old_leaf.head_ref if old_leaf else None
             if entry.new_leaf.prev_ref != expected_prev_ref:

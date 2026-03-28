@@ -18,6 +18,7 @@ from .smt import verify_proof
 from .storage import LocalWalletDB
 from .transport import transfer_package_hash
 from .types import (
+    BlockV2,
     BundleEnvelope,
     BundleSidecar,
     BundleSubmission,
@@ -25,6 +26,7 @@ from .types import (
     CheckpointAnchor,
     ConfirmedBundleUnit,
     GenesisAnchor,
+    HeaderLite,
     OffChainTx,
     PendingBundleContext,
     PriorWitnessLink,
@@ -108,9 +110,23 @@ class WalletAccountV2:
         self.checkpoints = self.db.list_checkpoints(self.address)
 
     def _persist_records(self, records: list[LocalValueRecord]) -> None:
-        self.db.replace_value_records(self.address, records)
-        self.db.recompute_sidecar_ref_counts()
+        self.db.replace_value_records_and_recompute_sidecar_refs(self.address, records)
         self._reload_state()
+
+    def observe_canonical_header(self, header: HeaderLite) -> None:
+        self.db.save_canonical_header(self.address, header)
+
+    def observe_canonical_block(self, block: BlockV2) -> None:
+        self.observe_canonical_header(
+            HeaderLite(
+                height=block.header.height,
+                block_hash=block.block_hash,
+                state_root=block.header.state_root,
+            )
+        )
+
+    def knows_canonical_header(self, header: HeaderLite) -> bool:
+        return self.db.has_canonical_header(self.address, header)
 
     def balance_breakdown(self) -> dict[LocalValueStatus, int]:
         totals = {status: 0 for status in LocalValueStatus}
@@ -185,6 +201,128 @@ class WalletAccountV2:
                 return inf
             return total + child
         return inf
+
+    def _checkpoint_matches_witness(self, checkpoint: Checkpoint, witness: WitnessV2) -> bool:
+        if not checkpoint.matches(witness.value, witness.current_owner_addr):
+            return False
+        return any(
+            unit.receipt.header_lite.height == checkpoint.checkpoint_height
+            and unit.receipt.header_lite.block_hash == checkpoint.checkpoint_block_hash
+            and compute_bundle_hash(unit.bundle_sidecar) == checkpoint.checkpoint_bundle_hash
+            for unit in witness.confirmed_bundle_chain
+        )
+
+    def _trim_witness_to_known_checkpoint(
+        self,
+        witness: WitnessV2,
+        trusted_checkpoints: tuple[Checkpoint, ...],
+    ) -> WitnessV2:
+        for checkpoint in trusted_checkpoints:
+            if self._checkpoint_matches_witness(checkpoint, witness):
+                return replace(witness, anchor=CheckpointAnchor(checkpoint=checkpoint))
+        anchor = witness.anchor
+        if not isinstance(anchor, PriorWitnessLink):
+            return witness
+        trimmed_prior = self._trim_witness_to_known_checkpoint(anchor.prior_witness, trusted_checkpoints)
+        if trimmed_prior == anchor.prior_witness:
+            return witness
+        return replace(
+            witness,
+            anchor=PriorWitnessLink(
+                acquire_tx=anchor.acquire_tx,
+                prior_witness=trimmed_prior,
+            ),
+        )
+
+    def _checkpoint_from_witness(self, witness: WitnessV2) -> Checkpoint | None:
+        if not witness.confirmed_bundle_chain:
+            return None
+        latest = witness.confirmed_bundle_chain[0]
+        return Checkpoint(
+            value_begin=witness.value.begin,
+            value_end=witness.value.end,
+            owner_addr=witness.current_owner_addr,
+            checkpoint_height=latest.receipt.header_lite.height,
+            checkpoint_block_hash=latest.receipt.header_lite.block_hash,
+            checkpoint_bundle_hash=compute_bundle_hash(latest.bundle_sidecar),
+        )
+
+    def _trim_witness_for_recipient(
+        self,
+        witness: WitnessV2,
+        recipient_addr: str,
+        target_value: ValueRange,
+    ) -> WitnessV2:
+        if witness.current_owner_addr == recipient_addr and witness.value == target_value:
+            checkpoint = self._checkpoint_from_witness(witness)
+            if checkpoint is not None:
+                return replace(witness, anchor=CheckpointAnchor(checkpoint=checkpoint))
+        anchor = witness.anchor
+        if not isinstance(anchor, PriorWitnessLink):
+            return witness
+        trimmed_prior = self._trim_witness_for_recipient(anchor.prior_witness, recipient_addr, target_value)
+        if trimmed_prior == anchor.prior_witness:
+            return witness
+        return replace(
+            witness,
+            anchor=PriorWitnessLink(
+                acquire_tx=anchor.acquire_tx,
+                prior_witness=trimmed_prior,
+            ),
+        )
+
+    def has_local_checkpoint(self, checkpoint: Checkpoint) -> bool:
+        return self._local_witness_for_checkpoint(checkpoint) is not None
+
+    def _local_witness_for_checkpoint(self, checkpoint: Checkpoint) -> WitnessV2 | None:
+        if checkpoint.owner_addr != self.address:
+            return None
+        if checkpoint in self.checkpoints:
+            target_value = ValueRange(checkpoint.value_begin, checkpoint.value_end)
+            for record in self.records:
+                if record.value == target_value and self._checkpoint_matches_witness(checkpoint, record.witness_v2):
+                    return record.witness_v2
+            return None
+        target_value = ValueRange(checkpoint.value_begin, checkpoint.value_end)
+        for record in self.records:
+            if record.value == target_value and self._checkpoint_matches_witness(checkpoint, record.witness_v2):
+                return record.witness_v2
+        return None
+
+    def trusted_checkpoints_for_witness(self, witness: WitnessV2) -> tuple[Checkpoint, ...]:
+        matched: list[Checkpoint] = []
+        seen: set[Checkpoint] = set()
+
+        def _walk(node: WitnessV2) -> None:
+            anchor = node.anchor
+            if isinstance(anchor, CheckpointAnchor):
+                checkpoint = anchor.checkpoint
+                if checkpoint not in seen and self.has_local_checkpoint(checkpoint):
+                    matched.append(checkpoint)
+                    seen.add(checkpoint)
+                return
+            if isinstance(anchor, PriorWitnessLink):
+                _walk(anchor.prior_witness)
+
+        _walk(witness)
+        return tuple(matched)
+
+    def _rehydrate_local_checkpoint_anchors(self, witness: WitnessV2) -> WitnessV2:
+        anchor = witness.anchor
+        if isinstance(anchor, CheckpointAnchor):
+            return self._local_witness_for_checkpoint(anchor.checkpoint) or witness
+        if not isinstance(anchor, PriorWitnessLink):
+            return witness
+        rehydrated_prior = self._rehydrate_local_checkpoint_anchors(anchor.prior_witness)
+        if rehydrated_prior == anchor.prior_witness:
+            return witness
+        return replace(
+            witness,
+            anchor=PriorWitnessLink(
+                acquire_tx=anchor.acquire_tx,
+                prior_witness=rehydrated_prior,
+            ),
+        )
 
     def _selection_plan_cost(
         self,
@@ -540,6 +678,8 @@ class WalletAccountV2:
         context = self.db.get_pending_bundle(self.address, receipt.seq)
         if context is None:
             raise ValueError("no pending bundle matches receipt seq")
+        if not self.knows_canonical_header(receipt.header_lite):
+            raise ValueError("receipt header is not known canonical")
         confirmed_unit = ConfirmedBundleUnit(
             receipt=receipt,
             bundle_sidecar=context.sidecar,
@@ -640,7 +780,11 @@ class WalletAccountV2:
                 return TransferPackage(
                     target_tx=target_tx,
                     target_value=target_value,
-                    witness_v2=record.witness_v2,
+                    witness_v2=self._trim_witness_for_recipient(
+                        record.witness_v2,
+                        target_tx.recipient_addr,
+                        target_value,
+                    ),
                 )
         raise ValueError("no archived outgoing record matches target value")
 
@@ -651,13 +795,14 @@ class WalletAccountV2:
         result = validator.validate_transfer_package(package, recipient_addr=self.address)
         if not result.ok or result.accepted_witness is None:
             raise ValueError(result.error or "transfer validation failed")
+        accepted_witness = self._rehydrate_local_checkpoint_anchors(result.accepted_witness)
         for sidecar in _iter_witness_sidecars(package.witness_v2):
             self.db.save_sidecar(sidecar)
         acquisition_height = package.witness_v2.confirmed_bundle_chain[0].receipt.header_lite.height
         record = LocalValueRecord(
             record_id=uuid.uuid4().hex,
             value=package.target_value,
-            witness_v2=result.accepted_witness,
+            witness_v2=accepted_witness,
             local_status=LocalValueStatus.VERIFIED_SPENDABLE,
             acquisition_height=acquisition_height,
         )

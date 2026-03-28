@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ from .consensus import (
 )
 from .consensus.store import SQLiteConsensusStore
 from .crypto import derive_secp256k1_keypair_from_mnemonic, generate_secp256k1_keypair, keccak256
+from .encoding import canonical_encode
 from .localnet import V2ConsensusNode
 from .networking import (
     MSG_BLOCK_ANNOUNCE,
@@ -180,14 +182,48 @@ class PendingConsensusPreview:
     sender_peer_ids: dict[str, str]
 
 
-def _mvp_consensus_keypair(*, validator_id: str, chain_id: int, epoch_id: int, purpose: str) -> tuple[bytes, bytes]:
+def _mvp_cluster_secret_path(*, store_path: str, chain_id: int) -> Path:
+    store = Path(store_path)
+    return store.parent / f".ezchain_v2_mvp_cluster_secret.chain{int(chain_id)}.hex"
+
+
+def _load_or_create_mvp_cluster_secret(*, store_path: str, chain_id: int) -> bytes:
+    secret_path = _mvp_cluster_secret_path(store_path=store_path, chain_id=chain_id)
+    if secret_path.exists():
+        return bytes.fromhex(secret_path.read_text(encoding="utf-8").strip())
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret_hex = secrets.token_hex(32)
+    try:
+        with secret_path.open("x", encoding="utf-8") as handle:
+            handle.write(secret_hex)
+    except FileExistsError:
+        return bytes.fromhex(secret_path.read_text(encoding="utf-8").strip())
+    return bytes.fromhex(secret_hex)
+
+
+def _mvp_consensus_keypair(
+    *,
+    validator_id: str,
+    chain_id: int,
+    epoch_id: int,
+    purpose: str,
+    cluster_secret: bytes,
+) -> tuple[bytes, bytes]:
     return derive_secp256k1_keypair_from_mnemonic(
-        f"ezchain-v2-{purpose}-{validator_id}",
-        passphrase=f"chain:{chain_id}:epoch:{epoch_id}",
+        cluster_secret.hex(),
+        passphrase=(
+            f"chain:{chain_id}:epoch:{epoch_id}:purpose:{purpose}:validator:{validator_id}"
+        ),
     )
 
 
-def _build_mvp_validator_set(*, validator_ids: tuple[str, ...], chain_id: int, epoch_id: int) -> ValidatorSet:
+def _build_mvp_validator_set(
+    *,
+    validator_ids: tuple[str, ...],
+    chain_id: int,
+    epoch_id: int,
+    cluster_secret: bytes,
+) -> ValidatorSet:
     return ValidatorSet.from_validators(
         tuple(
             ConsensusValidator(
@@ -197,12 +233,14 @@ def _build_mvp_validator_set(*, validator_ids: tuple[str, ...], chain_id: int, e
                     chain_id=chain_id,
                     epoch_id=epoch_id,
                     purpose="consensus-vote",
+                    cluster_secret=cluster_secret,
                 )[1],
                 vrf_pubkey=_mvp_consensus_keypair(
                     validator_id=validator_id,
                     chain_id=chain_id,
                     epoch_id=epoch_id,
                     purpose="consensus-vrf",
+                    cluster_secret=cluster_secret,
                 )[1],
             )
             for validator_id in validator_ids
@@ -248,19 +286,26 @@ class V2ConsensusHost:
         self._consensus_validator_ids: tuple[str, ...] = tuple()
         self._consensus_epoch_id = 0
         self._consensus_vrf_private_key_pem: bytes | None = None
+        self._mvp_cluster_secret: bytes | None = None
         if self.consensus_mode == "mvp":
             validator_ids = tuple(consensus_validator_ids or (node_id,))
             self._consensus_validator_ids = validator_ids
+            self._mvp_cluster_secret = _load_or_create_mvp_cluster_secret(
+                store_path=store_path,
+                chain_id=chain_id,
+            )
             validator_set = _build_mvp_validator_set(
                 validator_ids=validator_ids,
                 chain_id=chain_id,
                 epoch_id=self._consensus_epoch_id,
+                cluster_secret=self._mvp_cluster_secret,
             )
             self._consensus_vrf_private_key_pem, _ = _mvp_consensus_keypair(
                 validator_id=node_id,
                 chain_id=chain_id,
                 epoch_id=self._consensus_epoch_id,
                 purpose="consensus-vrf",
+                cluster_secret=self._mvp_cluster_secret,
             )
             consensus_state_path = str(Path(store_path).with_name(Path(store_path).stem + ".mvp_consensus.sqlite3"))
             self._consensus_store = SQLiteConsensusStore(consensus_state_path)
@@ -545,13 +590,20 @@ class V2ConsensusHost:
     def _on_block_announce(self, envelope: NetworkEnvelope) -> dict[str, Any]:
         announced_height = int(envelope.payload["height"])
         announced_block = envelope.payload.get("block")
+        announced_block_hash = str(envelope.payload.get("block_hash", ""))
         if isinstance(announced_block, BlockV2):
-            announced_block_hash = str(envelope.payload.get("block_hash", ""))
             if announced_block.header.height != announced_height:
                 return {"ok": False, "error": "announced_block_height_mismatch"}
             if announced_block_hash and announced_block.block_hash.hex() != announced_block_hash:
                 return {"ok": False, "error": "announced_block_hash_mismatch"}
+            announced_block_hash = announced_block.block_hash.hex()
             self._remember_fetched_block(announced_block)
+        if (
+            announced_height == self.consensus.chain.current_height
+            and announced_block_hash
+            and announced_block_hash != self.consensus.chain.current_block_hash.hex()
+        ):
+            return {"ok": False, "error": "announced_block_hash_conflict"}
         if announced_height <= self.consensus.chain.current_height:
             return {"ok": True, "status": "already_current"}
         try:
@@ -1256,18 +1308,24 @@ class V2ConsensusHost:
         if not self.auto_announce_blocks:
             return
         payload = self._encode_block(block)
-        self.network.broadcast(
-            self.peer.node_id,
-            MSG_BLOCK_ANNOUNCE,
-            payload,
-            role="consensus",
-        )
-        self.network.broadcast(
-            self.peer.node_id,
-            MSG_BLOCK_ANNOUNCE,
-            payload,
-            role="account",
-        )
+        for role in ("consensus", "account"):
+            for peer in self.network.list_peers(role=role):
+                if peer.node_id == self.peer.node_id:
+                    continue
+                try:
+                    self.network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BLOCK_ANNOUNCE,
+                            sender_id=self.peer.node_id,
+                            recipient_id=peer.node_id,
+                            payload=payload,
+                        )
+                    )
+                except Exception:
+                    # Block announce is best-effort. A down peer must not
+                    # invalidate the successful local commit that triggered
+                    # this broadcast.
+                    continue
 
     def _finalize_committed_block(self, *, block: BlockV2, commit_qc: QC) -> ConsensusRuntimeSnapshot:
         if self._consensus_core is None:
@@ -1286,8 +1344,8 @@ class V2ConsensusHost:
         consensus_peer_ids: tuple[str, ...],
     ) -> None:
         self._finalize_committed_block(block=block, commit_qc=commit_qc)
-        self._dispatch_finalized_receipts(block, sender_peer_ids=preview.sender_peer_ids)
         self._broadcast_block_announce(block)
+        self._dispatch_finalized_receipts(block, sender_peer_ids=preview.sender_peer_ids)
         for peer_id in consensus_peer_ids[1:]:
             self.network.send(
                 NetworkEnvelope(
@@ -1345,6 +1403,7 @@ class V2AccountHost:
         self.received_transfers: list[TransferMailboxEvent] = []
         self.fetched_blocks: dict[int, BlockV2] = {}
         self.fetched_blocks_by_hash: dict[str, BlockV2] = {}
+        self._detected_chain_reset = False
         self._load_network_state()
         self.network.register(self.peer, self.handle_envelope)
 
@@ -1381,6 +1440,28 @@ class V2AccountHost:
     def _promote_consensus_peer(self, consensus_peer_id: str) -> None:
         self.set_consensus_peer_id(consensus_peer_id)
 
+    @staticmethod
+    def _is_retryable_consensus_response(response: dict[str, Any] | None) -> bool:
+        if not isinstance(response, dict) or response.get("ok") is not False:
+            return False
+        error = str(response.get("error", ""))
+        return error.startswith(
+            (
+                "handler_exception:BrokenPipeError:",
+                "handler_exception:ConnectionError:",
+                "handler_exception:ConnectionRefusedError:",
+                "handler_exception:ConnectionResetError:",
+                "handler_exception:OSError:",
+                "handler_exception:TimeoutError:",
+                "send_failed:BrokenPipeError:",
+                "send_failed:ConnectionError:",
+                "send_failed:ConnectionRefusedError:",
+                "send_failed:ConnectionResetError:",
+                "send_failed:OSError:",
+                "send_failed:TimeoutError:",
+            )
+        )
+
     def _send_to_consensus(self, msg_type: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         last_exc: Exception | None = None
         for peer_id in self.consensus_peer_ids:
@@ -1395,6 +1476,9 @@ class V2AccountHost:
                 )
             except Exception as exc:
                 last_exc = exc
+                continue
+            if self._is_retryable_consensus_response(response):
+                last_exc = ValueError(str(response.get("error", "consensus_peer_unavailable")))
                 continue
             self._promote_consensus_peer(peer_id)
             return response
@@ -1450,6 +1534,7 @@ class V2AccountHost:
             if isinstance(block, BlockV2):
                 self.fetched_blocks[block.header.height] = block
                 self.fetched_blocks_by_hash[block.block_hash.hex()] = block
+                self.wallet.observe_canonical_block(block)
         if self.last_seen_chain is None and self.fetched_blocks:
             latest_height = max(self.fetched_blocks)
             latest_block = self.fetched_blocks[latest_height]
@@ -1469,6 +1554,62 @@ class V2AccountHost:
         tmp_path = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
         tmp_path.write_text(dumps_json(payload), encoding="utf-8")
         tmp_path.replace(self.state_path)
+
+    def _replace_fetched_blocks(self, blocks: dict[int, BlockV2]) -> None:
+        self.fetched_blocks = dict(sorted(blocks.items()))
+        self.fetched_blocks_by_hash = {
+            block.block_hash.hex(): block
+            for block in self.fetched_blocks.values()
+        }
+
+    def _reconcile_fetched_blocks_with_chain_cursor(
+        self,
+        cursor: ChainSyncCursor | None,
+        *,
+        previous_cursor: ChainSyncCursor | None = None,
+    ) -> None:
+        if cursor is None or not self.fetched_blocks:
+            return
+        remote_height = int(cursor.height)
+        changed = False
+        chain_reset_detected = False
+        if remote_height <= 0:
+            self._replace_fetched_blocks({})
+            self._detected_chain_reset = True
+            self._persist_network_state()
+            return
+        if previous_cursor is not None:
+            if previous_cursor.height > remote_height:
+                chain_reset_detected = True
+            elif (
+                previous_cursor.height == remote_height
+                and previous_cursor.block_hash_hex
+                and cursor.block_hash_hex
+                and previous_cursor.block_hash_hex != cursor.block_hash_hex
+            ):
+                chain_reset_detected = True
+        trimmed = {
+            height: block
+            for height, block in self.fetched_blocks.items()
+            if height <= remote_height
+        }
+        if len(trimmed) != len(self.fetched_blocks):
+            self._replace_fetched_blocks(trimmed)
+            changed = True
+            chain_reset_detected = True
+        head_block = self.fetched_blocks.get(remote_height)
+        if (
+            head_block is not None
+            and cursor.block_hash_hex
+            and head_block.block_hash.hex() != cursor.block_hash_hex
+        ):
+            self._replace_fetched_blocks({})
+            changed = True
+            chain_reset_detected = True
+        if chain_reset_detected:
+            self._detected_chain_reset = True
+        if changed:
+            self._persist_network_state()
 
     def reset_ephemeral_state(self) -> dict[str, int]:
         cleared_pending_bundles = self.wallet.clear_pending_bundles()
@@ -1530,6 +1671,11 @@ class V2AccountHost:
             self._persist_network_state()
             return {"ok": True}
         if envelope.msg_type == MSG_BLOCK_ANNOUNCE:
+            block = envelope.payload.get("block")
+            if isinstance(block, BlockV2):
+                self.fetched_blocks[block.header.height] = block
+                self.fetched_blocks_by_hash[block.block_hash.hex()] = block
+                self.wallet.observe_canonical_block(block)
             self.last_seen_chain = ChainSyncCursor(
                 height=int(envelope.payload["height"]),
                 block_hash_hex=str(envelope.payload.get("block_hash", "")),
@@ -1598,6 +1744,10 @@ class V2AccountHost:
         start_height: int | None = None,
         end_height: int | None = None,
     ) -> V2NetworkRecovery:
+        self.refresh_chain_state()
+        if self._detected_chain_reset and self.wallet.list_pending_bundles():
+            self.wallet.clear_pending_bundles()
+        self._detected_chain_reset = False
         applied_genesis_values = self.sync_genesis_allocations()
         applied_receipts = self.sync_pending_receipts()
         fetched_blocks = self.sync_chain_blocks(start_height=start_height, end_height=end_height)
@@ -1611,7 +1761,9 @@ class V2AccountHost:
         )
 
     def refresh_chain_state(self) -> ChainSyncCursor | None:
+        previous_cursor = self.last_seen_chain
         self._send_to_consensus(MSG_CHAIN_STATE_REQ, {})
+        self._reconcile_fetched_blocks_with_chain_cursor(self.last_seen_chain, previous_cursor=previous_cursor)
         return self.last_seen_chain
 
     def fetch_block(
@@ -1660,20 +1812,70 @@ class V2AccountHost:
             return {"ok": False, "error": "missing_receipt"}
         if not self.auto_accept_receipts:
             return {"ok": True, "status": "receipt_seen_not_applied"}
+        if not self.wallet.knows_canonical_header(receipt.header_lite):
+            block = self._get_fetched_block(
+                height=receipt.header_lite.height,
+                block_hash_hex=receipt.header_lite.block_hash.hex(),
+            )
+            if block is None:
+                try:
+                    self.network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BLOCK_FETCH_REQ,
+                            sender_id=self.peer.node_id,
+                            recipient_id=envelope.sender_id,
+                            payload={
+                                "height": receipt.header_lite.height,
+                                "block_hash_hex": receipt.header_lite.block_hash.hex(),
+                            },
+                        )
+                    )
+                except Exception:
+                    pass
+                block = self._await_fetched_block(
+                    height=receipt.header_lite.height,
+                    block_hash_hex=receipt.header_lite.block_hash.hex(),
+                )
+            if block is None:
+                block = self.fetch_block(
+                    height=receipt.header_lite.height,
+                    block_hash_hex=receipt.header_lite.block_hash.hex(),
+                )
+            if (
+                block is not None
+                and block.block_hash == receipt.header_lite.block_hash
+                and block.header.state_root == receipt.header_lite.state_root
+            ):
+                self.wallet.observe_canonical_block(block)
         confirmed_unit = self.wallet.on_receipt_confirmed(receipt)
+        delivery_errors: list[str] = []
+        delivered_packages = 0
         for tx in confirmed_unit.bundle_sidecar.tx_list:
             for value in tx.value_list:
                 package = self.wallet.export_transfer_package(tx, value)
-                recipient_peer_id = self._find_peer_id_by_address(tx.recipient_addr)
-                self.network.send(
-                    NetworkEnvelope(
-                        msg_type=MSG_TRANSFER_PACKAGE_DELIVER,
-                        sender_id=self.peer.node_id,
-                        recipient_id=recipient_peer_id,
-                        payload={"package": package},
+                try:
+                    recipient_peer_id = self._find_peer_id_by_address(tx.recipient_addr)
+                    self.network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_TRANSFER_PACKAGE_DELIVER,
+                            sender_id=self.peer.node_id,
+                            recipient_id=recipient_peer_id,
+                            payload={"package": package},
+                        )
                     )
-                )
-        return {"ok": True, "seq": receipt.seq}
+                    delivered_packages += 1
+                except Exception as exc:
+                    delivery_errors.append(f"{tx.recipient_addr}:{exc}")
+                    continue
+        response: dict[str, Any] = {
+            "ok": True,
+            "seq": receipt.seq,
+            "delivered_packages": delivered_packages,
+        }
+        if delivery_errors:
+            response["status"] = "partial_transfer_delivery"
+            response["delivery_errors"] = delivery_errors
+        return response
 
     def _on_transfer_package(self, envelope: NetworkEnvelope) -> dict[str, Any]:
         package = envelope.payload["package"]
@@ -1703,6 +1905,7 @@ class V2AccountHost:
             return {"ok": False, "error": "missing_block"}
         self.fetched_blocks[block.header.height] = block
         self.fetched_blocks_by_hash[block.block_hash.hex()] = block
+        self.wallet.observe_canonical_block(block)
         if self.last_seen_chain is None or block.header.height >= self.last_seen_chain.height:
             self.last_seen_chain = ChainSyncCursor(
                 height=block.header.height,
@@ -1727,7 +1930,9 @@ class V2AccountHost:
         runtime = V2Runtime()
         for owner_addr, value in self._extract_genesis_allocations(package.witness_v2.anchor):
             runtime.register_genesis_allocation(owner_addr, value)
-        return runtime.build_validator()
+        return runtime.build_validator(
+            trusted_checkpoints=self.wallet.trusted_checkpoints_for_witness(package.witness_v2)
+        )
 
     def _extract_genesis_allocations(self, anchor) -> tuple[tuple[str, ValueRange], ...]:
         allocations: list[tuple[str, ValueRange]] = []
@@ -1752,7 +1957,7 @@ class V2AccountHost:
 
     @staticmethod
     def _tx_hash_hex(tx: OffChainTx) -> str:
-        return keccak256(repr(tx).encode("utf-8")).hex()
+        return keccak256(canonical_encode(tx)).hex()
 
 
 def open_static_network(root_dir: str, *, chain_id: int = 1):

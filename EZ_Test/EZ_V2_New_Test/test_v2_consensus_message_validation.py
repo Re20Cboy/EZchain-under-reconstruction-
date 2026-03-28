@@ -125,7 +125,8 @@ class EZV2ConsensusMessageValidationTests(unittest.TestCase):
                     tx_time=1,
                 )
                 chain.submit_bundle(first_submission)
-                _, receipts = chain.build_block(timestamp=2)
+                block, receipts = chain.build_block(timestamp=2)
+                alice.observe_canonical_block(block)
                 alice.on_receipt_confirmed(receipts[alice.address])
 
                 mismatched_submission, _, _ = alice.build_payment_bundle(

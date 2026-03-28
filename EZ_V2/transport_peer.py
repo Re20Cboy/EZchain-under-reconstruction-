@@ -142,7 +142,10 @@ class TransportPeerNetwork:
             peer = self.peer_info(recipient_id)
             send_blocking = getattr(self.transport, "send_blocking", None)
             if callable(send_blocking):
-                response = send_blocking(peer.endpoint, envelope, timeout=self.timeout_sec)
+                try:
+                    response = send_blocking(peer.endpoint, envelope, timeout=self.timeout_sec)
+                except Exception as exc:
+                    return {"ok": False, "error": f"send_failed:{type(exc).__name__}:{exc}"}
                 return self._apply_transport_response(response)
             active_remote_deliveries.append(envelope)
             return {"ok": True, "queued": "remote"}

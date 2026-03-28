@@ -494,6 +494,13 @@ Checkpoint {
 
 Checkpoint 仅是用户侧优化对象，不是主链共识状态。
 
+Checkpoint 的使用边界必须保持“纯用户侧、本地可决定”：
+
+- sender MUST 根据自己已持有的完整 witness / value history，本地决定是否可以对某个 recipient 使用 exact-range checkpoint 裁剪。
+- sender MUST NOT 为了决定 witness 截断位置，再向 recipient 额外发起一次“你有没有 checkpoint / checkpoint 在哪里”的协商或发现请求。
+- recipient MUST 使用自己的本地 checkpoint 与本地历史记录验证 `CheckpointAnchor`；checkpoint 命中是本地验证问题，不应引入新的发送前往返通信。
+- 若当前 value 不能被 sender 在本地明确裁剪到 exact-range checkpoint，则 sender MUST 回退为发送足够的完整 prior witness，而不是引入额外协议交互。
+
 ---
 
 ## 6. 全局状态树
@@ -883,6 +890,18 @@ LocalWalletDB {
 
 > 缺 Receipt 的是具体 Value，不是整个地址。
 
+### 12.5 Sidecar GC 规则
+
+Sidecar（`BundleSidecar`）按 `bundle_hash` 去重存储，是 Witness 重建的核心依赖。Sidecar GC MUST 遵守以下规则：
+
+1. **被 active checkpoint 引用的 sidecar MUST NOT 被 GC。** "active checkpoint"定义为：存在一个本地 Value 记录（`local_status != ARCHIVED`），其对应的 Checkpoint 的 `checkpoint_bundle_hash == compute_bundle_hash(sidecar)`。
+2. **被 pending bundle 引用的 sidecar MUST NOT 被 GC。** 即 `pending_bundles` 表中 `bundle_hash` 对应的 sidecar 不得删除。
+3. **被 `WITNESS_INCOMPLETE` 状态 Value 引用的 sidecar（若仍存在）MUST NOT 被 GC。**
+4. 当 Value 被花费/转出（`local_status -> ARCHIVED`）且不存在其他 Value 引用同一 sidecar 时，该 sidecar 成为 GC 候选。但其对应的 checkpoint 在所有引用该 sidecar 的 Value 都归档后才可标记为 "superseded"。
+5. **GC MUST NOT 在 `_persist_records` 的 `replace_value_records` 与 `recompute_sidecar_ref_counts` 之间运行。** 工程实现应确保这两步在同一个原子事务或互斥锁内完成。
+
+违反以上任一规则的 GC 行为都可能导致 Value 变成"死值"：owner 无法重建全量 Witness，后续无法转给不信任同一 Checkpoint 的第三方。
+
 ---
 
 ## 13. 用户提交流程
@@ -1064,6 +1083,90 @@ accepted_witness = WitnessV2 {
 这样做的目的，是把“上一跳 sender 的已确认历史”封装进 `prior_witness`，而把 recipient 自己未来的已确认 Bundle 历史单独积累在新的 `confirmed_bundle_chain` 中。
 
 若 recipient 未来再次花费该 Value，则它提交的 TransferPackage 应基于这个 `accepted_witness` 演化后的最新版本。
+
+### 15.9 Witness Completion 协议（旧 owner 重新接收场景）
+
+#### 15.9.1 问题背景
+
+当 Value 在不同 owner 之间流转时，可能出现如下场景：
+
+1. Alice 将 Value V 转 Bob，附全量 Witness
+2. Bob 验证接受 V，创建 Checkpoint C
+3. Bob 将 V 转 Charlie，Witness 按 C 裁剪后发送
+4. Bob 本地 pre-C 的 sidecar refcount 归零并被 GC
+5. Charlie 将 V 转回 Bob，检测到 Bob 是旧 owner 且有 C，仅发送 C 之后的 witness 切片
+6. Bob 接受 V 后欲转 Dave，但 Dave 不信任 C（C 是 Bob 自己创建的 checkpoint），需要全量 Witness 到 GenesisAnchor
+7. Bob 本地 sidecar 已被删除，无法重建全量 Witness → V 变成死值
+
+根本原因：checkpoint 是 owner 本地的优化对象，不是全局可信的。当 Value 离开再回来时，旧 owner 可能已经 GC 了重新构建全量 Witness 所需的 sidecar。
+
+#### 15.9.2 协议规则
+
+当 sender 检测到 recipient 是 Value 的旧 owner 且拥有匹配的 Checkpoint，并据此发送裁剪后的 TransferPackage 时，协议 MUST 遵守以下规则：
+
+**规则 1：recipient 有权索取全量 Witness**
+
+recipient 接收裁剪后的 TransferPackage 后，MUST 检查本地 sidecar 存储是否足以在将来重建全量 Witness（即追溯到 GenesisAnchor 或全局可信 Checkpoint 的完整 sidecar 集）。若不足，recipient MUST 向 sender 发起 Witness Completion Request。
+
+```text
+WitnessCompletionReq {
+  target_value_begin
+  target_value_end
+  target_tx_hash          // 标识哪笔交易触发了此请求
+  from_checkpoint_height  // 从哪个高度开始需要补充（recipient 本地已有的 checkpoint 高度，0 表示需要全量）
+}
+```
+
+**规则 2：sender 有义务提供全量 Witness**
+
+sender 收到 WitnessCompletionReq 后，MUST 回复从 `from_checkpoint_height` 对应位置到 GenesisAnchor（或 sender 自身的可信 Checkpoint）的完整 witness 切片，包含全部 sidecar。
+
+```text
+WitnessCompletionResp {
+  target_value_begin
+  target_value_end
+  target_tx_hash
+  completion_witness   // 从 from_checkpoint_height 位置开始的完整 prior witness（未裁剪）
+  sidecar_batch         // completion_witness 中引用的所有 BundleSidecar
+}
+```
+
+sender MUST 在相关 Value 仍在本钱包中（包括已归档但尚未 GC sidecar 的 Value）期间，保留响应此类请求的能力。
+
+**规则 3：recipient MUST 恢复完整 sidecar 后才能花费**
+
+recipient 收到 WitnessCompletionResp 后，MUST：
+
+1. 将 `sidecar_batch` 中的所有 BundleSidecar 写入本地 sidecar 存储
+2. 验证 `completion_witness` 的正确性（递归 SMT proof + prev_ref 连续性）
+3. 将裁剪后的 accepted_witness 替换为包含完整 prior witness 的版本
+4. 此后 Value 才可被标记为 `VERIFIED_SPENDABLE`
+
+若 sender 不可达或拒绝提供，recipient MUST 将该 Value 标记为 `WITNESS_INCOMPLETE`（新增状态），该 Value 不可花费但保留在钱包中等待将来恢复。
+
+**规则 4：Sidecar GC MUST NOT 删除被 active checkpoint 引用的 sidecar**
+
+此规则防止 recipient 在获得全量 Witness 之前再次丢失 sidecar。详见 §12.3 中更新的 GC 约束。
+
+#### 15.9.3 状态机扩展
+
+Value 状态枚举新增：
+
+- `WITNESS_INCOMPLETE`：Value 已接收但 sidecar 不完整，无法重建全量 Witness，不可花费
+
+状态转换：
+
+```text
+VERIFIED_SPENDABLE → (转出) → ARCHIVED
+VERIFIED_SPENDABLE → (sidecar GC 后被检测) → WITNESS_INCOMPLETE
+WITNESS_INCOMPLETE → (Witness Completion 成功) → VERIFIED_SPENDABLE
+```
+
+#### 15.9.4 安全分析
+
+- **sender 不能伪造 completion_witness**：recipient 会验证 SMT proof 和 prev_ref 链，伪造的证据无法通过
+- **sender 拒绝提供不影响已接收 Value 的安全性**：recipient 的 accepted_witness 中 sender 的证明段仍然有效（SMT proof 正确、prev_ref 连续），只是 anchor 之前的 witness 不完整。recipient 只是无法再将此 Value 转给不信任同一 checkpoint 的第三方
+- **DoS 防护**：WitnessCompletionReq/Resp 消息 SHOULD 设置大小上限和超时；sender 对同一 recipient 的同一 Value 仅需响应一次
 
 ---
 
@@ -1433,6 +1536,42 @@ V2 必须为递归 Witness 提供统一的起点语义。
 - recipient 接受交易后，必须执行一次 Witness 重基
 - 重基后的本地 Witness 以 recipient 自己为 `current_owner_addr`
 - 上一跳 sender 的完整证明作为 `PriorWitnessLink.prior_witness` 保留下来
+
+### 问题 12：Sidecar GC 与 Witness 完整性冲突导致 re-received Value 变成死值
+
+#### 问题描述
+
+Witness 完整性依赖于本地 sidecar 存储。当 recipient 曾经持有某 Value 并为其创建了 Checkpoint，后续该 Value 经过多手转移后再次回到该 recipient 时，存在以下致命场景：
+
+1. Alice 将 Value V 转 Bob，附带全量 Witness W
+2. Bob 验证接受 V，创建 Checkpoint C（绑定 V 的精确区间、Bob 地址、当时的 block_hash 和 bundle_hash）
+3. Bob 将 V 转 Charlie，发送时 Witness 按 C 裁剪（只发 C 之后的 witness 切片）
+4. Bob 本地 pre-C 的 sidecar 因 ref_count 归零被 GC 删除
+5. Charlie 将 V 转回 Bob，检测到 Bob 是 V 的旧 owner 且有 Checkpoint C，仅发送 C 之后的 witness 切片
+6. Bob 接受 V，后续欲将 V 转 Dave
+7. Dave 不信任 C（C 是 Bob 自己创建的 Checkpoint，Dave 的 `trusted_checkpoints` 中没有 C），要求 Witness 回溯到 `GenesisAnchor`
+8. Bob 本地 pre-C 的 sidecar 已被删除，无法重建全量 Witness
+9. **V 变成死值**：Bob 持有 V 但无法为其构造合法的 TransferPackage
+
+这个问题的本质是：**Checkpoint 是本地优化对象，不是全局信任锚**。Checkpoint 的创建者信任它，但第三方不信任。当 Value 流转到第三方后再回来时，第三方裁剪所依据的 Checkpoint 对新的下一跳 recipient 无效。
+
+#### 解决
+
+本问题需要协议层和工程层双重修复：
+
+**协议层（新增 §15.9 Witness 完整性恢复协议）**：
+
+1. 当 recipient 收到被裁剪的 TransferPackage 时，若本地缺少重建全量 Witness 所需的 sidecar，recipient 有权向 sender 发起 `WitnessCompletionReq` 请求全量（未裁剪的）Witness
+2. sender 收到 `WitnessCompletionReq` 后，MUST 返回该 Value 的完整 TransferPackage（anchor 回溯到 `GenesisAnchor` 或 sender 本地可信的最早 Checkpoint）
+3. recipient 收到全量 Witness 后，MUST 将所有 sidecar 写入本地存储，确保后续再花费时能重建全量 Witness
+4. sender MUST 在相关 Value 仍在自己钱包中（包括已归档但尚未 GC sidecar 的 Value）期间，保留提供全量 Witness 的能力
+
+**工程层（Sidecar GC 规则强化，更新 §12.3）**：
+
+1. 被 active checkpoint 引用的 sidecar MUST NOT 被 GC
+2. "active checkpoint"定义为：对应的 Value 仍在本钱包中（`local_status != ARCHIVED`），且该 checkpoint 是此 Value 的最新 checkpoint
+3. 当 Value 被花费/转出（`local_status -> ARCHIVED`），其 checkpoint 变为 "superseded"，引用的 sidecar 允许 GC
+4. 但若该 Value 后来被 re-received（同一地址再次成为 owner），钱包 MUST 通过 Witness Completion 恢复完整 sidecar 存储后再标记为 `VERIFIED_SPENDABLE`
 
 ---
 

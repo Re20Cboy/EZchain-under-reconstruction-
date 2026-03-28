@@ -70,6 +70,7 @@ If code and design disagree, say whether code is ahead, behind, or temporarily d
 - Do not use `pickle` in V2 protocol, network, or signing paths.
 - Do not add V2 state fields into V1 core objects.
 - Do not overstate project status. Keep default dev path, default validation path, and default formal delivery path separate.
+- Do not add extra sender/recipient/network/storage/compute cost just to make a path easier to implement or test. If sender can derive the right result locally from witness/history/state, do not add a new round-trip, cache, or protocol message.
 
 ## Ownership
 
@@ -91,6 +92,7 @@ Touch V1 only for explicit legacy tasks, compatibility fixes, or clearly scoped 
 - Prefer extending existing modules over adding new top-level structure.
 - Say the tradeoff plainly when ownership or transition state is unclear.
 - For V2 consensus and multi-node scripts, do not treat "one submit immediately triggers one round" as proof of mempool or batching correctness; verify snapshot-based multi-bundle behavior explicitly.
+- Be especially careful with “helpful” optimization plumbing. EZchain-V2 is deliberately cost-sensitive and subtle; before adding any new message, persistence field, or background sync, first prove from the design docs that the extra cost is required rather than a local implementation shortcut.
 
 ## Validation
 

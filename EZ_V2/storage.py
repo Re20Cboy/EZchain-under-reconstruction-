@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Iterable
 
 from .chain import compute_bundle_hash, confirmed_ref
 from .serde import dumps_json, loads_json
-from .types import Checkpoint, ConfirmedBundleUnit, PendingBundleContext, Receipt
+from .types import Checkpoint, ConfirmedBundleUnit, HeaderLite, PendingBundleContext, Receipt
 from .values import LocalValueRecord
 
 
@@ -30,6 +31,8 @@ class LocalWalletDB:
         self.db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+        self._before_sidecar_refcount_recompute_hook = None
         self._init_schema()
 
     def close(self) -> None:
@@ -96,33 +99,55 @@ class LocalWalletDB:
                     accepted_at INTEGER NOT NULL,
                     PRIMARY KEY (owner_addr, package_hash)
                 );
+
+                CREATE TABLE IF NOT EXISTS canonical_headers_v2 (
+                    owner_addr TEXT NOT NULL,
+                    height INTEGER NOT NULL,
+                    block_hash BLOB NOT NULL,
+                    state_root BLOB NOT NULL,
+                    header_json TEXT NOT NULL,
+                    PRIMARY KEY (owner_addr, height)
+                );
                 """
             )
 
     def replace_value_records(self, owner_addr: str, records: Iterable[LocalValueRecord]) -> None:
         records = list(records)
-        with self._conn:
-            self._conn.execute("DELETE FROM value_records WHERE owner_addr = ?", (owner_addr,))
-            self._conn.executemany(
-                """
-                INSERT INTO value_records (
-                    owner_addr, record_id, value_begin, value_end,
-                    local_status, acquisition_height, record_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        owner_addr,
-                        record.record_id,
-                        record.value.begin,
-                        record.value.end,
-                        record.local_status.value,
-                        record.acquisition_height,
-                        dumps_json(record),
-                    )
-                    for record in records
-                ],
-            )
+        with self._lock:
+            with self._conn:
+                self._replace_value_records_locked(owner_addr, records)
+
+    def replace_value_records_and_recompute_sidecar_refs(self, owner_addr: str, records: Iterable[LocalValueRecord]) -> None:
+        records = list(records)
+        with self._lock:
+            with self._conn:
+                self._replace_value_records_locked(owner_addr, records)
+                if callable(self._before_sidecar_refcount_recompute_hook):
+                    self._before_sidecar_refcount_recompute_hook()
+                self._recompute_sidecar_ref_counts_locked()
+
+    def _replace_value_records_locked(self, owner_addr: str, records: list[LocalValueRecord]) -> None:
+        self._conn.execute("DELETE FROM value_records WHERE owner_addr = ?", (owner_addr,))
+        self._conn.executemany(
+            """
+            INSERT INTO value_records (
+                owner_addr, record_id, value_begin, value_end,
+                local_status, acquisition_height, record_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    owner_addr,
+                    record.record_id,
+                    record.value.begin,
+                    record.value.end,
+                    record.local_status.value,
+                    record.acquisition_height,
+                    dumps_json(record),
+                )
+                for record in records
+            ],
+        )
 
     def list_value_records(self, owner_addr: str) -> list[LocalValueRecord]:
         rows = self._conn.execute(
@@ -312,6 +337,42 @@ class LocalWalletDB:
                 (owner_addr, sqlite3.Binary(package_hash), accepted_at),
             )
 
+    def save_canonical_header(self, owner_addr: str, header: HeaderLite) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO canonical_headers_v2 (owner_addr, height, block_hash, state_root, header_json)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(owner_addr, height) DO UPDATE SET
+                    block_hash = excluded.block_hash,
+                    state_root = excluded.state_root,
+                    header_json = excluded.header_json
+                """,
+                (
+                    owner_addr,
+                    header.height,
+                    sqlite3.Binary(header.block_hash),
+                    sqlite3.Binary(header.state_root),
+                    dumps_json(header),
+                ),
+            )
+
+    def has_canonical_header(self, owner_addr: str, header: HeaderLite) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1
+            FROM canonical_headers_v2
+            WHERE owner_addr = ? AND height = ? AND block_hash = ? AND state_root = ?
+            """,
+            (
+                owner_addr,
+                header.height,
+                sqlite3.Binary(header.block_hash),
+                sqlite3.Binary(header.state_root),
+            ),
+        ).fetchone()
+        return row is not None
+
     def delete_pending_bundle(self, sender_addr: str, seq: int) -> None:
         with self._conn:
             self._conn.execute(
@@ -361,6 +422,11 @@ class LocalWalletDB:
         return [loads_json(row["checkpoint_json"]) for row in rows]
 
     def recompute_sidecar_ref_counts(self) -> None:
+        with self._lock:
+            with self._conn:
+                self._recompute_sidecar_ref_counts_locked()
+
+    def _recompute_sidecar_ref_counts_locked(self) -> None:
         counts: dict[bytes, int] = {}
         for row in self._conn.execute("SELECT record_json FROM value_records"):
             record = loads_json(row["record_json"])
@@ -369,25 +435,25 @@ class LocalWalletDB:
         for row in self._conn.execute("SELECT context_json FROM pending_bundles"):
             context = loads_json(row["context_json"])
             counts[context.bundle_hash] = counts.get(context.bundle_hash, 0) + 1
-        with self._conn:
-            self._conn.execute("UPDATE bundle_sidecars SET ref_count = 0")
-            for bundle_hash, ref_count in counts.items():
-                self._conn.execute(
-                    """
-                    INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, ref_count)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(bundle_hash) DO UPDATE SET ref_count = excluded.ref_count
-                    """,
-                    (
-                        sqlite3.Binary(bundle_hash),
-                        dumps_json(self.get_sidecar(bundle_hash)),
-                        ref_count,
-                    ),
-                )
+        self._conn.execute("UPDATE bundle_sidecars SET ref_count = 0")
+        for bundle_hash, ref_count in counts.items():
+            self._conn.execute(
+                """
+                INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, ref_count)
+                VALUES (?, ?, ?)
+                ON CONFLICT(bundle_hash) DO UPDATE SET ref_count = excluded.ref_count
+                """,
+                (
+                    sqlite3.Binary(bundle_hash),
+                    dumps_json(self.get_sidecar(bundle_hash)),
+                    ref_count,
+                ),
+            )
 
     def gc_unused_sidecars(self) -> int:
-        with self._conn:
-            cursor = self._conn.execute("DELETE FROM bundle_sidecars WHERE ref_count <= 0")
+        with self._lock:
+            with self._conn:
+                cursor = self._conn.execute("DELETE FROM bundle_sidecars WHERE ref_count <= 0")
         return cursor.rowcount
 
 

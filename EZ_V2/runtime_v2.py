@@ -74,6 +74,7 @@ class V2Runtime:
             else bool(auto_confirm_receipts)
         )
         self._ingest_wallet_genesis_allocations(wallet)
+        self._share_canonical_chain_headers(wallet)
 
     def unregister_wallet(self, sender_addr: str) -> None:
         self._wallets.pop(sender_addr, None)
@@ -118,6 +119,7 @@ class V2Runtime:
             consensus_extra=consensus_extra,
             limit=limit,
         )
+        self._share_block_with_wallets(block)
         deliveries = self.deliver_receipts(receipts)
         return ProduceBlockResult(
             block=block,
@@ -127,6 +129,7 @@ class V2Runtime:
 
     def apply_block(self, block: BlockV2) -> ApplyBlockResult:
         receipts = self.chain.apply_block(block)
+        self._share_block_with_wallets(block)
         deliveries = self.deliver_receipts(receipts)
         return ApplyBlockResult(
             block=block,
@@ -204,6 +207,14 @@ class V2Runtime:
             sender_addr: self._deliver_receipt(sender_addr, receipt)
             for sender_addr, receipt in receipts.items()
         }
+
+    def _share_canonical_chain_headers(self, wallet: WalletAccountV2) -> None:
+        for block in self.chain.blocks:
+            wallet.observe_canonical_block(block)
+
+    def _share_block_with_wallets(self, block: BlockV2) -> None:
+        for wallet in self._wallets.values():
+            wallet.observe_canonical_block(block)
 
     def _ingest_wallet_genesis_allocations(self, wallet: WalletAccountV2) -> None:
         for record in wallet.list_records():

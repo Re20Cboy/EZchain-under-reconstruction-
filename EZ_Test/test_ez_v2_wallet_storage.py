@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from EZ_V2.chain import ChainStateV2, compute_bundle_hash, confirmed_ref
+from EZ_V2.chain import (
+    ChainStateV2,
+    compute_addr_key,
+    compute_bundle_hash,
+    confirmed_ref,
+    hash_account_leaf,
+    reconstructed_leaf,
+)
 from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
-from EZ_V2.types import OffChainTx
+from EZ_V2.smt import SparseMerkleTree
+from EZ_V2.types import ConfirmedBundleUnit, HeaderLite, OffChainTx, Receipt
 from EZ_V2.values import LocalValueStatus, ValueRange
 from EZ_V2.validator import V2TransferValidator, ValidationContext
 from EZ_V2.wallet import WalletAccountV2
@@ -96,7 +105,8 @@ class EZV2WalletStorageTests(unittest.TestCase):
                 anti_spam_nonce=1,
             )
             chain.submit_bundle(submission)
-            _, receipts = chain.build_block(timestamp=1)
+            block, receipts = chain.build_block(timestamp=1)
+            wallet.observe_canonical_block(block)
             confirmed_unit = wallet.on_receipt_confirmed(receipts[alice_addr])
 
             archived = next(record for record in wallet.list_records() if record.value == ValueRange(300, 349))
@@ -165,6 +175,60 @@ class EZV2WalletStorageTests(unittest.TestCase):
             self.assertIsNone(wallet.db.get_sidecar(compute_bundle_hash(submission.sidecar)))
             wallet.close()
 
+    def test_persist_records_keeps_sidecar_alive_when_gc_races_before_refcount_recompute(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "wallet.sqlite3")
+            chain = ChainStateV2(chain_id=52)
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            _, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
+
+            wallet = WalletAccountV2(address=alice_addr, genesis_block_hash=b"\x79" * 32, db_path=db_path)
+            wallet.add_genesis_value(ValueRange(0, 99))
+
+            tx = OffChainTx(
+                sender_addr=alice_addr,
+                recipient_addr=bob_addr,
+                value_list=(ValueRange(0, 49),),
+                tx_local_index=0,
+                tx_time=1,
+            )
+            submission, _ = wallet.build_bundle(
+                tx_list=(tx,),
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=52,
+                seq=1,
+                expiry_height=10,
+                fee=1,
+                anti_spam_nonce=10,
+            )
+            chain.submit_bundle(submission)
+            block, receipts = chain.build_block(timestamp=1)
+            wallet.observe_canonical_block(block)
+            wallet.on_receipt_confirmed(receipts[alice_addr])
+            bundle_hash = compute_bundle_hash(submission.sidecar)
+
+            gc_thread_done = threading.Event()
+
+            def _race_gc() -> None:
+                worker = threading.Thread(
+                    target=lambda: (wallet.gc_unused_sidecars(), gc_thread_done.set()),
+                    daemon=True,
+                )
+                worker.start()
+
+            wallet.db._before_sidecar_refcount_recompute_hook = _race_gc
+            try:
+                wallet._persist_records(list(wallet.list_records()))
+            finally:
+                wallet.db._before_sidecar_refcount_recompute_hook = None
+
+            self.assertTrue(gc_thread_done.wait(timeout=1.0))
+            self.assertIsNotNone(wallet.db.get_sidecar(bundle_hash))
+            wallet.close()
+
     def test_receipt_confirmation_rejects_broken_prev_ref_chain(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = str(Path(tmpdir) / "wallet.sqlite3")
@@ -195,7 +259,8 @@ class EZV2WalletStorageTests(unittest.TestCase):
                 anti_spam_nonce=1,
             )
             chain.submit_bundle(submission1)
-            _, receipts1 = chain.build_block(timestamp=1)
+            block1, receipts1 = chain.build_block(timestamp=1)
+            wallet.observe_canonical_block(block1)
             wallet.on_receipt_confirmed(receipts1[alice_addr])
 
             tx2 = OffChainTx(
@@ -216,7 +281,8 @@ class EZV2WalletStorageTests(unittest.TestCase):
                 anti_spam_nonce=2,
             )
             chain.submit_bundle(submission2)
-            _, receipts2 = chain.build_block(timestamp=2)
+            block2, receipts2 = chain.build_block(timestamp=2)
+            wallet.observe_canonical_block(block2)
             forged_receipt = replace(receipts2[alice_addr], prev_ref=None)
 
             with self.assertRaisesRegex(ValueError, "receipt prev_ref mismatch"):
@@ -298,6 +364,62 @@ class EZV2WalletStorageTests(unittest.TestCase):
             )
 
             self.assertTrue(wallet.has_genesis_value(original))
+            wallet.close()
+
+    def test_receipt_confirmation_rejects_unknown_canonical_header_even_with_valid_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = str(Path(tmpdir) / "wallet.sqlite3")
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            _, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
+
+            wallet = WalletAccountV2(address=alice_addr, genesis_block_hash=b"\x91" * 32, db_path=db_path)
+            wallet.add_genesis_value(ValueRange(0, 99))
+
+            tx = OffChainTx(
+                sender_addr=alice_addr,
+                recipient_addr=bob_addr,
+                value_list=(ValueRange(0, 49),),
+                tx_local_index=0,
+                tx_time=1,
+            )
+            submission, _ = wallet.build_bundle(
+                tx_list=(tx,),
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=91,
+                seq=1,
+                expiry_height=10,
+                fee=1,
+                anti_spam_nonce=13,
+            )
+
+            provisional_receipt = Receipt(
+                header_lite=HeaderLite(height=7, block_hash=b"\x33" * 32, state_root=b"\x00" * 32),
+                seq=1,
+                prev_ref=None,
+                account_state_proof=SparseMerkleTree().prove(compute_addr_key(alice_addr)),
+            )
+            provisional_unit = ConfirmedBundleUnit(
+                receipt=provisional_receipt,
+                bundle_sidecar=submission.sidecar,
+            )
+            fake_tree = SparseMerkleTree()
+            fake_tree.set(compute_addr_key(alice_addr), hash_account_leaf(reconstructed_leaf(provisional_unit)))
+            forged_receipt = replace(
+                provisional_receipt,
+                header_lite=HeaderLite(
+                    height=7,
+                    block_hash=b"\x33" * 32,
+                    state_root=fake_tree.root(),
+                ),
+                account_state_proof=fake_tree.prove(compute_addr_key(alice_addr)),
+            )
+
+            with self.assertRaisesRegex(ValueError, "receipt header is not known canonical"):
+                wallet.on_receipt_confirmed(forged_receipt)
+
             wallet.close()
 
 
