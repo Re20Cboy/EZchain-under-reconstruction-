@@ -21,6 +21,7 @@ from dataclasses import replace
 
 from EZ_V2.chain import ChainStateV2
 from EZ_V2.network_host import StaticPeerNetwork, V2AccountHost, V2ConsensusHost
+from EZ_V2.networking import MSG_BUNDLE_SUBMIT, NetworkEnvelope
 from EZ_V2.values import ValueRange
 from EZ_V2.wallet import WalletAccountV2
 
@@ -84,6 +85,203 @@ class EZV2ConsensusMessageValidationTests(unittest.TestCase):
                     chain.submit_bundle(tampered)
             finally:
                 wallet.close()
+
+    def test_high_s_bundle_signature_is_rejected_by_chain_and_network(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            from EZ_V2.chain import sign_bundle_envelope
+            from EZ_V2.crypto import (
+                SECP256K1_ORDER,
+                address_from_public_key_pem,
+                encode_ecdsa_der,
+                generate_secp256k1_keypair,
+                parse_ecdsa_der,
+            )
+            from EZ_V2.networking import MSG_BUNDLE_SUBMIT, NetworkEnvelope
+            from EZ_V2.types import BundleSubmission
+
+            private_key_pem, public_key_pem = generate_secp256k1_keypair()
+            sender_addr = address_from_public_key_pem(public_key_pem)
+            wallet = WalletAccountV2(
+                address=sender_addr,
+                genesis_block_hash=b"\xaa" * 32,
+                db_path=f"{td}/alice.sqlite3",
+            )
+            network = StaticPeerNetwork()
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td}/consensus.sqlite3",
+                network=network,
+                chain_id=10003,
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice-host.sqlite3",
+                chain_id=10003,
+                network=network,
+                consensus_peer_id="consensus-0",
+                address=sender_addr,
+                private_key_pem=private_key_pem,
+                public_key_pem=public_key_pem,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=10003,
+                network=network,
+                consensus_peer_id="consensus-0",
+            )
+            try:
+                minted = ValueRange(0, 199)
+                wallet.add_genesis_value(minted)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                submission, context, _ = alice.wallet.build_payment_bundle(
+                    recipient_addr=bob.address,
+                    amount=50,
+                    private_key_pem=private_key_pem,
+                    public_key_pem=public_key_pem,
+                    chain_id=10003,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=70021,
+                    tx_time=1,
+                )
+                signed = sign_bundle_envelope(submission.envelope, private_key_pem)
+                r, low_s = parse_ecdsa_der(signed.sig)
+                high_s_sig = encode_ecdsa_der(r, SECP256K1_ORDER - low_s)
+                high_s_submission = BundleSubmission(
+                    envelope=replace(signed, sig=high_s_sig),
+                    sidecar=submission.sidecar,
+                    sender_public_key_pem=public_key_pem,
+                )
+
+                chain = ChainStateV2(chain_id=10003)
+                with self.assertRaisesRegex(ValueError, "invalid bundle signature"):
+                    chain.submit_bundle(high_s_submission)
+
+                with self.assertRaisesRegex(ValueError, "invalid bundle signature"):
+                    network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BUNDLE_SUBMIT,
+                            sender_id=alice.peer.node_id,
+                            recipient_id=consensus.peer.node_id,
+                            payload={"submission": high_s_submission},
+                        )
+                    )
+                alice.wallet.rollback_pending_bundle(context.seq)
+            finally:
+                bob.close()
+                alice.close()
+                consensus.close()
+                wallet.close()
+
+    def test_repeated_malformed_bundle_attempts_do_not_block_later_valid_submit(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
+
+            network = StaticPeerNetwork()
+            consensus = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td}/consensus.sqlite3",
+                network=network,
+                chain_id=10000,
+            )
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=10000,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+                address=alice_addr,
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=10000,
+                network=network,
+                consensus_peer_id=consensus.peer.node_id,
+            )
+            builder = WalletAccountV2(
+                address=alice_addr,
+                genesis_block_hash=b"\x00" * 32,
+                db_path=f"{td}/alice-builder.sqlite3",
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+                builder.add_genesis_value(minted)
+
+                submission, _, _ = builder.build_payment_bundle(
+                    recipient_addr=bob.address,
+                    amount=50,
+                    private_key_pem=alice_priv,
+                    public_key_pem=alice_pub,
+                    chain_id=10000,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=70011,
+                    tx_time=1,
+                )
+                wrong_chain = replace(
+                    submission,
+                    envelope=replace(submission.envelope, chain_id=10001),
+                )
+                bad_signature = replace(
+                    submission,
+                    envelope=replace(submission.envelope, anti_spam_nonce=submission.envelope.anti_spam_nonce + 1),
+                )
+
+                with self.assertRaisesRegex(ValueError, "chain_id mismatch"):
+                    network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BUNDLE_SUBMIT,
+                            sender_id=alice.peer.node_id,
+                            recipient_id=consensus.peer.node_id,
+                            payload={"submission": wrong_chain},
+                        )
+                    )
+                with self.assertRaisesRegex(ValueError, "invalid bundle signature"):
+                    network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BUNDLE_SUBMIT,
+                            sender_id=alice.peer.node_id,
+                            recipient_id=consensus.peer.node_id,
+                            payload={"submission": bad_signature},
+                        )
+                    )
+                malformed = network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_BUNDLE_SUBMIT,
+                        sender_id=alice.peer.node_id,
+                        recipient_id=consensus.peer.node_id,
+                        payload={"submission": "garbage"},
+                    )
+                )
+                self.assertEqual(malformed, {"ok": False, "error": "missing_submission"})
+                self.assertEqual(consensus.consensus.chain.bundle_pool.snapshot(), [])
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 0)
+
+                first = alice.submit_payment("bob", amount=50, tx_time=2, anti_spam_nonce=70012)
+                second = alice.submit_payment("bob", amount=20, tx_time=3, anti_spam_nonce=70013)
+                self.assertEqual(first.receipt_height, 1)
+                self.assertEqual(second.receipt_height, 2)
+            finally:
+                builder.close()
+                bob.close()
+                alice.close()
+                consensus.close()
 
     def test_seq_mismatch_is_rejected(self) -> None:
         """

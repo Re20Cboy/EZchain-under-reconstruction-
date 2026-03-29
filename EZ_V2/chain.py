@@ -230,6 +230,12 @@ class BundlePool:
                 raise ValueError("sender already has a different pending bundle")
             if existing.envelope.bundle_hash != submission.envelope.bundle_hash:
                 raise ValueError("sender already has a different pending bundle")
+            if (
+                existing.envelope == submission.envelope
+                and existing.sidecar == submission.sidecar
+                and existing.sender_public_key_pem == submission.sender_public_key_pem
+            ):
+                return sender_addr
             if submission.envelope.fee <= existing.envelope.fee:
                 raise ValueError("replacement bundle fee too low")
         self._pending_by_sender[sender_addr] = submission

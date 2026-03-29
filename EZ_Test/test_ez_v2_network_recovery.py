@@ -8,7 +8,7 @@ import unittest
 
 from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
 from EZ_V2.network_host import StaticPeerNetwork, V2AccountHost, V2ConsensusHost, open_static_network
-from EZ_V2.networking import ChainSyncCursor, MSG_BLOCK_ANNOUNCE, NetworkEnvelope
+from EZ_V2.networking import ChainSyncCursor, MSG_BLOCK_ANNOUNCE, MSG_BUNDLE_SUBMIT, NetworkEnvelope
 from EZ_V2.values import ValueRange
 
 
@@ -333,6 +333,134 @@ class EZV2NetworkRecoveryTests(unittest.TestCase):
                 new_bob.close()
                 new_alice.close()
                 new_consensus.close()
+
+    def test_recovery_fetches_multiple_missing_blocks_and_clears_stale_pending_after_missed_announces(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            consensus0 = V2ConsensusHost(
+                node_id="consensus-0",
+                endpoint="mem://consensus-0",
+                store_path=f"{td}/consensus0.sqlite3",
+                network=network,
+                chain_id=931,
+            )
+            consensus1 = V2ConsensusHost(
+                node_id="consensus-1",
+                endpoint="mem://consensus-1",
+                store_path=f"{td}/consensus1.sqlite3",
+                network=network,
+                chain_id=931,
+            )
+            alice_private, alice_public = generate_secp256k1_keypair()
+            bob_private, bob_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            bob_addr = address_from_public_key_pem(bob_public)
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=931,
+                network=network,
+                consensus_peer_id="consensus-0",
+                consensus_peer_ids=("consensus-0", "consensus-1"),
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=931,
+                network=network,
+                consensus_peer_id="consensus-0",
+                consensus_peer_ids=("consensus-0", "consensus-1"),
+                address=bob_addr,
+                private_key_pem=bob_private,
+                public_key_pem=bob_public,
+            )
+            original_send = network.send
+
+            def drop_consensus1_announces(envelope: NetworkEnvelope):
+                if (
+                    envelope.msg_type == MSG_BLOCK_ANNOUNCE
+                    and envelope.sender_id == "consensus-0"
+                    and envelope.recipient_id == "consensus-1"
+                ):
+                    raise ValueError("simulated_missing_block_announce")
+                return original_send(envelope)
+
+            network.send = drop_consensus1_announces
+            try:
+                allocations = (
+                    (alice.address, ValueRange(0, 199)),
+                    (bob.address, ValueRange(200, 399)),
+                )
+                for consensus in (consensus0, consensus1):
+                    for owner_addr, value in allocations:
+                        consensus.register_genesis_value(owner_addr, value)
+                alice.register_genesis_value(allocations[0][1])
+                bob.register_genesis_value(allocations[1][1])
+
+                original_submission, _, _ = alice.wallet.build_payment_bundle(
+                    recipient_addr=bob.address,
+                    amount=50,
+                    private_key_pem=alice.private_key_pem,
+                    public_key_pem=alice.public_key_pem,
+                    chain_id=931,
+                    expiry_height=100,
+                    fee=0,
+                    anti_spam_nonce=81,
+                    tx_time=1,
+                )
+                consensus1.consensus.submit_bundle(original_submission)
+                self.assertEqual(len(consensus1.consensus.chain.bundle_pool.snapshot()), 1)
+
+                first_response = network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_BUNDLE_SUBMIT,
+                        sender_id="alice",
+                        recipient_id="consensus-0",
+                        payload={"submission": original_submission},
+                    )
+                )
+                self.assertIsInstance(first_response, dict)
+                assert isinstance(first_response, dict)
+                self.assertTrue(first_response.get("ok", False))
+                self.assertEqual(first_response.get("status"), "accepted")
+
+                second_payment = bob.submit_payment("alice", amount=70, tx_time=2, anti_spam_nonce=82)
+                self.assertEqual(second_payment.receipt_height, 2)
+                self.assertEqual(consensus0.consensus.chain.current_height, 2)
+                self.assertEqual(consensus1.consensus.chain.current_height, 0)
+                self.assertEqual(len(consensus1.consensus.chain.bundle_pool.snapshot()), 1)
+
+                recovered = consensus1.recover_chain_from_consensus_peers()
+                self.assertEqual(recovered, (1, 2))
+                self.assertEqual(consensus1.consensus.chain.current_height, 2)
+                self.assertEqual(
+                    consensus1.consensus.chain.current_block_hash,
+                    consensus0.consensus.chain.current_block_hash,
+                )
+                self.assertEqual(consensus1.consensus.chain.bundle_pool.snapshot(), [])
+                self.assertEqual(consensus1.consensus.get_receipt(alice.address, 1).status, "ok")
+                self.assertEqual(consensus1.consensus.get_receipt(bob.address, 1).status, "ok")
+
+                with self.assertRaisesRegex(ValueError, "bundle seq is not currently executable"):
+                    network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_BUNDLE_SUBMIT,
+                            sender_id="alice",
+                            recipient_id="consensus-1",
+                            payload={"submission": original_submission},
+                        )
+                    )
+            finally:
+                network.send = original_send
+                bob.close()
+                alice.close()
+                consensus1.close()
+                consensus0.close()
 
     def test_static_three_consensus_four_account_late_joining_follower_catches_up_multiple_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as td:

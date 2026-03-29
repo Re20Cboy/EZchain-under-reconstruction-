@@ -109,6 +109,9 @@ class WalletAccountV2:
         self.records = self.db.list_value_records(self.address)
         self.checkpoints = self.db.list_checkpoints(self.address)
 
+    def reload_state(self) -> None:
+        self._reload_state()
+
     def _persist_records(self, records: list[LocalValueRecord]) -> None:
         self.db.replace_value_records_and_recompute_sidecar_refs(self.address, records)
         self._reload_state()

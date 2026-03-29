@@ -418,7 +418,9 @@ class V2ConsensusHost:
         return {"ok": False, "error": f"unsupported_message:{envelope.msg_type}"}
 
     def _on_bundle_submit(self, envelope: NetworkEnvelope) -> dict[str, Any]:
-        submission = envelope.payload["submission"]
+        submission = envelope.payload.get("submission")
+        if not isinstance(submission, BundleSubmission):
+            return {"ok": False, "error": "missing_submission"}
         self.network.send(
             NetworkEnvelope(
                 msg_type=MSG_BUNDLE_ACK,
@@ -452,14 +454,20 @@ class V2ConsensusHost:
         if self.auto_dispatch_receipts:
             receipt = self.consensus.get_receipt(result.sender_addr, result.seq).receipt
             if receipt is not None:
-                self.network.send(
-                    NetworkEnvelope(
-                        msg_type=MSG_RECEIPT_DELIVER,
-                        sender_id=self.peer.node_id,
-                        recipient_id=envelope.sender_id,
-                        payload={"receipt": receipt},
+                try:
+                    self.network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_RECEIPT_DELIVER,
+                            sender_id=self.peer.node_id,
+                            recipient_id=envelope.sender_id,
+                            payload={"receipt": receipt},
+                        )
                     )
-                )
+                except Exception:
+                    # Receipt push is opportunistic after the block is already
+                    # committed locally. The sender can recover by polling the
+                    # consensus endpoint later.
+                    pass
         return {
             "ok": True,
             "status": "accepted",
@@ -1210,6 +1218,18 @@ class V2ConsensusHost:
             return self.fetched_blocks_by_hash.get(block_hash_hex)
         return None
 
+    def _get_fetched_block(
+        self,
+        *,
+        height: int | None = None,
+        block_hash_hex: str | None = None,
+    ) -> BlockV2 | None:
+        if height is not None:
+            return self.fetched_blocks.get(int(height))
+        if block_hash_hex is not None:
+            return self.fetched_blocks_by_hash.get(str(block_hash_hex))
+        return None
+
     def _fetch_announced_block(self, *, sender_id: str, height: int) -> BlockV2:
         self.network.send(
             NetworkEnvelope(
@@ -1347,14 +1367,20 @@ class V2ConsensusHost:
         self._broadcast_block_announce(block)
         self._dispatch_finalized_receipts(block, sender_peer_ids=preview.sender_peer_ids)
         for peer_id in consensus_peer_ids[1:]:
-            self.network.send(
-                NetworkEnvelope(
-                    msg_type=MSG_CONSENSUS_FINALIZE,
-                    sender_id=self.peer.node_id,
-                    recipient_id=peer_id,
-                    payload={"block": block, "commit_qc": commit_qc},
+            try:
+                self.network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_CONSENSUS_FINALIZE,
+                        sender_id=self.peer.node_id,
+                        recipient_id=peer_id,
+                        payload={"block": block, "commit_qc": commit_qc},
+                    )
                 )
-            )
+            except Exception:
+                # Followers that miss the eager finalize fanout must recover by
+                # the normal chain-state/block-fetch path without invalidating
+                # the winner's local commit.
+                continue
 
     @staticmethod
     def _encode_block(block: BlockV2) -> dict[str, Any]:
@@ -1486,6 +1512,117 @@ class V2AccountHost:
             raise last_exc
         raise ValueError("consensus_peer_unavailable")
 
+    def _query_chain_state_from_peer(self, peer_id: str) -> ChainSyncCursor | None:
+        try:
+            response = self.network.send(
+                NetworkEnvelope(
+                    msg_type=MSG_CHAIN_STATE_REQ,
+                    sender_id=self.peer.node_id,
+                    recipient_id=peer_id,
+                    payload={},
+                )
+            )
+        except Exception:
+            return None
+        if self._is_retryable_consensus_response(response):
+            return None
+        if not isinstance(response, dict) or response.get("ok") is not True:
+            return None
+        try:
+            return ChainSyncCursor(
+                height=int(response.get("height", 0)),
+                block_hash_hex=str(response.get("block_hash_hex", "")),
+            )
+        except Exception:
+            return None
+
+    def _known_chain_is_ahead_of(self, cursor: ChainSyncCursor | None) -> bool:
+        known = self.last_seen_chain
+        if known is None or cursor is None:
+            return False
+        if cursor.height < known.height:
+            return True
+        return (
+            cursor.height == known.height
+            and bool(known.block_hash_hex)
+            and bool(cursor.block_hash_hex)
+            and cursor.block_hash_hex != known.block_hash_hex
+        )
+
+    def _refresh_best_peer_if_preferred_stale(self) -> bool:
+        preferred_cursor = self._query_chain_state_from_peer(self.consensus_peer_id)
+        if not self._known_chain_is_ahead_of(preferred_cursor):
+            return False
+        previous_peer_id = self.consensus_peer_id
+        previous_cursor = self.last_seen_chain
+        try:
+            refreshed = self.refresh_chain_state()
+        except Exception:
+            return False
+        if self.consensus_peer_id != previous_peer_id:
+            return True
+        if previous_cursor is None or refreshed is None:
+            return False
+        if refreshed.height > previous_cursor.height:
+            return True
+        return (
+            refreshed.height == previous_cursor.height
+            and bool(refreshed.block_hash_hex)
+            and bool(previous_cursor.block_hash_hex)
+            and refreshed.block_hash_hex != previous_cursor.block_hash_hex
+        )
+
+    def _retry_on_missing_after_refresh(
+        self,
+        msg_type: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        previous_peer_id = self.consensus_peer_id
+        if not self._refresh_best_peer_if_preferred_stale():
+            try:
+                self.refresh_chain_state()
+            except Exception:
+                return None
+        if self.consensus_peer_id == previous_peer_id:
+            return None
+        return self._send_to_consensus(msg_type, payload)
+
+    def _query_best_chain_state_from_consensus_peers(self) -> ChainSyncCursor:
+        best_cursor: ChainSyncCursor | None = None
+        best_peer_id: str | None = None
+        last_exc: Exception | None = None
+        for peer_id in self.consensus_peer_ids:
+            cursor = self._query_chain_state_from_peer(peer_id)
+            if cursor is None:
+                try:
+                    response = self.network.send(
+                        NetworkEnvelope(
+                            msg_type=MSG_CHAIN_STATE_REQ,
+                            sender_id=self.peer.node_id,
+                            recipient_id=peer_id,
+                            payload={},
+                        )
+                    )
+                except Exception as exc:
+                    last_exc = exc
+                    continue
+                if self._is_retryable_consensus_response(response):
+                    last_exc = ValueError(str(response.get("error", "consensus_peer_unavailable")))
+                    continue
+                continue
+            if best_cursor is None or cursor.height > best_cursor.height:
+                best_cursor = cursor
+                best_peer_id = peer_id
+        if best_cursor is None:
+            if last_exc is not None:
+                raise last_exc
+            raise ValueError("consensus_peer_unavailable")
+        self.last_seen_chain = best_cursor
+        if best_peer_id is not None:
+            self._promote_consensus_peer(best_peer_id)
+        self._persist_network_state()
+        return best_cursor
+
     def close(self) -> None:
         try:
             self._persist_network_state()
@@ -1524,6 +1661,15 @@ class V2AccountHost:
             return
         if not isinstance(payload, dict):
             return
+        peer_ids = payload.get("consensus_peer_ids")
+        if isinstance(peer_ids, (list, tuple)):
+            ordered_peer_ids = tuple(str(item) for item in peer_ids if str(item))
+            if ordered_peer_ids:
+                try:
+                    self.consensus_peer_ids = self._normalize_consensus_peer_ids(ordered_peer_ids[0], ordered_peer_ids)
+                    self.consensus_peer_id = self.consensus_peer_ids[0]
+                except Exception:
+                    pass
         last_seen = payload.get("last_seen_chain")
         if isinstance(last_seen, ChainSyncCursor):
             self.last_seen_chain = last_seen
@@ -1548,6 +1694,7 @@ class V2AccountHost:
             return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "consensus_peer_ids": list(self.consensus_peer_ids),
             "last_seen_chain": self.last_seen_chain,
             "fetched_blocks": [self.fetched_blocks[height] for height in sorted(self.fetched_blocks)],
         }
@@ -1652,6 +1799,18 @@ class V2AccountHost:
             return self.fetched_blocks_by_hash.get(block_hash_hex)
         return None
 
+    def _get_fetched_block(
+        self,
+        *,
+        height: int | None = None,
+        block_hash_hex: str | None = None,
+    ) -> BlockV2 | None:
+        if height is not None:
+            return self.fetched_blocks.get(int(height))
+        if block_hash_hex is not None:
+            return self.fetched_blocks_by_hash.get(str(block_hash_hex))
+        return None
+
     def handle_envelope(self, envelope: NetworkEnvelope) -> dict[str, Any] | None:
         if envelope.msg_type == MSG_BUNDLE_ACK:
             return {"ok": True}
@@ -1694,6 +1853,7 @@ class V2AccountHost:
         anti_spam_nonce: int | None = None,
         tx_time: int | None = None,
     ) -> V2NetworkPayment:
+        self.wallet.reload_state()
         recipient_peer = self.network.peer_info(recipient_peer_id)
         recipient_addr = str(recipient_peer.metadata["address"])
         submission, context, tx = self.wallet.build_payment_bundle(
@@ -1707,10 +1867,22 @@ class V2AccountHost:
             anti_spam_nonce=anti_spam_nonce,
             tx_time=tx_time,
         )
+        self._refresh_best_peer_if_preferred_stale()
         try:
             response = self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
             if isinstance(response, dict) and response.get("ok") is False:
-                raise ValueError(str(response.get("error", "bundle_submit_failed")))
+                error = str(response.get("error", "bundle_submit_failed"))
+                if error == "bundle seq is not currently executable":
+                    retried_response = self._retry_on_missing_after_refresh(
+                        MSG_BUNDLE_SUBMIT,
+                        {"submission": submission},
+                    )
+                    if isinstance(retried_response, dict) and retried_response.get("ok") is not False:
+                        response = retried_response
+                    else:
+                        raise ValueError(error)
+                else:
+                    raise ValueError(error)
         except Exception:
             try:
                 self.wallet.rollback_pending_bundle(context.seq)
@@ -1731,10 +1903,18 @@ class V2AccountHost:
     def sync_pending_receipts(self) -> int:
         applied = 0
         for pending in self.wallet.list_pending_bundles():
-            self._send_to_consensus(MSG_RECEIPT_REQ, {"sender_addr": self.address, "seq": pending.seq})
+            self._refresh_best_peer_if_preferred_stale()
+            payload = {"sender_addr": self.address, "seq": pending.seq}
+            response = self._send_to_consensus(MSG_RECEIPT_REQ, payload)
             if self._latest_receipt_for_seq(pending.seq) is not None:
                 applied += 1
                 continue
+            if isinstance(response, dict) and response.get("status") == "missing":
+                retried_response = self._retry_on_missing_after_refresh(MSG_RECEIPT_REQ, payload)
+                if isinstance(retried_response, dict) and retried_response.get("status") in {"ok", "missing"}:
+                    if self._latest_receipt_for_seq(pending.seq) is not None:
+                        applied += 1
+                        continue
             self.wallet.mark_receipt_missing(pending.seq)
         return applied
 
@@ -1762,9 +1942,9 @@ class V2AccountHost:
 
     def refresh_chain_state(self) -> ChainSyncCursor | None:
         previous_cursor = self.last_seen_chain
-        self._send_to_consensus(MSG_CHAIN_STATE_REQ, {})
-        self._reconcile_fetched_blocks_with_chain_cursor(self.last_seen_chain, previous_cursor=previous_cursor)
-        return self.last_seen_chain
+        cursor = self._query_best_chain_state_from_consensus_peers()
+        self._reconcile_fetched_blocks_with_chain_cursor(cursor, previous_cursor=previous_cursor)
+        return cursor
 
     def fetch_block(
         self,
@@ -1779,10 +1959,21 @@ class V2AccountHost:
             payload["height"] = int(height)
         if block_hash_hex is not None:
             payload["block_hash_hex"] = str(block_hash_hex)
-        self._send_to_consensus(MSG_BLOCK_FETCH_REQ, payload)
+        self._refresh_best_peer_if_preferred_stale()
+        response = self._send_to_consensus(MSG_BLOCK_FETCH_REQ, payload)
         if height is not None:
-            return self._await_fetched_block(height=int(height))
-        return self._await_fetched_block(block_hash_hex=str(block_hash_hex))
+            block = self._await_fetched_block(height=int(height))
+        else:
+            block = self._await_fetched_block(block_hash_hex=str(block_hash_hex))
+        if block is not None:
+            return block
+        if isinstance(response, dict) and response.get("status") == "missing":
+            retried_response = self._retry_on_missing_after_refresh(MSG_BLOCK_FETCH_REQ, payload)
+            if isinstance(retried_response, dict) and retried_response.get("status") in {"ok", "missing"}:
+                if height is not None:
+                    return self._await_fetched_block(height=int(height))
+                return self._await_fetched_block(block_hash_hex=str(block_hash_hex))
+        return None
 
     def sync_chain_blocks(
         self,
@@ -1807,6 +1998,7 @@ class V2AccountHost:
         return tuple(fetched)
 
     def _on_receipt(self, envelope: NetworkEnvelope) -> dict[str, Any]:
+        self.wallet.reload_state()
         receipt = envelope.payload.get("receipt")
         if receipt is None:
             return {"ok": False, "error": "missing_receipt"}
@@ -1878,6 +2070,7 @@ class V2AccountHost:
         return response
 
     def _on_transfer_package(self, envelope: NetworkEnvelope) -> dict[str, Any]:
+        self.wallet.reload_state()
         package = envelope.payload["package"]
         try:
             validator = self._build_validator_for_package(package)

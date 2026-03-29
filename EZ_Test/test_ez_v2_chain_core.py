@@ -457,6 +457,19 @@ class EZV2BundlePoolTests(unittest.TestCase):
         self.assertEqual(snapshot[0].envelope.bundle_hash, submission1.envelope.bundle_hash)
         self.assertEqual(snapshot[0].envelope.fee, 2)
 
+    def test_bundle_pool_accepts_identical_replay_idempotently(self) -> None:
+        """验证同一submission的完全重复重投不会污染pending状态"""
+        pool = BundlePool(chain_id=7001)
+        submission, _, _ = self._make_submission(fee=0)
+
+        first_sender = pool.submit(submission, current_height=1, confirmed_seq=0)
+        second_sender = pool.submit(submission, current_height=1, confirmed_seq=0)
+
+        snapshot = pool.snapshot()
+        self.assertEqual(first_sender, second_sender)
+        self.assertEqual(len(snapshot), 1)
+        self.assertEqual(snapshot[0], submission)
+
     def test_bundle_pool_snapshot_returns_ordered_by_addr_key(self) -> None:
         """验证snapshot按addr_key排序"""
         pool = BundlePool(chain_id=7001)

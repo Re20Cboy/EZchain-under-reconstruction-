@@ -168,6 +168,9 @@ class V2Runtime:
     def deliver_receipts(self, receipts: dict[str, Receipt]) -> dict[str, ReceiptDeliveryResult]:
         return self._deliver_receipts(receipts)
 
+    def share_block_with_wallets(self, block: BlockV2) -> None:
+        self._share_block_with_wallets(block)
+
     def deliver_transfer_package(
         self,
         package: TransferPackage,
@@ -183,10 +186,13 @@ class V2Runtime:
                 accepted=False,
                 error="wallet_not_registered",
             )
+        resolved_trusted_checkpoints = tuple(trusted_checkpoints)
+        if not resolved_trusted_checkpoints:
+            resolved_trusted_checkpoints = wallet.trusted_checkpoints_for_witness(package.witness_v2)
         try:
             record = wallet.receive_transfer(
                 package=package,
-                validator=self.build_validator(trusted_checkpoints=trusted_checkpoints),
+                validator=self.build_validator(trusted_checkpoints=resolved_trusted_checkpoints),
             )
         except Exception as exc:
             return TransferDeliveryResult(

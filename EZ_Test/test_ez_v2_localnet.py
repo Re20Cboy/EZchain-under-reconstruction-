@@ -16,6 +16,49 @@ from EZ_V2.wallet import WalletAccountV2
 
 
 class EZV2LocalnetTests(unittest.TestCase):
+    def test_produce_block_shares_canonical_header_before_auto_confirm_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            genesis_block_hash = b"\xcb" * 32
+            alice_priv, alice_pub = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_pub)
+            bob_priv, bob_pub = generate_secp256k1_keypair()
+            bob_addr = address_from_public_key_pem(bob_pub)
+
+            wallet = WalletAccountV2(
+                address=alice_addr,
+                genesis_block_hash=genesis_block_hash,
+                db_path=str(Path(tmpdir) / "alice.sqlite3"),
+            )
+            wallet.add_genesis_value(ValueRange(0, 119))
+
+            node = V2ConsensusNode(
+                store_path=str(Path(tmpdir) / "consensus.sqlite3"),
+                chain_id=130,
+                genesis_block_hash=genesis_block_hash,
+            )
+            node.register_wallet(wallet, auto_confirm_receipts=True)
+            try:
+                submission, _, _ = wallet.build_payment_bundle(
+                    recipient_addr=bob_addr,
+                    amount=30,
+                    private_key_pem=alice_priv,
+                    public_key_pem=alice_pub,
+                    chain_id=130,
+                    expiry_height=100,
+                    fee=1,
+                    anti_spam_nonce=20,
+                    tx_time=1,
+                )
+                node.submit_bundle(submission)
+                produced = node.produce_block(timestamp=2)
+
+                self.assertTrue(produced.deliveries[alice_addr].applied, produced.deliveries[alice_addr].error)
+                self.assertEqual(len(wallet.list_pending_bundles()), 0)
+                self.assertEqual(len(wallet.list_receipts()), 1)
+            finally:
+                node.close()
+                wallet.close()
+
     def test_consensus_node_restores_receipt_queries_and_offline_sync_after_restart(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             genesis_block_hash = b"\xcc" * 32

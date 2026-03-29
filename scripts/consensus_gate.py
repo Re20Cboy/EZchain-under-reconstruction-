@@ -22,6 +22,10 @@ SYNC_TEST_FILE = "EZ_Test/test_ez_v2_consensus_sync.py"
 CATCHUP_TEST_FILE = "EZ_Test/test_ez_v2_consensus_catchup.py"
 
 NETWORK_TEST_FILE = "EZ_Test/test_ez_v2_network.py"
+LOCAL_TCP_MULTIUSER_TESTS = (
+    "EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_gate_tcp_smoke.py",
+    "EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_gate_tcp_recovery.py",
+)
 
 NETWORK_K_PATTERNS = {
     "consensus_static_network_suite": (
@@ -59,6 +63,7 @@ STEP_METADATA = {
     "consensus_static_network_suite": {"layer": "network", "transport": "static"},
     "consensus_recovery_suite": {"layer": "recovery", "transport": "static"},
     "consensus_tcp_network_suite": {"layer": "network", "transport": "tcp"},
+    "consensus_local_tcp_multiuser_suite": {"layer": "network", "transport": "tcp"},
 }
 
 
@@ -175,6 +180,17 @@ def main() -> int:
         network_cmd.extend(["-k", pattern])
         print(f"[consensus-gate] RUN {' '.join(network_cmd)}")
         steps.append(run_step_with_retry(step_name, network_cmd, cwd=root))
+
+    local_tcp_multiuser_cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-rs",
+        *LOCAL_TCP_MULTIUSER_TESTS,
+    ]
+    print(f"[consensus-gate] RUN {' '.join(local_tcp_multiuser_cmd)}")
+    steps.append(run_step_with_retry("consensus_local_tcp_multiuser_suite", local_tcp_multiuser_cmd, cwd=root))
 
     overall_status = "passed" if all(step["status"] == "passed" for step in steps) else "failed"
     payload = {

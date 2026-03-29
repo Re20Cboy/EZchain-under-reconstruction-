@@ -161,6 +161,8 @@ trees, see:
 - `EZ_Test/test_ez_v2_app_runtime.py`
 - `EZ_Test/test_ez_v2_node_manager.py`
 - `EZ_Test/test_ez_v2_acceptance.py`
+- `EZ_Test/EZ_V2_Local_TCP_Sim_Test/`
+  - localhost TCP 多用户 + 多共识节点 smoke / recovery / scale / longrun / complex-value / userflow 套件
 
 ### Unified Test Entry
 

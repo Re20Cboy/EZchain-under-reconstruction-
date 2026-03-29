@@ -75,6 +75,8 @@ class EZV2RuntimeTests(unittest.TestCase):
             bob_addr = address_from_public_key_pem(bob_pub)
             carol_priv, carol_pub = generate_secp256k1_keypair()
             carol_addr = address_from_public_key_pem(carol_pub)
+            dave_priv, dave_pub = generate_secp256k1_keypair()
+            dave_addr = address_from_public_key_pem(dave_pub)
 
             alice_wallet = WalletAccountV2(
                 address=alice_addr,
@@ -86,11 +88,23 @@ class EZV2RuntimeTests(unittest.TestCase):
                 genesis_block_hash=b"\xaa" * 32,
                 db_path=str(Path(tmpdir) / "bob.sqlite3"),
             )
+            carol_wallet = WalletAccountV2(
+                address=carol_addr,
+                genesis_block_hash=b"\xaa" * 32,
+                db_path=str(Path(tmpdir) / "carol.sqlite3"),
+            )
+            dave_wallet = WalletAccountV2(
+                address=dave_addr,
+                genesis_block_hash=b"\xaa" * 32,
+                db_path=str(Path(tmpdir) / "dave.sqlite3"),
+            )
             alice_wallet.add_genesis_value(ValueRange(0, 199))
 
             runtime = V2Runtime(chain=ChainStateV2(chain_id=91))
             runtime.register_wallet(alice_wallet)
             runtime.register_wallet(bob_wallet)
+            runtime.register_wallet(carol_wallet)
+            runtime.register_wallet(dave_wallet)
 
             submission, _, tx = alice_wallet.build_payment_bundle(
                 recipient_addr=bob_addr,
@@ -142,8 +156,62 @@ class EZV2RuntimeTests(unittest.TestCase):
             runtime.submit_bundle(bob_submission)
             bob_block = runtime.produce_block(timestamp=4)
             self.assertTrue(bob_block.deliveries[bob_addr].applied)
+
+            bob_package = bob_wallet.export_transfer_package(bob_tx, ValueRange(0, 19))
+            bob_delivery = runtime.deliver_transfer_package(bob_package)
+            self.assertTrue(bob_delivery.accepted, bob_delivery.error)
+            self.assertEqual(bob_delivery.recipient_addr, carol_addr)
+
+            carol_submission, _, carol_tx = carol_wallet.build_payment_bundle(
+                recipient_addr=alice_addr,
+                amount=10,
+                private_key_pem=carol_priv,
+                public_key_pem=carol_pub,
+                chain_id=91,
+                expiry_height=100,
+                fee=1,
+                anti_spam_nonce=13,
+                tx_time=5,
+            )
+            self.assertEqual(carol_tx.value_list, (ValueRange(0, 9),))
+            runtime.submit_bundle(carol_submission)
+            carol_block = runtime.produce_block(timestamp=6)
+            self.assertTrue(carol_block.deliveries[carol_addr].applied)
+
+            # This package trims back to Alice's locally trusted checkpoint; runtime
+            # should derive that trust from the registered recipient wallet.
+            carol_package = carol_wallet.export_transfer_package(carol_tx, ValueRange(0, 9))
+            carol_delivery = runtime.deliver_transfer_package(carol_package)
+            self.assertTrue(carol_delivery.accepted, carol_delivery.error)
+            self.assertEqual(carol_delivery.recipient_addr, alice_addr)
+            self.assertEqual(carol_delivery.record.value, ValueRange(0, 9))
+
+            alice_respend, _, dave_tx = alice_wallet.build_payment_bundle(
+                recipient_addr=dave_addr,
+                amount=5,
+                private_key_pem=alice_priv,
+                public_key_pem=alice_pub,
+                chain_id=91,
+                expiry_height=100,
+                fee=1,
+                anti_spam_nonce=14,
+                tx_time=7,
+            )
+            self.assertEqual(sum(item.size for item in dave_tx.value_list), 5)
+            runtime.submit_bundle(alice_respend)
+            dave_block = runtime.produce_block(timestamp=8)
+            self.assertTrue(dave_block.deliveries[alice_addr].applied)
+
+            dave_package = alice_wallet.export_transfer_package(dave_tx, dave_tx.value_list[0])
+            dave_delivery = runtime.deliver_transfer_package(dave_package)
+            self.assertTrue(dave_delivery.accepted, dave_delivery.error)
+            self.assertEqual(dave_delivery.recipient_addr, dave_addr)
+            self.assertEqual(dave_delivery.record.value, dave_tx.value_list[0])
+
             alice_wallet.close()
             bob_wallet.close()
+            carol_wallet.close()
+            dave_wallet.close()
 
 
 if __name__ == "__main__":

@@ -140,6 +140,290 @@ class EZV2NetworkSubmissionFlowTests(unittest.TestCase):
                 bob.close()
                 consensus.close()
 
+    def test_refresh_chain_state_promotes_higher_peer_when_primary_is_stale_but_reachable(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            network.register(
+                PeerInfo(node_id="consensus-0", role="consensus", endpoint="mem://consensus-0"),
+                lambda envelope: (
+                    {"ok": True, "height": 0, "block_hash_hex": ""}
+                    if envelope.msg_type == "chain_state_req"
+                    else {"ok": False, "error": "consensus_stale_read_only"}
+                ),
+            )
+            consensus1 = V2ConsensusHost(
+                node_id="consensus-1",
+                endpoint="mem://consensus-1",
+                store_path=f"{td}/consensus1.sqlite3",
+                network=network,
+                chain_id=932,
+            )
+            alice_private, alice_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=932,
+                network=network,
+                consensus_peer_id="consensus-0",
+                consensus_peer_ids=("consensus-0", "consensus-1"),
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=932,
+                network=network,
+                consensus_peer_id="consensus-0",
+                consensus_peer_ids=("consensus-0", "consensus-1"),
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus1.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                alice.set_consensus_peer_id("consensus-1")
+                first = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=401)
+                self.assertEqual(first.receipt_height, 1)
+                self.assertEqual(consensus1.consensus.chain.current_height, 1)
+
+                alice.set_consensus_peer_ids(("consensus-0", "consensus-1"))
+                chain_state = alice.refresh_chain_state()
+                self.assertIsNotNone(chain_state)
+                assert chain_state is not None
+                self.assertEqual(chain_state.height, 1)
+                self.assertEqual(alice.consensus_peer_id, "consensus-1")
+                self.assertEqual(alice.consensus_peer_ids[0], "consensus-1")
+
+                second = alice.submit_payment("bob", amount=20, tx_time=2, anti_spam_nonce=402)
+                self.assertEqual(second.receipt_height, 2)
+                self.assertEqual(consensus1.consensus.chain.current_height, 2)
+                self.assertEqual(bob.wallet.available_balance(), 70)
+            finally:
+                bob.close()
+                alice.close()
+                consensus1.close()
+
+    def test_sync_pending_receipts_promotes_higher_peer_after_missing_from_stale_primary(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            network.register(
+                PeerInfo(node_id="consensus-0", role="consensus", endpoint="mem://consensus-0"),
+                lambda envelope: (
+                    {"ok": True, "height": 0, "block_hash_hex": ""}
+                    if envelope.msg_type == "chain_state_req"
+                    else {"ok": True, "status": "missing"}
+                ),
+            )
+            consensus1 = V2ConsensusHost(
+                node_id="consensus-1",
+                endpoint="mem://consensus-1",
+                store_path=f"{td}/consensus1.sqlite3",
+                network=network,
+                chain_id=933,
+            )
+            consensus1.auto_dispatch_receipts = False
+            alice_private, alice_public = generate_secp256k1_keypair()
+            alice_addr = address_from_public_key_pem(alice_public)
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=933,
+                network=network,
+                consensus_peer_id="consensus-1",
+                consensus_peer_ids=("consensus-1", "consensus-0"),
+                address=alice_addr,
+                private_key_pem=alice_private,
+                public_key_pem=alice_public,
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=933,
+                network=network,
+                consensus_peer_id="consensus-1",
+                consensus_peer_ids=("consensus-1", "consensus-0"),
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus1.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+
+                payment = alice.submit_payment("bob", amount=40, tx_time=1, anti_spam_nonce=501)
+                self.assertIsNone(payment.receipt_height)
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 1)
+
+                alice.last_seen_chain = None
+                alice.set_consensus_peer_ids(("consensus-0", "consensus-1"))
+
+                applied = alice.sync_pending_receipts()
+                self.assertEqual(applied, 1)
+                self.assertEqual(alice.consensus_peer_id, "consensus-1")
+                self.assertEqual(alice.consensus_peer_ids[0], "consensus-1")
+                self.assertEqual(len(alice.wallet.list_pending_bundles()), 0)
+                self.assertEqual(len(alice.wallet.list_receipts()), 1)
+                self.assertEqual(bob.wallet.available_balance(), 40)
+            finally:
+                bob.close()
+                alice.close()
+                consensus1.close()
+
+    def test_fetch_block_retries_after_missing_from_stale_primary(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            network.register(
+                PeerInfo(node_id="consensus-0", role="consensus", endpoint="mem://consensus-0"),
+                lambda envelope: (
+                    {"ok": True, "height": 0, "block_hash_hex": ""}
+                    if envelope.msg_type == "chain_state_req"
+                    else {"ok": True, "status": "missing"}
+                ),
+            )
+            consensus1 = V2ConsensusHost(
+                node_id="consensus-1",
+                endpoint="mem://consensus-1",
+                store_path=f"{td}/consensus1.sqlite3",
+                network=network,
+                chain_id=934,
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=934,
+                network=network,
+                consensus_peer_id="consensus-1",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=934,
+                network=network,
+                consensus_peer_id="consensus-1",
+            )
+            try:
+                minted = ValueRange(0, 199)
+                consensus1.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+                payment = alice.submit_payment("bob", amount=50, tx_time=1, anti_spam_nonce=502)
+                self.assertEqual(payment.receipt_height, 1)
+
+                carol = V2AccountHost(
+                    node_id="carol",
+                    endpoint="mem://carol",
+                    wallet_db_path=f"{td}/carol.sqlite3",
+                    chain_id=934,
+                    network=network,
+                    consensus_peer_id="consensus-0",
+                    consensus_peer_ids=("consensus-0", "consensus-1"),
+                )
+                try:
+                    carol.last_seen_chain = None
+                    carol.fetched_blocks = {}
+                    carol.fetched_blocks_by_hash = {}
+
+                    block = carol.fetch_block(height=1)
+                    self.assertIsNotNone(block)
+                    assert block is not None
+                    self.assertEqual(block.header.height, 1)
+                    self.assertEqual(carol.consensus_peer_id, "consensus-1")
+                    self.assertEqual(carol.consensus_peer_ids[0], "consensus-1")
+                    self.assertEqual(sorted(carol.fetched_blocks), [1])
+                finally:
+                    carol.close()
+            finally:
+                bob.close()
+                alice.close()
+                consensus1.close()
+
+    def test_recover_network_state_persists_promoted_peer_order_across_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            network = StaticPeerNetwork()
+            network.register(
+                PeerInfo(node_id="consensus-0", role="consensus", endpoint="mem://consensus-0"),
+                lambda envelope: (
+                    {"ok": True, "height": 0, "block_hash_hex": ""}
+                    if envelope.msg_type == "chain_state_req"
+                    else {"ok": True, "status": "missing"}
+                ),
+            )
+            consensus1 = V2ConsensusHost(
+                node_id="consensus-1",
+                endpoint="mem://consensus-1",
+                store_path=f"{td}/consensus1.sqlite3",
+                network=network,
+                chain_id=935,
+            )
+            alice = V2AccountHost(
+                node_id="alice",
+                endpoint="mem://alice",
+                wallet_db_path=f"{td}/alice.sqlite3",
+                chain_id=935,
+                network=network,
+                consensus_peer_id="consensus-1",
+            )
+            bob = V2AccountHost(
+                node_id="bob",
+                endpoint="mem://bob",
+                wallet_db_path=f"{td}/bob.sqlite3",
+                chain_id=935,
+                network=network,
+                consensus_peer_id="consensus-1",
+            )
+            state_path = f"{td}/carol.network.json"
+            try:
+                minted = ValueRange(0, 199)
+                consensus1.register_genesis_value(alice.address, minted)
+                alice.register_genesis_value(minted)
+                payment = alice.submit_payment("bob", amount=30, tx_time=1, anti_spam_nonce=503)
+                self.assertEqual(payment.receipt_height, 1)
+
+                carol = V2AccountHost(
+                    node_id="carol",
+                    endpoint="mem://carol",
+                    wallet_db_path=f"{td}/carol.sqlite3",
+                    chain_id=935,
+                    network=network,
+                    consensus_peer_id="consensus-0",
+                    consensus_peer_ids=("consensus-0", "consensus-1"),
+                    state_path=state_path,
+                )
+                try:
+                    recovered = carol.recover_network_state()
+                    self.assertEqual(recovered.chain_cursor.height if recovered.chain_cursor else None, 1)
+                    self.assertEqual(carol.consensus_peer_id, "consensus-1")
+                    self.assertEqual(carol.consensus_peer_ids[0], "consensus-1")
+                finally:
+                    carol.close()
+
+                reopened = V2AccountHost(
+                    node_id="carol",
+                    endpoint="mem://carol",
+                    wallet_db_path=f"{td}/carol.sqlite3",
+                    chain_id=935,
+                    network=network,
+                    consensus_peer_id="consensus-0",
+                    consensus_peer_ids=("consensus-0", "consensus-1"),
+                    state_path=state_path,
+                )
+                try:
+                    self.assertEqual(reopened.consensus_peer_id, "consensus-1")
+                    self.assertEqual(reopened.consensus_peer_ids[0], "consensus-1")
+                    self.assertEqual(reopened.last_seen_chain.height if reopened.last_seen_chain else None, 1)
+                finally:
+                    reopened.close()
+            finally:
+                bob.close()
+                alice.close()
+                consensus1.close()
+
     def test_static_network_mvp_auto_round_commits_two_sequential_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             network = StaticPeerNetwork()

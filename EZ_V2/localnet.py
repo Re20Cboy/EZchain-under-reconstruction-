@@ -209,6 +209,7 @@ class V2ConsensusNode:
             receipt_cache_blocks=self.chain.receipt_cache.max_blocks,
             genesis_block_hash=self.genesis_block_hash,
         )
+        self.runtime.share_block_with_wallets(block)
         deliveries = self.runtime.deliver_receipts(receipts)
         return ProduceBlockResult(block=block, receipts=receipts, deliveries=deliveries)
 
@@ -238,6 +239,7 @@ class V2ConsensusNode:
             receipt_cache_blocks=self.chain.receipt_cache.max_blocks,
             genesis_block_hash=self.genesis_block_hash,
         )
+        self.runtime.share_block_with_wallets(block)
         deliveries = self.runtime.deliver_receipts(receipts)
         return ApplyBlockResult(block=block, receipts=receipts, deliveries=deliveries)
 

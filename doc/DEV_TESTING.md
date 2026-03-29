@@ -39,6 +39,16 @@ python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip
 python3 run_ez_v2_tcp_cluster_smoke.py --allow-bind-restricted-skip --seed 915 --failover-round 2
 python3 scripts/v2_account_recovery_smoke.py --allow-bind-restricted-skip
 python3 scripts/consensus_gate.py
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_multi_round.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_large_topology.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_longrun_soak.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_failover.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_checkpoint.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_multi_value.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_multi_tx_bundle.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_scale_tcp_complex_recovery.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_app_tcp_userflow.py -q
+python3 -m pytest EZ_Test/EZ_V2_Local_TCP_Sim_Test/test_app_tcp_multi_round_userflow.py -q
 ```
 
 说明：
@@ -50,6 +60,22 @@ python3 scripts/consensus_gate.py
   - recovery / restart 层
   - TCP 多节点层
   - TCP restart/catch-up 层
+  - TCP localhost 多用户 + 多共识节点 smoke / recovery 层
+- `EZ_Test/EZ_V2_Local_TCP_Sim_Test/` 现在集中放本机 localhost 多用户 + 多共识节点模拟套件：
+  - `test_gate_tcp_smoke.py`
+  - `test_gate_tcp_recovery.py`
+  - `test_scale_tcp_multi_round.py`
+  - `test_scale_tcp_large_topology.py`
+  - `test_scale_tcp_longrun_soak.py`
+  - `test_scale_tcp_failover.py`
+  - `test_scale_tcp_checkpoint.py`
+  - `test_scale_tcp_multi_value.py`
+  - `test_scale_tcp_multi_tx_bundle.py`
+  - `test_scale_tcp_complex_recovery.py`
+  - `test_app_tcp_userflow.py`
+  - `test_app_tcp_multi_round_userflow.py`
+- `scripts/consensus_gate.py` 只接入上面目录里的 gate smoke / recovery 两条轻量 deterministic TCP 套件；
+  7 consensus + 20 accounts 的强化档、更大规模拓扑、longrun soak、复杂交易形态、以及 app userflow 仍保留为显式 pytest 运行项。
 - `scripts/consensus_gate.py --json-out <path>` 的输出现在会额外给出 summary，明确区分：
   - 静态 / 本地共识验证是否通过
   - TCP 套件是否真的执行过

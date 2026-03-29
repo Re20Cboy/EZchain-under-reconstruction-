@@ -7,13 +7,87 @@ from dataclasses import replace
 from EZ_Test.EZ_V2_New_Test.test_v2_distributed_process_checkpoint import (
     EZV2DistributedProcessCheckpointTests,
 )
+from EZ_V2.chain import compute_bundle_hash
+from EZ_V2.localnet import V2LocalNetwork
 from EZ_V2.runtime_v2 import V2Runtime
 from EZ_V2.types import Checkpoint, CheckpointAnchor, PriorWitnessLink, TransferPackage, WitnessV2
-from EZ_V2.values import ValueRange
+from EZ_V2.values import LocalValueStatus, ValueRange
 from EZ_V2.wallet import WalletAccountV2
 
 
 class EZV2DistributedProcessCheckpointRecoveryTests(unittest.TestCase):
+    def test_flow_old_owner_can_rerespend_after_checkpoint_trim_and_sidecar_gc(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            net = V2LocalNetwork(
+                root_dir=td,
+                chain_id=5304,
+                genesis_block_hash=b"\x33" * 32,
+            )
+            helper = EZV2DistributedProcessCheckpointTests()
+            try:
+                alice = net.add_account("alice")
+                bob = net.add_account("bob")
+                carol = net.add_account("carol")
+                dave = net.add_account("dave")
+                exact_value = ValueRange(1500, 1599)
+                net.allocate_genesis_value("alice", exact_value)
+
+                first = alice.submit_payment(bob.address, amount=100, fee=1, tx_time=1)
+                produced_first = net.produce_block(timestamp=2)
+                self.assertTrue(produced_first.deliveries[alice.address].applied)
+                delivered_to_bob = alice.deliver_outgoing_transfer(
+                    first.target_tx,
+                    exact_value,
+                    recipient_addr=bob.address,
+                )
+                self.assertTrue(delivered_to_bob.accepted, delivered_to_bob.error)
+
+                second = bob.submit_payment(carol.address, amount=100, fee=1, tx_time=3)
+                produced_second = net.produce_block(timestamp=4)
+                self.assertTrue(produced_second.deliveries[bob.address].applied)
+                delivered_to_carol = bob.deliver_outgoing_transfer(
+                    second.target_tx,
+                    exact_value,
+                    recipient_addr=carol.address,
+                )
+                self.assertTrue(delivered_to_carol.accepted, delivered_to_carol.error)
+
+                bob_archived = next(
+                    record
+                    for record in bob.wallet.list_records()
+                    if record.local_status == LocalValueStatus.ARCHIVED and record.value == exact_value
+                )
+                checkpoint = bob.wallet.create_exact_checkpoint(bob_archived.record_id)
+                self.assertEqual(bob.wallet.list_checkpoints(), [checkpoint])
+
+                prior_hash = compute_bundle_hash(
+                    bob_archived.witness_v2.anchor.prior_witness.confirmed_bundle_chain[0].bundle_sidecar
+                )
+                self.assertIn(prior_hash, bob.wallet.db.list_sidecar_hashes())
+                bob.wallet.gc_unused_sidecars()
+                self.assertIn(prior_hash, bob.wallet.db.list_sidecar_hashes())
+
+                third = carol.submit_payment(bob.address, amount=100, fee=1, tx_time=5)
+                produced_third = net.produce_block(timestamp=6)
+                self.assertTrue(produced_third.deliveries[carol.address].applied)
+                returned_package = carol.export_transfer_package(third.target_tx, exact_value)
+                self.assertTrue(helper._witness_contains_checkpoint_anchor(returned_package.witness_v2))
+
+                bob_return = bob.receive_transfer_package(returned_package)
+                self.assertTrue(bob_return.accepted, bob_return.error)
+
+                fourth = bob.submit_payment(dave.address, amount=100, fee=1, tx_time=7)
+                produced_fourth = net.produce_block(timestamp=8)
+                self.assertTrue(produced_fourth.deliveries[bob.address].applied)
+                downstream_package = bob.export_transfer_package(fourth.target_tx, exact_value)
+                self.assertFalse(helper._witness_contains_checkpoint_anchor(downstream_package.witness_v2))
+
+                dave_receive = dave.receive_transfer_package(downstream_package)
+                self.assertTrue(dave_receive.accepted, dave_receive.error)
+                self.assertEqual(dave_receive.record.value, exact_value)
+            finally:
+                net.close()
+
     def test_flow_checkpoint_persists_across_restart_and_can_be_reused_after_reopen(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             helper = EZV2DistributedProcessCheckpointTests()
