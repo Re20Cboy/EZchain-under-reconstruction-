@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from EZ_Test.EZ_V2_Local_TCP_Sim_Test.assertions import (
+    assert_block_packing,
     assert_checkpoints_exist,
     assert_cluster_converged,
     assert_no_pending_leaks,
@@ -24,10 +25,12 @@ class LocalTCPScaleMultiRoundTests(unittest.TestCase):
 
                 self.assertEqual(snapshot["confirmed_tx_count"], HEAVY_MULTI_ROUND_PROFILE.tx_count)
                 self.assertEqual(snapshot["failed_tx_count"], 0)
+                self.assertLess(snapshot["height_delta"], snapshot["confirmed_tx_count"])
                 assert_cluster_converged(snapshot)
                 assert_supply_conserved(snapshot, HEAVY_MULTI_ROUND_PROFILE.total_supply)
                 assert_no_pending_leaks(snapshot)
                 assert_checkpoints_exist(snapshot, min_accounts_with_checkpoints=3)
+                assert_block_packing(snapshot, min_avg_bundles_per_height=6.0)
                 for account in snapshot["accounts"].values():
                     self.assertGreaterEqual(account["total_balance"], account["available_balance"])
                     self.assertGreater(account["send_count"] + account["receive_count"], 0)
@@ -37,4 +40,3 @@ class LocalTCPScaleMultiRoundTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

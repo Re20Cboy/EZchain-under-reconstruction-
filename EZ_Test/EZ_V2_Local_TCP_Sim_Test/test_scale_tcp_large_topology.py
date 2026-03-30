@@ -5,9 +5,9 @@ import unittest
 
 from EZ_Test.EZ_V2_Local_TCP_Sim_Test.assertions import (
     assert_accounts_coverage,
+    assert_block_packing,
     assert_checkpoints_exist,
     assert_cluster_converged,
-    assert_min_height,
     assert_no_pending_leaks,
     assert_supply_conserved,
 )
@@ -26,12 +26,14 @@ class LocalTCPScaleLargeTopologyTests(unittest.TestCase):
 
                 self.assertEqual(snapshot["confirmed_tx_count"], XL_TOPOLOGY_PROFILE.tx_count)
                 self.assertEqual(snapshot["failed_tx_count"], 0)
+                self.assertLess(snapshot["height_delta"], snapshot["confirmed_tx_count"])
+                self.assertGreater(snapshot["height_delta"], 0)
                 assert_cluster_converged(snapshot)
                 assert_supply_conserved(snapshot, XL_TOPOLOGY_PROFILE.total_supply)
                 assert_no_pending_leaks(snapshot)
-                assert_min_height(snapshot, XL_TOPOLOGY_PROFILE.min_height_delta)
                 assert_accounts_coverage(snapshot, min_accounts_touched=20)
                 assert_checkpoints_exist(snapshot, min_accounts_with_checkpoints=3)
+                assert_block_packing(snapshot, min_avg_bundles_per_height=8.0)
                 for account in snapshot["accounts"].values():
                     self.assertGreaterEqual(account["total_balance"], account["available_balance"])
             finally:

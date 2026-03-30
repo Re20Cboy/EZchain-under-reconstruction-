@@ -403,7 +403,7 @@ Receipt 不包含：
 原因是：
 
 1. `BundleEnvelope / BundleSidecar` 原本就是 sender 本地提交的数据，不应由共识节点重复回传。
-2. `AccountLeaf` 可由 `bundle_sidecar.sender_addr + seq + prev_ref + HeaderLite` 重建。
+2. `AccountLeaf` 不是由裸 `sender_addr + seq + prev_ref + HeaderLite` 重建，而是必须由 `bundle_sidecar` 先计算 `bundle_hash`，再与 `sender_addr + prev_ref + HeaderLite(height, block_hash) + seq` 一起重建；否则链上证明将无法绑定具体 Bundle 内容。
 3. 轻量设备长期保存 `HeaderLite` 的成本显著低于完整区块头。
 
 ### 5.9 ConfirmedBundleUnit

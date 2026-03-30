@@ -27,6 +27,8 @@ class LocalTCPSimProfile:
     min_height_delta: int = 0
     max_txs_per_bundle: int = 1
     tx_shape_mode: str = "single_value_random"
+    auto_run_window_sec: float = 0.0
+    target_submissions_per_round: int = 1
     scheduled_events: tuple[ScheduledEvent, ...] = ()
 
     @property
@@ -74,6 +76,8 @@ HEAVY_MULTI_ROUND_PROFILE = LocalTCPSimProfile(
     seed=821,
     network_timeout_sec=10.0,
     min_height_delta=20,
+    auto_run_window_sec=0.2,
+    target_submissions_per_round=16,
 )
 
 HEAVY_FAILOVER_PROFILE = LocalTCPSimProfile(
@@ -88,6 +92,8 @@ HEAVY_FAILOVER_PROFILE = LocalTCPSimProfile(
     seed=915,
     network_timeout_sec=10.0,
     min_height_delta=15,
+    auto_run_window_sec=0.2,
+    target_submissions_per_round=12,
 )
 
 APP_USERFLOW_PROFILE = LocalTCPSimProfile(
@@ -113,6 +119,8 @@ XL_TOPOLOGY_PROFILE = LocalTCPSimProfile(
     min_height_delta=25,
     max_txs_per_bundle=1,
     tx_shape_mode="single_value_random",
+    auto_run_window_sec=0.25,
+    target_submissions_per_round=24,
 )
 
 LONGRUN_SOAK_PROFILE = LocalTCPSimProfile(
@@ -129,6 +137,8 @@ LONGRUN_SOAK_PROFILE = LocalTCPSimProfile(
     min_height_delta=80,
     max_txs_per_bundle=1,
     tx_shape_mode="single_value_random",
+    auto_run_window_sec=0.25,
+    target_submissions_per_round=32,
     scheduled_events=(
         ScheduledEvent(after_confirmed_tx=180, action="restart_consensus", target_id="consensus-6"),
         ScheduledEvent(after_confirmed_tx=320, action="recover_all_accounts"),
@@ -153,6 +163,7 @@ MULTIVALUE_PROFILE = LocalTCPSimProfile(
     min_height_delta=20,
     max_txs_per_bundle=1,
     tx_shape_mode="multi_value_compose",
+    auto_run_window_sec=0.15,
 )
 
 MULTI_TX_BUNDLE_PROFILE = LocalTCPSimProfile(
@@ -169,6 +180,8 @@ MULTI_TX_BUNDLE_PROFILE = LocalTCPSimProfile(
     min_height_delta=15,
     max_txs_per_bundle=3,
     tx_shape_mode="multi_tx_bundle",
+    auto_run_window_sec=0.15,
+    target_submissions_per_round=6,
 )
 
 COMPLEX_RECOVERY_PROFILE = LocalTCPSimProfile(
@@ -185,6 +198,8 @@ COMPLEX_RECOVERY_PROFILE = LocalTCPSimProfile(
     min_height_delta=30,
     max_txs_per_bundle=3,
     tx_shape_mode="mixed",
+    auto_run_window_sec=0.15,
+    target_submissions_per_round=6,
     scheduled_events=(
         ScheduledEvent(after_confirmed_tx=10, action="stop_consensus", target_id="consensus-6"),
         ScheduledEvent(after_confirmed_tx=10, action="rotate_accounts_to_peer", target_id="consensus-6"),

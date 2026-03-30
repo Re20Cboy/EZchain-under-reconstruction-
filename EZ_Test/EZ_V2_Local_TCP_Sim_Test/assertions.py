@@ -70,6 +70,17 @@ def assert_multi_tx_bundle_activity(snapshot: dict[str, Any], min_bundle_count: 
     )
 
 
+def assert_block_packing(snapshot: dict[str, Any], min_avg_bundles_per_height: float) -> None:
+    confirmed = int(snapshot.get("confirmed_tx_count", 0))
+    height_delta = int(snapshot.get("height_delta", 0))
+    if height_delta <= 0:
+        raise AssertionError(f"height_delta_not_positive:{height_delta}")
+    actual = float(confirmed) / float(height_delta)
+    assert actual >= float(min_avg_bundles_per_height), (
+        f"avg_bundles_per_height_too_small:expected>={min_avg_bundles_per_height}:actual={actual:.2f}"
+    )
+
+
 def assert_userflow_history_and_receipts(
     *,
     history_views: dict[str, dict[str, Any]],

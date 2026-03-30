@@ -1,4 +1,4 @@
-# EZchain-V2 共识层优化清单
+# EZchain-V2 优化清单
 
 本文件列出四项在当前架构约束（共识节点不追踪 Value、固定验证者集、半同步网络）下可实施的优化方案。前 3 项聚焦共识层；第 4 项聚焦 checkpoint / witness 存储语义，用于在不引入额外 sender↔recipient 往返的前提下，避免旧 owner 重收 Value 后出现“可验证但不可再流转”的死值风险。每项优化均为独立改进，不依赖其他项，可按优先级分批落地。
 
@@ -547,6 +547,71 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 
 ---
 
+## 优化 10：可选 Bundle `claim_set_hash` 承诺（不建议直接把全量 Value 塞进 state leaf）
+
+### 动机
+
+当前 V2 明确选择"不引入 `claim_set_hash`"，因此 recipient 在验证 Witness 时，必须扫描整个 `BundleSidecar`，检查目标 Value 有没有在当前 sender 历史中被提前花销。这在 witness 较长、bundle 较胖时，会成为用户侧的真实 CPU / 带宽热点。
+
+### 原始设想
+
+把 `state_root` 的叶子从当前更轻的账户头语义，扩展为带"该 bundle 包含的全部 Value 列表"的更胖叶子，让 recipient 先看 Value 列表，再决定是否拉取完整 bundle。
+
+### 判断
+
+这个方向抓住了真实痛点，但**不建议**按"把全量 Value 原样并入 `AccountLeaf`"落地。更合理的做法，是把它收敛为 **bundle 级的 `claim_set_hash` 承诺**：不把全量 Value 列表直接塞进叶子，但若要引入 `claim_set_hash`，它本身必须进入 `AccountLeaf`（或等价的、被 `state_root` 直接承诺的叶子字段），这样 recipient 才有链上信任锚点可验证。这里统一沿用协议草案中的 `claim_set_hash` 命名。
+
+### 为什么不建议把全量 Value 直接扩张进 state leaf
+
+- **链上信任锚点不能缺席**：如果要做 `claim_set_hash`，它必须进入 `AccountLeaf`（或其他等价的 `state_root` 承诺字段）；若只是链下旁带字段，recipient 没有任何链上锚点可核验，这个摘要就不具备安全意义
+- **但不该把全量 Value 原样塞进去**：真正不建议的是把 bundle 里的全部 `ValueRange` 原样并入 `AccountLeaf`，这会把一个本应定长的状态叶子膨胀成内容叶子
+- **热路径重复承诺**：区块 `DiffPackage` 已携带完整 `BundleSidecar`，follower 也会重算 `bundle_hash` 校验；若再把所有 Value 原样塞进叶子，相当于在共识热路径重复携带同一批 Value 数据
+- **只能省负例，不能替代正例检查**：摘要即使命中目标 Value，recipient 仍必须拉取并扫描完整 bundle，去确认目标 tx 是否真实存在、是否唯一、是否发给正确 recipient，以及是否存在重复/相交花销
+- **最坏情况下摘要接近 bundle 本体**：高碎片或多 tx bundle 下，`all Values` 列表本身就可能接近 sidecar 的主要体积，节省并不稳定
+- **协议升级面过大**：leaf 编码、Receipt 重建语义、proof 绑定、兼容性和测试都要一起改，收益却主要集中在 recipient 的"负向过滤"场景
+
+### 更合理的收敛方案
+
+1. **保持 `AccountLeaf` 定长，但允许新增一个摘要字段**：不把原始 Value 列表直接并入 state leaf，而是在 `AccountLeaf` 中新增固定长度的 `claim_set_hash`
+2. **`claim_set_hash` 必须可由 `BundleSidecar` 重算**：leader / follower 基于完整 sidecar 规范化编码全部 `ValueRange`，重算并验证 `claim_set_hash`，确认 proposer 没有伪造摘要
+3. **Receipt 通过叶子证明把 `claim_set_hash` 绑定到链上**：recipient 验证 `account_state_proof` 时，重建出的 `AccountLeaf` 中必须包含该 `claim_set_hash`，这样它才是有链上信任锚点的负向过滤承诺
+4. **摘要与完整 sidecar 分层使用**：sender 可先给 recipient 发 `Receipt + 已被链上叶子承诺的 claim_set_hash`；只有当 `claim_set_hash` 显示目标 Value 可能命中时，recipient 再请求或展开完整 `BundleSidecar`
+
+### 收益
+
+| 维度 | 变化 |
+|------|------|
+| recipient 负向过滤 | 历史 bundle 若与目标 Value 无交集，可跳过完整 sidecar 扫描 |
+| 全局状态语义 | `state_root` 仍以账户头状态为主，只额外承诺一个固定长度 `claim_set_hash`，而不是整份交易内容 |
+| 共识可验证性 | 不新增信任假设；`claim_set_hash` 仍可由完整 sidecar 重算 |
+| 后续演进 | 与协议草案中"未来可选的 `claim_set_hash`"方向一致 |
+
+### 代价
+
+- 仍然需要新增一种规范化 `claim_set_hash` 编码和哈希规则，并扩展 `AccountLeaf` 语义
+- 若 `claim_set_hash` 命中目标 Value，recipient 仍要取完整 bundle，不能省掉正例验证
+- 需要额外的对象缓存或按需拉取流程，否则 `claim_set_hash` 与完整 sidecar 同时发送时收益有限
+- 这是协议升级，不是代码级微调；消息格式、验证器和测试都要同步改
+
+### 适用性判断
+
+| 条件 | 评估 |
+|------|------|
+| 你原始提出的"全量 Value 直接进 state leaf" | **不建议** |
+| 收敛为"在 `AccountLeaf` 中加入定长 `claim_set_hash`，而不是塞入全量 Value" | **可以作为 V2.x 候选研究项** |
+| MVP / 当前默认路径是否应立即做 | **否** |
+| 更适合的前置工作 | 先补齐真实 workload 下的 recipient 验证 CPU / 带宽剖面，再判断是否值得升级 |
+
+### 影响范围
+
+- `EZchain-V2-protocol-draft.md`：明确 `claim_set_hash` 的规范化语义，以及它如何进入 `AccountLeaf`
+- `EZ_V2/types.py`：`AccountLeaf` / `BundleEnvelope` / `DiffEntry` / `ConfirmedBundleUnit` 的承诺字段扩展
+- `EZ_V2/validator.py`：先做 `claim_set_hash` 负向过滤，再按需做完整 bundle 冲突检查
+- `EZ_V2/chain.py`：leader / follower 从 sidecar 重算并验证 `claim_set_hash`
+- `EZ_Test/`：补充"`claim_set_hash` 命中 / 未命中 / 伪造 / hit 后仍需 full bundle"的 focused tests
+
+---
+
 ## 全部优化实施优先级总表
 
 | 优先级 | 编号 | 优化项 | 核心收益 | 实现代价 |
@@ -557,6 +622,7 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 | **P1** | 2 | BLS 签名聚合 | QC 体积 ~10x 缩减 | 中 |
 | **观望** | 6 | HotStuff-2 两阶段 | 延迟 33% 降低（比 Pipelined 代价低得多） | 中 | **学术界安全性尚未定论，暂不作为主要优化项，仅作研究方向记录** |
 | **P1** | 7 | 见证链公共前缀去重验证 | 同 sender 多 Value 验证 CPU 减半 | 低 |
+| **观望** | 10 | Bundle Value 摘要承诺 | recipient 可先做负向过滤，减少历史 bundle 拉取与扫描 | 中高（协议升级） |
 | P2 | 3 | Pipelined HotStuff | 吞吐 3x 提升 | 高 |
 | P2 | 8 | SMT Proof Delta 增量更新 | 离线恢复减轻共识节点压力 | 中 |
 | P3 | 9 | Verkle Tree 远期迁移 | 单 proof 8x 缩减 | 很高（硬分叉） |
