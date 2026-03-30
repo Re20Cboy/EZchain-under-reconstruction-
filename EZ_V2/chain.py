@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from .claim_set import claim_range_set_from_sidecar, claim_range_set_hash
 from .crypto import address_from_public_key_pem, keccak256, sign_digest_secp256k1, verify_digest_secp256k1
 from .encoding import canonical_encode
-from .smt import SparseMerkleTree, verify_proof
+from .smt import SparseMerkleTree, build_multiproof, verify_proof
 from .types import (
     AccountLeaf,
     BlockHeaderV2,
@@ -18,6 +19,8 @@ from .types import (
     DiffPackage,
     HeaderLite,
     Receipt,
+    ReceiptProofBatch,
+    ReceiptProofRef,
     ReceiptResponse,
 )
 
@@ -67,8 +70,19 @@ def verify_bundle_envelope(envelope: BundleEnvelope, public_key_pem: bytes) -> b
     return verify_digest_secp256k1(public_key_pem, compute_bundle_sighash(envelope), envelope.sig)
 
 
+def _account_leaf_payload(leaf: AccountLeaf) -> dict:
+    payload = {
+        "addr": leaf.addr,
+        "head_ref": leaf.head_ref,
+        "prev_ref": leaf.prev_ref,
+    }
+    if leaf.claim_set_hash is not None:
+        payload["claim_set_hash"] = leaf.claim_set_hash
+    return payload
+
+
 def hash_account_leaf(leaf: AccountLeaf) -> bytes:
-    return keccak256(b"EZCHAIN_ACCOUNT_LEAF_V2" + canonical_encode(leaf))
+    return keccak256(b"EZCHAIN_ACCOUNT_LEAF_V2" + canonical_encode(_account_leaf_payload(leaf)))
 
 
 def compute_diff_leaf_hash(entry: DiffEntry) -> bytes:
@@ -137,6 +151,7 @@ def reconstructed_leaf(unit: ConfirmedBundleUnit) -> AccountLeaf:
         addr=unit.bundle_sidecar.sender_addr,
         head_ref=confirmed_ref(unit),
         prev_ref=unit.receipt.prev_ref,
+        claim_set_hash=unit.receipt.claim_set_hash,
     )
 
 
@@ -146,6 +161,8 @@ class ReceiptCache:
         self._by_height: dict[int, list[tuple[str, Receipt, BundleRef]]] = {}
         self._by_addr_seq: dict[tuple[str, int], Receipt] = {}
         self._by_ref: dict[tuple[int, bytes, bytes, int], Receipt] = {}
+        self._proof_batches_by_height: dict[int, list[str]] = {}
+        self._proof_batches: dict[str, ReceiptProofBatch] = {}
 
     def add(self, sender_addr: str, receipt: Receipt, bundle_ref: BundleRef) -> None:
         key = (sender_addr, receipt.seq)
@@ -171,6 +188,18 @@ class ReceiptCache:
                     ),
                     None,
                 )
+            for batch_id in self._proof_batches_by_height.pop(height, []):
+                self._proof_batches.pop(batch_id, None)
+
+    def add_proof_batch(self, height: int, batch: ReceiptProofBatch) -> None:
+        self._proof_batches[batch.batch_id] = batch
+        height_batches = self._proof_batches_by_height.setdefault(height, [])
+        if batch.batch_id not in height_batches:
+            height_batches.append(batch.batch_id)
+        self._prune()
+
+    def get_proof_batch(self, batch_id: str) -> ReceiptProofBatch | None:
+        return self._proof_batches.get(batch_id)
 
     def get_receipt(self, sender_addr: str, seq: int) -> ReceiptResponse:
         receipt = self._by_addr_seq.get((sender_addr, seq))
@@ -210,6 +239,9 @@ class BundlePool:
             raise ValueError("bundle expired")
         if compute_bundle_hash(submission.sidecar) != submission.envelope.bundle_hash:
             raise ValueError("bundle hash mismatch")
+        computed_claim_set_hash = claim_range_set_hash(claim_range_set_from_sidecar(submission.sidecar))
+        if submission.envelope.claim_set_hash is not None and submission.envelope.claim_set_hash != computed_claim_set_hash:
+            raise ValueError("claim_set_hash mismatch")
         if not verify_bundle_envelope(submission.envelope, submission.sender_public_key_pem):
             raise ValueError("invalid bundle signature")
         if len(canonical_encode(submission.sidecar)) > self.max_bundle_bytes:
@@ -373,6 +405,7 @@ class ChainStateV2:
                 addr=sender_addr,
                 head_ref=current_ref,
                 prev_ref=old_leaf.head_ref if old_leaf else None,
+                claim_set_hash=submission.envelope.claim_set_hash,
             )
             entries.append(
                 DiffEntry(
@@ -443,12 +476,21 @@ class ChainStateV2:
             ),
         )
         receipts: dict[str, Receipt] = {}
+        proof_batch = None
+        if entries:
+            proof_batch = ReceiptProofBatch(
+                batch_id=f"{height}:{block_hash.hex()}",
+                state_root=state_root,
+                multi_proof=build_multiproof(temp_tree, [entry.addr_key for entry in entries]),
+            )
+            self.receipt_cache.add_proof_batch(height, proof_batch)
         for entry in entries:
             proof = temp_tree.prove(entry.addr_key)
             receipt = Receipt(
                 header_lite=HeaderLite(height=height, block_hash=block_hash, state_root=state_root),
                 seq=entry.bundle_envelope.seq,
                 prev_ref=prev_refs[entry.new_leaf.addr],
+                claim_set_hash=entry.new_leaf.claim_set_hash,
                 account_state_proof=proof,
             )
             receipts[entry.new_leaf.addr] = receipt
@@ -508,6 +550,11 @@ class ChainStateV2:
                 raise ValueError("sender/public key mismatch")
             if compute_bundle_hash(sidecar) != entry.bundle_hash or entry.bundle_hash != entry.bundle_envelope.bundle_hash:
                 raise ValueError("bundle hash mismatch")
+            computed_claim_set_hash = claim_range_set_hash(claim_range_set_from_sidecar(sidecar))
+            if entry.bundle_envelope.claim_set_hash is not None and entry.bundle_envelope.claim_set_hash != computed_claim_set_hash:
+                raise ValueError("claim_set_hash mismatch")
+            if entry.new_leaf.claim_set_hash != entry.bundle_envelope.claim_set_hash:
+                raise ValueError("new leaf claim_set_hash mismatch")
             if not verify_bundle_envelope(entry.bundle_envelope, public_key):
                 raise ValueError("bundle signature invalid")
             if entry.bundle_envelope.expiry_height < block.header.height:
@@ -532,6 +579,13 @@ class ChainStateV2:
             raise ValueError("diff_root mismatch")
         if temp_tree.root() != block.header.state_root:
             raise ValueError("state_root mismatch")
+        if entries:
+            proof_batch = ReceiptProofBatch(
+                batch_id=f"{block.header.height}:{block.block_hash.hex()}",
+                state_root=block.header.state_root,
+                multi_proof=build_multiproof(temp_tree, [entry.addr_key for entry in entries]),
+            )
+            self.receipt_cache.add_proof_batch(block.header.height, proof_batch)
         for entry in entries:
             proof = temp_tree.prove(entry.addr_key)
             leaf_hash = hash_account_leaf(entry.new_leaf)
@@ -545,6 +599,7 @@ class ChainStateV2:
                 ),
                 seq=entry.bundle_envelope.seq,
                 prev_ref=self.account_leaves.get(entry.new_leaf.addr).head_ref if self.account_leaves.get(entry.new_leaf.addr) else None,
+                claim_set_hash=entry.new_leaf.claim_set_hash,
                 account_state_proof=proof,
             )
             receipts[entry.new_leaf.addr] = receipt

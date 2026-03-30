@@ -16,7 +16,7 @@ from EZ_App.runtime import TxEngine
 from EZ_App.wallet_store import WalletStore
 from EZ_V2.control import read_state_file
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import MSG_TRANSFER_PACKAGE_DELIVER, NetworkEnvelope, PeerInfo
+from EZ_V2.networking import MSG_TRANSFER_PACKAGE_DELIVER, NetworkEnvelope, PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import LocalValueStatus
 from EZ_V2.wallet import WalletAccountV2
@@ -296,18 +296,22 @@ class LocalTCPDaemonCluster:
     def _deliver_confirmed_packages(self, name: str, *, seq: int) -> dict[str, int]:
         state = self.read_account_state(name)
         sender_address = self.account_specs[name].address
-        sender_peer = PeerInfo(
-            node_id=self._peer_id_for_address(sender_address),
-            role="account",
-            endpoint="127.0.0.1:0",
-            metadata={"address": sender_address},
+        sender_peer = with_v2_features(
+            PeerInfo(
+                node_id=self._peer_id_for_address(sender_address),
+                role="account",
+                endpoint="127.0.0.1:0",
+                metadata={"address": sender_address},
+            )
         )
         account_peers = tuple(
-            PeerInfo(
-                node_id=self._peer_id_for_address(spec.address),
-                role="account",
-                endpoint=spec.endpoint,
-                metadata={"address": spec.address},
+            with_v2_features(
+                PeerInfo(
+                    node_id=self._peer_id_for_address(spec.address),
+                    role="account",
+                    endpoint=spec.endpoint,
+                    metadata={"address": spec.address},
+                )
             )
             for peer_name, spec in self.account_specs.items()
             if peer_name != name

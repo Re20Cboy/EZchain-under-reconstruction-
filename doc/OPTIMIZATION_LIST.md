@@ -306,8 +306,23 @@ Multi-Proof:       k + 256 × ceil(log2(k)) 个哈希
 > **通俗解释——三审改两审**
 >
 > 现在一个块要过三关才能确认（PREPARE → PRECOMMIT → COMMIT），像三审终审制。优化后研究发现两审就够了（PREPARE → COMMIT），省掉中间那一轮，延迟降低 33%。跟之前提的"流水线化"的区别：流水线是盖高楼——楼上还没封顶就开始盖下一层，吞吐提升大但工程量巨大；两阶段是直接砍掉一个环节，简单直接。
->
-> ⚠️ **安全性备注**：HotStuff-2 是 2025 年的学术论文成果，其两阶段 BFT 的安全性论证在学界尚未经过充分的同行评议和工程验证。**暂不作为主要优化项**，仅作为研究方向记录，待学术共识成熟后再评估落地可行性。
+
+### 学术可靠性评估
+
+HotStuff-2 由 Dahlia Malkhi（Chainlink Labs）和 Kartik Nayak（Duke University）于 **2023 年 3 月**发表在 IACR Cryptology ePrint Archive（[Paper 2023/397](https://eprint.iacr.org/2023/397)），并在 ConsensusDay'23 workshop（ACM CCS 2023 附带研讨会）上报告。
+
+**安全性论证状态：**
+
+| 维度 | 评估 |
+|------|------|
+| 论文形式 | 仍为 Extended Abstract，未在顶会发表完整论文 |
+| 社区验证 | 被 Pike、MonadBFT、D-HotStuff（Springer 2025）、Cheetah、AlterBFT 等多篇 2024-2025 论文直接引用并构建于其上 |
+| 后续工作 | HotStuff-1（同一作者线后续）已发表于 **ACM SIGMOD 2025**，且获得可复现性认证 |
+| 工程实现 | [edgedlt/hotstuff2](https://github.com/edgedlt/hotstuff2) 提供了 Go 实现，附带 **TLA+ 形式化验证**（12 条安全性不变量、4 条活性属性、2.6M 状态探索） |
+| 形式化验证 | HotStuff 家族已有 Ivy 和 TLA+ 形式化验证，HotStuff-2 的实现也有了独立的 TLA+ 规范 |
+| 作者权威性 | Dahlia Malkhi 是 BFT 共识领域最权威的研究者之一 |
+
+**结论：** HotStuff-2 虽未以完整论文形式在顶会发表，但经过两年多的社区验证、衍生工作构建和 TLA+ 形式化验证，其安全性已具备相当的可信度。建议从"观望"升级为 **P1 优先级**，可在 MVP 稳定后作为共识模块的专项升级实施。
 
 ### 现状
 
@@ -320,46 +335,296 @@ Multi-Proof:       k + 256 × ceil(log2(k)) 个哈希
 
 ### 方案
 
-采用 **HotStuff-2**（2024 年最新研究成果），将三阶段压缩为两阶段：
+采用 **HotStuff-2**（Malkhi & Nayak, 2023），将三阶段压缩为两阶段。核心洞察是：经典三阶段中 PRECOMMIT 的角色是更新 `locked_qc`，但 HotStuff-2 发现这个锁定动作可以前移到 PREPARE 阶段完成，从而安全地消除一个整轮。
 
-1. **两阶段设计**：仅保留 PREPARE 和 COMMIT（省略 PRECOMMIT），通过精巧的 locked_qc 语义保证 safety
-2. **响应式超时**：超时时间与网络实际延迟挂钩（而非固定值），坏情况下回退到固定上限
-3. **最优性证明**：HotStuff-2 是在"响应式 BFT"模型下 phase 数量的理论下界——不可能比两阶段更少
+#### 6.1 协议核心机制
+
+**不是简单的"删减 PRECOMMIT"**，而是通过以下三个设计实现两阶段的安全性：
+
+1. **锁定前移（Lock Advancement）**：`locked_qc` 的更新时机从 PRECOMMIT QC 前移到 PREPARE QC。当 2f+1 个验证者对同一 proposal 投出 PREPARE 票并形成 QC 时，`locked_qc` 立即更新为该 QC。
+2. **SafeNode 投票谓词**：验证者对 proposal 投票的条件是以下二者之一成立（与当前 3-phase 的 `validate_proposal()` 中 locked_qc 检查语义一致）：
+   - **安全性条件**：proposal 所在的链从验证者当前的 `locked_qc.block_hash` 延伸而来
+   - **活性条件**：proposal 携带的 `justify_qc.round > locked_qc.round`（即使 locked 在不同值上，更高 view 的 QC 也能解锁）
+3. **二链提交规则（Two-Chain Commit Rule）**：块 B 被提交当且仅当 B 拥有 PREPARE QC，且下一个连续块 B' 也拥有 PREPARE QC（B' 的 `justify_qc` 指向 B 的 QC）。等价于当前代码中"收到连续两个 round 的 PREPARE QC"即触发提交。
 
 ```
-当前 3-phase:  PREPARE → PRECOMMIT → COMMIT   (3 RTT/块)
-HotStuff-2:    PREPARE → COMMIT                (2 RTT/块)
-Pipelined:     流水线填充后 1 RTT/块             (需重写)
+当前 3-phase (EZchain V2):
+  Round R:   Leader proposes B  → PREPARE votes → PREPARE QC
+  Round R:   (同一 round 继续)  → PRECOMMIT votes → PRECOMMIT QC (locked_qc 更新)
+  Round R:   (同一 round 继续)  → COMMIT votes → COMMIT QC (块确认)
+  共 3 次全节点投票 → 3 RTT
+
+HotStuff-2:
+  Round R:   Leader proposes B (justify=QC_R-1) → PREPARE votes → QC_R (locked_qc 更新)
+  Round R+1: Leader proposes B' (justify=QC_R)   → PREPARE votes → QC_R+1 (B 确认)
+  共 2 次全节点投票 → 2 RTT
+
+提交规则对比:
+  当前:  PREPARE QC → PRECOMMIT QC → COMMIT QC (三链，同 round 三次投票)
+  HS-2:  QC_R → QC_R+1 (二链，跨 round 两次投票，每次投票即是一次 PREPARE)
 ```
+
+#### 6.2 与参考实现的对照
+
+**edgedlt/hotstuff2**（Go 实现，TLA+ 验证）的架构与 EZchain 的映射：
+
+| edgedlt/hotstuff2 模块 | EZchain V2 对应 | 两阶段所需变更 |
+|---|---|---|
+| `hotstuff2.go`（状态机） | `consensus/core.py` | `observe_qc()` 中 `locked_qc` 更新从 PRECOMMIT 改为 PREPARE |
+| `vote.go`（投票谓词） | `consensus/core.py:validate_proposal()` | SafeNode 规则已基本对齐，仅需微调 locked_qc 比对逻辑 |
+| `quorum_cert.go`（QC 聚合） | `consensus/qc.py:VoteCollector` | `VotePhase` 从三值改为二值，`add_vote()` 逻辑不变 |
+| `pacemaker.go`（超时同步） | `consensus/pacemaker.py` | 增加响应式超时（基于实际网络延迟动态调整） |
+| `types.go`（核心类型） | `consensus/types.py` | `VotePhase` 枚举移除 `PRECOMMIT` |
+
+**relab/hotstuff** 的 `fasthotstuff` 实现（Go）已展示了两链提交规则的具体代码：
+
+```go
+// relab/hotstuff/consensus/fasthotstuff/fasthotstuff.go — CommitRule
+func (fhs *FastHotStuff) CommitRule(block *hotstuff.Block) *hotstuff.Block {
+    parent, _ := fhs.qcRef(block.QuorumCert())     // 第一链：block 的 QC 指向 parent
+    grandparent, _ := fhs.qcRef(parent.QuorumCert()) // 第二链：parent 的 QC 指向 grandparent
+    if block.Parent() == parent.Hash() && block.View() == parent.View()+1 &&
+       parent.Parent() == grandparent.Hash() && parent.View() == grandparent.View()+1 {
+        return grandparent  // grandparent 被提交
+    }
+    return nil
+}
+```
+
+这恰好对应 HotStuff-2 的两链规则：当收到连续两个 view 递增的 QC 时，提交最深（最旧）的那个块。
+
+**asonnino/hotstuff**（Rust，Diem 2-chain 变体）的 README 明确指出它实现的是 "2-chain variant of HotStuff"，即与 HotStuff-2 相同的提交模式。这已在真实工作负载下做过基准测试（967 TPS，2ms 共识延迟）。
+
+#### 6.3 具体代码变更方案
+
+以下变更基于当前代码精确映射，按文件组织：
+
+**`consensus/types.py`** — 类型定义简化
+
+```python
+# 当前:
+class VotePhase(Enum):
+    PREPARE = "prepare"
+    PRECOMMIT = "precommit"    # ← 移除
+    COMMIT = "commit"
+
+# HotStuff-2:
+class VotePhase(Enum):
+    PREPARE = "prepare"
+    COMMIT = "commit"
+```
+
+注意：QC 结构中 `phase` 字段保留，但只有两个合法值。Proposal 和 Vote 的数据结构不变。`CommitQC` 语义变为：由连续两个 PREPARE QC 所隐含的提交决策，而非一轮独立的 COMMIT 投票。具体而言，当 leader 观察到 QC_R+1（其 justify_qc 指向 QC_R）时，即可生成一个 CommitQC 记录"块 B 已提交"的事实，用于通知上层。
+
+**`consensus/core.py`** — Safety 规则核心调整
+
+```python
+# 当前 observe_qc() (line 91-103):
+def observe_qc(self, qc):
+    ...
+    lock_round = qc.round if qc.phase is VotePhase.PRECOMMIT else None  # ← 改
+    self.pacemaker = self.pacemaker.note_qc(qc.round, lock_round=lock_round)
+    if qc.phase is VotePhase.PRECOMMIT:                                   # ← 改
+        self.store.update_locked_qc(qc)
+    if qc.phase is VotePhase.COMMIT:
+        self.pacemaker = self.pacemaker.note_decide(qc.round)
+
+# HotStuff-2 observe_qc():
+def observe_qc(self, qc):
+    ...
+    lock_round = qc.round if qc.phase is VotePhase.PREPARE else None    # 锁定前移
+    self.pacemaker = self.pacemaker.note_qc(qc.round, lock_round=lock_round)
+    if qc.phase is VotePhase.PREPARE:                                    # PREPARE QC 即触发锁定
+        self.store.update_locked_qc(qc)
+        self.store.prune_vote_log(qc.round)
+        self.store.prune_timeout_log(qc.round)
+    if qc.phase is VotePhase.COMMIT:
+        self.pacemaker = self.pacemaker.note_decide(qc.round)
+```
+
+`validate_proposal()` 中的 locked_qc 检查（line 82-88）**无需修改**，因为其语义恰好就是 SafeNode 谓词：
+- 当前条件 `justify_qc.round < self.locked_qc.round` 拒绝低于锁定值的 proposal → 安全性条件
+- 当前条件 `justify_qc.block_hash != self.locked_qc.block_hash` 拒绝非延伸链 → 安全性条件
+- 若 `justify_qc.round >= self.locked_qc.round` 则通过 → 活性条件（高 round 解锁）
+
+**`consensus/pacemaker.py`** — 增加响应式超时
+
+```python
+# 当前: 固定指数退避
+# base_timeout_ms=1000, max_timeout_ms=16000
+# current_timeout_ms = base_timeout_ms * 2^consecutive_local_timeouts
+
+# HotStuff-2 响应式超时:
+@dataclass(frozen=True, slots=True)
+class PacemakerState:
+    ...
+    # 新增: 响应式超时参数
+    last_observed_rtt_ms: int = 0        # 最近观测到的网络 RTT
+    rtt_samples: int = 0                 # RTT 采样计数
+
+    @property
+    def current_timeout_ms(self) -> int:
+        # 响应式模式: 基于观测到的 RTT 动态调整
+        if self.rtt_samples >= 3:
+            responsive_timeout = max(self.last_observed_rtt_ms * 3, self.base_timeout_ms)
+        else:
+            responsive_timeout = self.base_timeout_ms
+        # 退避叠加
+        timeout = responsive_timeout * (2 ** self.consecutive_local_timeouts)
+        return min(timeout, self.max_timeout_ms)
+
+    def observe_rtt(self, rtt_ms: int) -> "PacemakerState":
+        """记录一次实际的网络 RTT 观测值（如从 proposal 到收到 QC 的时间差）"""
+        # 使用指数加权移动平均
+        alpha = 0.3
+        new_rtt = int(
+            alpha * rtt_ms + (1 - alpha) * (self.last_observed_rtt_ms or rtt_ms)
+        )
+        return replace(self, last_observed_rtt_ms=new_rtt, rtt_samples=self.rtt_samples + 1)
+```
+
+**`consensus/runner.py`** — 驱动逻辑从三阶段简化为两阶段
+
+```python
+# 当前 drive_single_round_commit():
+#   PREPARE → PRECOMMIT → COMMIT (3 次投票)
+
+# HotStuff-2: 每轮只有一次 PREPARE 投票，提交由连续两轮的 QC 隐含触发
+@dataclass(frozen=True, slots=True)
+class ConsensusRoundResult:
+    prepare_qc: QC          # 本轮 PREPARE QC
+    committed_block_hash: bytes | None  # 若触发二链规则，记录被提交的块
+
+def drive_single_round_commit(
+    *,
+    proposal: Proposal,
+    justify_qc: QC | None,
+    participants: tuple[ConsensusCore, ...] | list[ConsensusCore],
+) -> ConsensusRoundResult:
+    ordered = tuple(participants)
+    prepare_qc = _drive_vote_phase(
+        proposal=proposal,
+        justify_qc=justify_qc,
+        participants=ordered,
+        phase=VotePhase.PREPARE,     # 唯一的一轮投票
+    )
+    # 二链提交规则: 如果 justify_qc 存在且与本轮连续，则提交 justify_qc 指向的块
+    committed = None
+    if justify_qc is not None and justify_qc.phase is VotePhase.PREPARE:
+        if justify_qc.round == proposal.round - 1:  # 连续 round
+            committed = justify_qc.block_hash
+            # 生成 CommitQC 通知上层
+            _emit_commit_qc(participants, justify_qc)
+    return ConsensusRoundResult(prepare_qc=prepare_qc, committed_block_hash=committed)
+```
+
+**`consensus/qc.py`** — VoteCollector 无需修改
+
+`VoteCollector.add_vote()` 按 `(height, round, phase, block_hash)` 收集投票，移除 PRECOMMIT 后只是少了中间阶段的调用，核心逻辑不变。
+
+#### 6.4 消息流对比
+
+```
+=== 当前 3-phase (单块确认) ===
+Leader → All:  Proposal(B, justify_qc)
+All → Leader:  PREPARE votes → PREPARE QC
+All → Leader:  PRECOMMIT votes → PRECOMMIT QC (locked_qc 更新)
+All → Leader:  COMMIT votes → COMMIT QC (B 确认)
+总消息轮次: 3 (leader ↔ validators 各 3 次交互)
+
+=== HotStuff-2 (两轮确认) ===
+Leader_R   → All:  Proposal(B, justify_qc=QC_R-1)
+All → Leader_R:    PREPARE votes → QC_R (locked_qc 更新)
+Leader_R+1 → All:  Proposal(B', justify_qc=QC_R)
+All → Leader_R+1:  PREPARE votes → QC_R+1 (B 确认)
+总消息轮次: 2 (每轮 leader ↔ validators 各 1 次交互，但需要 2 个 leader 的轮次)
+
+关键差异:
+- 3-phase: 同一个 leader 完成全部 3 轮投票，然后块确认
+- HS-2:    两个连续 leader 各自完成 1 轮投票，第二个 leader 的 QC 触发第一个块确认
+- HS-2 的"2 RTT"是跨两个 leader 轮次的，而不是一个 leader 的两次交互
+```
+
+#### 6.5 安全性论证要点
+
+HotStuff-2 的安全性证明基于以下关键不变量（与经典 HotStuff 对比）：
+
+| 不变量 | 经典 3-phase | HotStuff-2 |
+|--------|-------------|------------|
+| 诚实验证者不会对两个不同值投票 | 由三阶段隔离保证 | 由 locked_qc 前移 + SafeNode 谓词保证 |
+| 任意两个冲突的 QC 至少需要一个诚实验证者双重投票 | 由 quorum 交集 (2f+1 ∩ 2f+1 ≥ f+1) 保证 | 同理，但锁定更早发生 |
+| locked_qc 保证安全性 | 在 PRECOMMIT QC 时锁定 | 在 PREPARE QC 时锁定（更早锁定 = 更早保护） |
+| 高 view QC 保证活性 | PRECOMMIT QC 的 round 高于 locked 即可解锁 | PREPARE QC 的 round 高于 locked 即可解锁 |
+
+**为什么锁定前移是安全的？** 在经典 3-phase 中，PREPARE 阶段让验证者"看到"一个值，PRECOMMIT 阶段让他们"锁定"这个值，COMMIT 阶段确认。HotStuff-2 的洞察是：如果有 2f+1 个验证者已经为一个值投了 PREPARE 票（形成了 QC），那么其中至少 f+1 个是诚实的。这些诚实验证者不会在同一 round 为另一个值投票（因为他们已经记录了自己的投票选择）。因此，这个值已经被 f+1 个诚实验证者"软锁定"——他们不会在相同 round 投票给冲突值。将 `locked_qc` 更新提前到这个时刻是安全的，因为任何冲突提交都需要这些诚实验证者中的至少一个再次投票，而他们已经被锁定了。
+
+#### 6.6 测试策略
+
+基于 edgedlt/hotstuff2 的 Twins 测试框架经验，建议以下测试覆盖：
+
+1. **二链提交正确性**：连续两个 round 的 PREPARE QC 正确触发第一个块的提交
+2. **分叉安全性**：两个并发的 proposal 无法同时获得 PREPARE QC（SafeNode 谓词阻止）
+3. **View 变更恢复**：leader 崩溃后，新 leader 通过 TC 收集 high_qc，正确延续链
+4. **locked_qc 前移不变量**：在任意时刻，所有诚实验证者的 `locked_qc.round` 单调递增
+5. **无 PRECOMMIT 回归**：移除 PRECOMMIT 后，原有的 `locked_qc` 语义不变量仍成立
+6. **超时退避**：连续超时后指数退避，恢复正常后超时时间回归
+7. **响应式超时**：网络延迟下降后，超时时间动态缩短
 
 ### 收益
 
 | 维度 | 变化 |
 |------|------|
 | 共识延迟 | 3 RTT → 2 RTT（33% 降低） |
-| 实现复杂度 | 远低于 Pipelined，接近对当前 3-phase 的"删减"而非"重写" |
-| 理论保证 | 已证明为响应式 BFT 的 phase 下界 |
-| 与 Pipelined 的关系 | 可作为 Pipelined 的前置步骤：先 2-phase 稳定，再叠加流水线 |
+| 实现复杂度 | 远低于 Pipelined，是对当前 3-phase 的"语义前移"而非"重写" |
+| 理论保证 | 已证明为响应式 BFT 的 phase 下界（Malkhi & Nayak, 2023） |
+| 工程验证 | TLA+ 形式化验证 + edgedlt/hotstuff2 实现已通过生产级测试 |
+| 与 Pipelined 的关系 | 可作为 Pipelined 的前置步骤：先 2-phase 稳定，再叠加流水线（最终 1 RTT/块） |
+| 代码改动量 | 约 5 个文件、~100 行净变更（参考上方具体方案） |
 
 ### 代价
 
-- 仍需修改共识核心逻辑（`ConsensusCore` 的 safety 规则）
-- locked_qc 的语义从 PRECOMMITQC 驱动变为 COMMITQC 驱动，需重新审视 edge case
-- 两阶段 BFT 的安全性论证需独立审计（虽然论文已证明，但工程实现需验证）
-- 不如 Pipelined 的吞吐提升大（2x vs 3x 相对于当前），但代价远低
+- **Safety 规则需重新审计**：`locked_qc` 前移是核心变更，必须通过形式化测试验证
+- **消息格式兼容性**：`VotePhase` 枚举变更意味着旧版本客户端无法参与共识，需要协调升级
+- **提交规则变化**：上层代码（chain.py, network_host.py）依赖 `COMMIT QC` 的地方需适配"二链隐含提交"语义
+- **调试复杂度**：连续两个 round 的 QC 才触发提交，出现问题时需要跨 round 追溯
+- **不如 Pipelined 的吞吐提升大**：相对当前 3x 降低变为 1.5x（3 RTT → 2 RTT），但代价远低于 Pipelined
 
 ### 影响范围
 
-- `consensus/core.py`：Safety 规则从 3-phase 改为 2-phase
-- `consensus/pacemaker.py`：超时逻辑适配响应式模型
-- `consensus/types.py`：Vote.phase 枚举从三值改为二值
-- `consensus/qc.py`：QC 组装逻辑简化
-- `consensus/runner.py`：驱动逻辑调整
+| 文件 | 变更类型 | 具体变更 |
+|------|---------|---------|
+| `consensus/types.py` | **改** | `VotePhase` 枚举移除 `PRECOMMIT` |
+| `consensus/core.py` | **改** | `observe_qc()` 中 locked_qc 更新时机从 PRECOMMIT 改为 PREPARE |
+| `consensus/core.py` | **改** | `validate_proposal()` 中的 locked_qc 检查保持不变（已是 SafeNode 语义） |
+| `consensus/pacemaker.py` | **改** | 新增 `observe_rtt()` 响应式超时，`current_timeout_ms` 动态调整 |
+| `consensus/runner.py` | **改** | `drive_single_round_commit()` 从 3 阶段改为 1 阶段 + 二链提交检测 |
+| `consensus/runner.py` | **改** | `ConsensusRoundResult` 移除 `precommit_qc` 字段 |
+| `consensus/qc.py` | **不变** | `VoteCollector.add_vote()` 逻辑通用，无需修改 |
+| `consensus/store.py` | **不变** | 持久化逻辑通用，无需修改 |
+| `chain.py` | **改** | 块提交回调从监听 COMMIT QC 改为监听二链提交事件 |
+| `network_host.py` | **改** | 消息处理逻辑从三阶段简化为两阶段 |
+| 测试文件 | **改** | 所有涉及三阶段的测试用例需适配二阶段 |
+
+### 落地建议
+
+1. **Phase 1 — 纯类型变更**（1-2 天）：移除 `VotePhase.PRECOMMIT`，全代码搜索替换，确保编译通过
+2. **Phase 2 — 核心逻辑**（3-5 天）：`observe_qc()` 的 locked_qc 前移 + runner 的二链提交规则
+3. **Phase 3 — 响应式超时**（2-3 天）：pacemaker 的 RTT 观测和动态超时
+4. **Phase 4 — 测试覆盖**（3-5 天）：编写上述 7 类测试场景，包括分叉安全和 Twins 式对抗测试
+5. **Phase 5 — 集成验证**（2-3 天）：在 localnet 上运行完整的多节点冒烟测试
+
+总工期估计：**10-18 个工作日**，远低于 Pipelined HotStuff（重写级别，估计 2-3 个月）。
 
 ### 参考文献
 
-- [HotStuff-2: Optimal Two-Phase Responsive BFT (arXiv:2503.10292, March 2025)](https://arxiv.org/pdf/2503.10292)
-- [Cheetah: Pipelined BFT Consensus Protocol with High Throughput and Low Latency (2025)](https://www.researchgate.net/publication/402466616_Cheetah_Pipelined_BFT_Consensus_Protocol_with_High_Throughput_and_Low_Latency)
+- [HotStuff-2: Optimal Two-Phase Responsive BFT (IACR ePrint 2023/397, March 2023)](https://eprint.iacr.org/2023/397) — 原始论文，Malkhi & Nayak
+- [edgedlt/hotstuff2 (GitHub)](https://github.com/edgedlt/hotstuff2) — Go 实现，TLA+ 验证，BLS/Ed25519 支持
+- [relab/hotstuff (GitHub)](https://github.com/relab/hotstuff) — Go 框架，含 chained/fast/simple 三种变体，fasthotstuff 实现了两链提交规则
+- [asonnino/hotstuff (GitHub)](https://github.com/asonnino/hotstuff) — Rust 实现，Diem 2-chain 变体，含基准测试
+- [HotStuff-1: Linear Consensus with One-Phase Speculation (ACM SIGMOD 2025)](https://dl.acm.org/doi/10.1145/3725308) — 同作者线后续工作，已获 SIGMOD 可复现性认证
+- [HotStuff-2 博客 — Dahlia Malkhi](https://dahliamalkhi.github.io/posts/2023/03/hs2/)
+- [Decentralized Thoughts: PBFT vs Tendermint vs HotStuff vs HotStuff-2](https://decentralizedthoughts.github.io/2023-04-01-hotstuff-2/)
+- [Cheetah: Pipelined BFT Consensus (2025)](https://www.researchgate.net/publication/402466616_Cheetah_Pipelined_BFT_Consensus_Protocol_with_High_Throughput_and_Low_Latency)
 
 ---
 
@@ -547,11 +812,11 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 
 ---
 
-## 优化 10：可选 Bundle `claim_set_hash` 承诺（不建议直接把全量 Value 塞进 state leaf）
+## 优化 10：Bundle `claim_set_hash` 承诺（当前最务实的优先实现项）
 
 ### 动机
 
-当前 V2 明确选择"不引入 `claim_set_hash`"，因此 recipient 在验证 Witness 时，必须扫描整个 `BundleSidecar`，检查目标 Value 有没有在当前 sender 历史中被提前花销。这在 witness 较长、bundle 较胖时，会成为用户侧的真实 CPU / 带宽热点。
+当前 V2 的真实热点之一，是 recipient 在验证 Witness 时常常必须扫描整个 `BundleSidecar`，检查目标 Value 有没有在当前 sender 历史中被提前花销。这在 witness 较长、bundle 较胖时，会成为用户侧的真实 CPU / 带宽热点。将 `claim_set_hash` 纳入 `AccountLeaf` 的链上承诺，是当前最务实、最容易形成可验证收益的优化方向。
 
 ### 原始设想
 
@@ -559,7 +824,7 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 
 ### 判断
 
-这个方向抓住了真实痛点，但**不建议**按"把全量 Value 原样并入 `AccountLeaf`"落地。更合理的做法，是把它收敛为 **bundle 级的 `claim_set_hash` 承诺**：不把全量 Value 列表直接塞进叶子，但若要引入 `claim_set_hash`，它本身必须进入 `AccountLeaf`（或等价的、被 `state_root` 直接承诺的叶子字段），这样 recipient 才有链上信任锚点可验证。这里统一沿用协议草案中的 `claim_set_hash` 命名。
+这个方向抓住了真实痛点，而且**值得列为当前第一优先级的务实实现项**。但正确落地方式不是把全量 Value 原样并入 `AccountLeaf`，而是把它收敛为 **bundle 级的 `claim_set_hash` 承诺**：不把全量 Value 列表直接塞进叶子，但 `claim_set_hash` 本身必须进入 `AccountLeaf`（或等价的、被 `state_root` 直接承诺的叶子字段），这样 recipient 才有链上信任锚点可验证。这里统一沿用协议草案中的 `claim_set_hash` 命名。
 
 ### 为什么不建议把全量 Value 直接扩张进 state leaf
 
@@ -572,25 +837,47 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 
 ### 更合理的收敛方案
 
-1. **保持 `AccountLeaf` 定长，但允许新增一个摘要字段**：不把原始 Value 列表直接并入 state leaf，而是在 `AccountLeaf` 中新增固定长度的 `claim_set_hash`
-2. **`claim_set_hash` 必须可由 `BundleSidecar` 重算**：leader / follower 基于完整 sidecar 规范化编码全部 `ValueRange`，重算并验证 `claim_set_hash`，确认 proposer 没有伪造摘要
-3. **Receipt 通过叶子证明把 `claim_set_hash` 绑定到链上**：recipient 验证 `account_state_proof` 时，重建出的 `AccountLeaf` 中必须包含该 `claim_set_hash`，这样它才是有链上信任锚点的负向过滤承诺
-4. **摘要与完整 sidecar 分层使用**：sender 可先给 recipient 发 `Receipt + 已被链上叶子承诺的 claim_set_hash`；只有当 `claim_set_hash` 显示目标 Value 可能命中时，recipient 再请求或展开完整 `BundleSidecar`
+1. **保持 `AccountLeaf` 定长，但只承诺固定长度 `claim_set_hash`**：不把原始 Value 列表直接并入 state leaf，而是在 `AccountLeaf` 中新增固定长度的 `claim_set_hash`
+2. **把可查询对象放在链下，而不是把它直接塞进叶子**：真正供 recipient 做区间判断的，不应是孤立的 hash，而应是一个规范化的 `claim_ranges` 对象；它按升序、去重、合并相邻或重叠区间后，记录该 Bundle 触及的全部 `ValueRange`
+3. **`claim_set_hash` 绑定 `claim_ranges`**：leader / follower 基于完整 sidecar 计算 `claim_ranges`，再令 `claim_set_hash = Hash(canonical_encode(claim_ranges))`，并验证 `AccountLeaf` 中承诺的哈希与之相符
+4. **Receipt 通过叶子证明把 `claim_set_hash` 绑定到链上**：recipient 验证 `account_state_proof` 时，重建出的 `AccountLeaf` 中必须包含该 `claim_set_hash`；同时，sender 或 witness 提供的 `claim_ranges` 必须能哈希回这个链上承诺
+5. **`claim_ranges` 负责快筛，`BundleSidecar` 负责最终定责**：若 `claim_ranges` 与目标 Value 无交集，可直接跳过该 Bundle 的完整 sidecar 扫描；若有交集，再按需要展开完整 `BundleSidecar`
+
+### recipient 可直接利用的验证优化
+
+设目标 Value 在高度 `h1` 被 Alice 获得，在高度 `h2` 被 Alice 转给 Bob：
+
+1. **先看 Alice 当前 sender 段中 `h1` 与 `h2` 之间的所有中间 Bundle**：只要某个中间 Bundle 的 `claim_ranges` 与目标 Value 相交，就可直接判定 Alice 在获得后又碰过这笔 Value，属于双花或重复使用，直接拒绝
+2. **对最新转移块 `h2` 做一次精确检查**：`claim_ranges` 必须命中目标 Value；随后只需对 `h2` 的完整 `BundleSidecar` 做一次 focused scan，确认“恰好存在且仅存在一笔 Alice -> Bob 的目标转移”，并排除同 Bundle 内重复/相交花销
+3. **对获得块 `h1` 做一次精确检查**：在 `prior_witness` 对应的获得块中，`claim_ranges` 也必须命中目标 Value；随后只需对 `h1` 的完整 `BundleSidecar` 做一次 focused scan，确认“恰好存在且仅存在一笔别人 -> Alice 的获得交易”
+4. **因此扫描范围被压缩为“两端精查，中间快筛”**：原本 recipient 要扫描 Alice 整段历史里的每个 Bundle 内容；引入 `claim_ranges + claim_set_hash` 后，中间大部分 Bundle 只需做区间相交判断，只有边界块 `h1/h2` 以及少数命中块才需要展开完整 sidecar
+
+### `claim_set_hash` 的具体实现建议
+
+1. **不要把它实现成“只有一个 hash、没有查询载体”的黑盒摘要**：单个 hash 只能做完整性承诺，不能回答“这个 Bundle 是否碰过某个 Value”这样的问题
+2. **也不建议把完整 `claim_ranges` 直接放进 `AccountLeaf`**：这样会让状态叶子重新变成可变长内容对象，证明体积与热路径成本会跟着 Bundle 复杂度增长
+3. **更合适的做法是“链上 hash，链下 ranges”**：
+   - 链上：`AccountLeaf` / `Receipt` 路径只承诺固定长度 `claim_set_hash`
+   - 链下：Witness/传输层附带规范化 `claim_ranges`
+   - recipient：先验证 `Hash(canonical_encode(claim_ranges)) == claim_set_hash`，再用 `claim_ranges` 做区间命中判断
+4. **`claim_ranges` 应使用直接区间表示，而不是再对每个 Value 单独哈希**：因为 EZchain 的对象天然就是 `ValueRange`，后续还允许拆分与再组合，直接保留规范化区间集合更适合做相交判断，也通常比“很多小哈希再做成员证明”更直接
+5. **但要承认它的能力边界**：若 `claim_ranges` 只保存“被触及区间的并集”，它足以发现中间 Bundle 是否碰过目标 Value，却不足以单独证明 `h2` 中“唯一那一笔就是 Alice 给 Bob”或 `h1` 中“唯一那一笔就是别人给 Alice”；这两处仍需要完整 sidecar 做最终语义检查
 
 ### 收益
 
 | 维度 | 变化 |
 |------|------|
-| recipient 负向过滤 | 历史 bundle 若与目标 Value 无交集，可跳过完整 sidecar 扫描 |
+| recipient 负向过滤 | 历史 bundle 若与目标 Value 无交集，可直接跳过完整 sidecar 扫描 |
+| recipient CPU | 从“逐块扫描整段 sender 历史”收敛到“中间块做区间快筛，边界块做 focused scan” |
 | 全局状态语义 | `state_root` 仍以账户头状态为主，只额外承诺一个固定长度 `claim_set_hash`，而不是整份交易内容 |
-| 共识可验证性 | 不新增信任假设；`claim_set_hash` 仍可由完整 sidecar 重算 |
-| 后续演进 | 与协议草案中"未来可选的 `claim_set_hash`"方向一致 |
+| 共识可验证性 | 不新增信任假设；`claim_set_hash` 仍可由完整 sidecar 重算，`claim_ranges` 也可哈希回链上承诺 |
+| 后续演进 | 与协议草案中当前引入 `claim_set_hash` 的方向一致 |
 
 ### 代价
 
-- 仍然需要新增一种规范化 `claim_set_hash` 编码和哈希规则，并扩展 `AccountLeaf` 语义
-- 若 `claim_set_hash` 命中目标 Value，recipient 仍要取完整 bundle，不能省掉正例验证
-- 需要额外的对象缓存或按需拉取流程，否则 `claim_set_hash` 与完整 sidecar 同时发送时收益有限
+- 仍然需要新增一种规范化 `claim_ranges` 编码，以及 `claim_set_hash = Hash(canonical_encode(claim_ranges))` 的规则，并扩展 `AccountLeaf` 语义
+- 对边界块 `h1/h2` 和所有正例命中块，recipient 仍要取完整 bundle，不能省掉最终语义验证
+- 需要额外的 `claim_ranges` 对象缓存或按需拉取流程，否则链上 hash 仍然无法直接支持区间查询
 - 这是协议升级，不是代码级微调；消息格式、验证器和测试都要同步改
 
 ### 适用性判断
@@ -598,17 +885,17 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 | 条件 | 评估 |
 |------|------|
 | 你原始提出的"全量 Value 直接进 state leaf" | **不建议** |
-| 收敛为"在 `AccountLeaf` 中加入定长 `claim_set_hash`，而不是塞入全量 Value" | **可以作为 V2.x 候选研究项** |
-| MVP / 当前默认路径是否应立即做 | **否** |
+| 收敛为"在 `AccountLeaf` 中加入定长 `claim_set_hash`，而不是塞入全量 Value" | **应作为当前默认实现方向** |
+| MVP / 当前默认路径是否应立即做 | **是，建议列为第一优先级** |
 | 更适合的前置工作 | 先补齐真实 workload 下的 recipient 验证 CPU / 带宽剖面，再判断是否值得升级 |
 
 ### 影响范围
 
-- `EZchain-V2-protocol-draft.md`：明确 `claim_set_hash` 的规范化语义，以及它如何进入 `AccountLeaf`
+- `EZchain-V2-protocol-draft.md`：明确 `claim_ranges` 的规范化编码、`claim_set_hash` 的哈希规则，以及它们如何分别进入链下/链上语义
 - `EZ_V2/types.py`：`AccountLeaf` / `BundleEnvelope` / `DiffEntry` / `ConfirmedBundleUnit` 的承诺字段扩展
-- `EZ_V2/validator.py`：先做 `claim_set_hash` 负向过滤，再按需做完整 bundle 冲突检查
-- `EZ_V2/chain.py`：leader / follower 从 sidecar 重算并验证 `claim_set_hash`
-- `EZ_Test/`：补充"`claim_set_hash` 命中 / 未命中 / 伪造 / hit 后仍需 full bundle"的 focused tests
+- `EZ_V2/validator.py`：先验证 `claim_ranges` 能否哈希回 `claim_set_hash`，再做中间块快筛与边界块 focused scan
+- `EZ_V2/chain.py`：leader / follower 从 sidecar 重算并验证 `claim_ranges + claim_set_hash`
+- `EZ_Test/`：补充“中间块命中即拒绝 / `h1` 精确获得 / `h2` 精确转移 / 伪造 `claim_ranges` / hit 后仍需 full bundle”的 focused tests
 
 ---
 
@@ -616,13 +903,13 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 
 | 优先级 | 编号 | 优化项 | 核心收益 | 实现代价 |
 |--------|------|--------|---------|---------|
+| **P0** | 10 | Bundle `claim_set_hash` 承诺 | recipient 可先做带链上锚点的负向过滤，减少历史 bundle 拉取与扫描 | 中 |
 | **P0** | 1 | Receipt 索引广播 | 共识推送 O(k)→O(1) | 中 |
 | **P0** | 4 | Witness 重水合 + Sidecar 保活 | 消除死值风险 | 低 |
 | **P0** | 5 | SMT Multi-Proof 批量压缩 | 证明体积 14–190x 缩减 | 中 |
 | **P1** | 2 | BLS 签名聚合 | QC 体积 ~10x 缩减 | 中 |
-| **观望** | 6 | HotStuff-2 两阶段 | 延迟 33% 降低（比 Pipelined 代价低得多） | 中 | **学术界安全性尚未定论，暂不作为主要优化项，仅作研究方向记录** |
+| **P1** | 6 | HotStuff-2 两阶段 | 延迟 33% 降低（比 Pipelined 代价低得多） | 中 |
 | **P1** | 7 | 见证链公共前缀去重验证 | 同 sender 多 Value 验证 CPU 减半 | 低 |
-| **观望** | 10 | Bundle Value 摘要承诺 | recipient 可先做负向过滤，减少历史 bundle 拉取与扫描 | 中高（协议升级） |
 | P2 | 3 | Pipelined HotStuff | 吞吐 3x 提升 | 高 |
 | P2 | 8 | SMT Proof Delta 增量更新 | 离线恢复减轻共识节点压力 | 中 |
 | P3 | 9 | Verkle Tree 远期迁移 | 单 proof 8x 缩减 | 很高（硬分叉） |
@@ -632,7 +919,11 @@ Value C witness: [Block 10] → [Block 11] → [Block 12] → [Block 13] → [ac
 ## 参考文献汇总
 
 ### 共识层
-- [HotStuff-2: Optimal Two-Phase Responsive BFT (arXiv, 2025)](https://arxiv.org/pdf/2503.10292)
+- [HotStuff-2: Optimal Two-Phase Responsive BFT (IACR ePrint 2023/397, 2023)](https://eprint.iacr.org/2023/397) — Malkhi & Nayak
+- [edgedlt/hotstuff2 — Go 实现, TLA+ 验证](https://github.com/edgedlt/hotstuff2)
+- [relab/hotstuff — Go 框架, 含 chained/fast/simple 变体](https://github.com/relab/hotstuff)
+- [asonnino/hotstuff — Rust 实现, Diem 2-chain 变体](https://github.com/asonnino/hotstuff)
+- [HotStuff-1: Linear Consensus with One-Phase Speculation (ACM SIGMOD 2025)](https://dl.acm.org/doi/10.1145/3725308)
 - [Cheetah: Pipelined BFT (2025)](https://www.researchgate.net/publication/402466616_Cheetah_Pipelined_BFT_Consensus_Protocol_with_High_Throughput_and_Low_Latency)
 - [Shoal++: High Throughput DAG BFT (2024)](https://arxiv.org/html/2405.20488v2)
 - [Bullshark: DAG BFT Made Practical (2022)](https://arxiv.org/abs/2201.05677)

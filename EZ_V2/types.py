@@ -58,17 +58,20 @@ class BundleEnvelope:
     fee: int
     anti_spam_nonce: int
     bundle_hash: bytes
+    claim_set_hash: bytes | None = None
     sig: bytes = b""
 
     def __post_init__(self) -> None:
         _require_hash32("bundle_hash", self.bundle_hash)
+        if self.claim_set_hash is not None:
+            _require_hash32("claim_set_hash", self.claim_set_hash)
         if self.version < 0 or self.chain_id < 0 or self.seq <= 0:
             raise ValueError("invalid envelope numeric field")
         if self.expiry_height < 0 or self.fee < 0 or self.anti_spam_nonce < 0:
             raise ValueError("invalid envelope numeric field")
 
     def signing_payload(self) -> dict:
-        return {
+        payload = {
             "version": self.version,
             "chain_id": self.chain_id,
             "seq": self.seq,
@@ -77,6 +80,9 @@ class BundleEnvelope:
             "anti_spam_nonce": self.anti_spam_nonce,
             "bundle_hash": self.bundle_hash,
         }
+        if self.claim_set_hash is not None:
+            payload["claim_set_hash"] = self.claim_set_hash
+        return payload
 
     def with_signature(self, signature: bytes) -> "BundleEnvelope":
         return BundleEnvelope(
@@ -87,6 +93,7 @@ class BundleEnvelope:
             fee=self.fee,
             anti_spam_nonce=self.anti_spam_nonce,
             bundle_hash=self.bundle_hash,
+            claim_set_hash=self.claim_set_hash,
             sig=signature,
         )
 
@@ -142,10 +149,13 @@ class AccountLeaf:
     addr: str
     head_ref: BundleRef | None
     prev_ref: BundleRef | None
+    claim_set_hash: bytes | None = None
 
     def __post_init__(self) -> None:
         if not self.addr:
             raise ValueError("addr must be set")
+        if self.claim_set_hash is not None:
+            _require_hash32("claim_set_hash", self.claim_set_hash)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +181,66 @@ class SparseMerkleProof:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimRangeSet:
+    ranges: Tuple[ValueRange, ...]
+
+    def __post_init__(self) -> None:
+        previous = None
+        for item in self.ranges:
+            if previous is not None and item.begin <= previous.end + 1:
+                raise ValueError("claim ranges must be normalized and non-adjacent")
+            previous = item
+
+
+@dataclass(frozen=True, slots=True)
+class SparseMerkleMultiProofNode:
+    prefix_bits: str
+    node_hash: bytes
+
+    def __post_init__(self) -> None:
+        if any(bit not in {"0", "1"} for bit in self.prefix_bits):
+            raise ValueError("prefix_bits must be a binary string")
+        _require_hash32("node_hash", self.node_hash)
+
+
+@dataclass(frozen=True, slots=True)
+class SparseMerkleMultiProof:
+    depth: int
+    keys: Tuple[bytes, ...]
+    nodes: Tuple[SparseMerkleMultiProofNode, ...]
+
+    def __post_init__(self) -> None:
+        if self.depth <= 0:
+            raise ValueError("depth must be positive")
+        for key in self.keys:
+            if len(key) * 8 != self.depth:
+                raise ValueError("key length does not match multiproof depth")
+
+
+@dataclass(frozen=True, slots=True)
+class ReceiptProofBatch:
+    batch_id: str
+    state_root: bytes
+    multi_proof: SparseMerkleMultiProof
+
+    def __post_init__(self) -> None:
+        if not self.batch_id:
+            raise ValueError("batch_id must be set")
+        _require_hash32("state_root", self.state_root)
+
+
+@dataclass(frozen=True, slots=True)
+class ReceiptProofRef:
+    batch_id: str
+    key: bytes
+
+    def __post_init__(self) -> None:
+        if not self.batch_id:
+            raise ValueError("batch_id must be set")
+        _require_hash32("key", self.key)
+
+
+@dataclass(frozen=True, slots=True)
 class HeaderLite:
     height: int
     block_hash: bytes
@@ -188,11 +258,17 @@ class Receipt:
     header_lite: HeaderLite
     seq: int
     prev_ref: BundleRef | None
-    account_state_proof: SparseMerkleProof
+    claim_set_hash: bytes | None = None
+    account_state_proof: SparseMerkleProof | None = None
+    proof_batch_ref: ReceiptProofRef | None = None
 
     def __post_init__(self) -> None:
         if self.seq <= 0:
             raise ValueError("seq must be positive")
+        if self.claim_set_hash is not None:
+            _require_hash32("claim_set_hash", self.claim_set_hash)
+        if (self.account_state_proof is None) == (self.proof_batch_ref is None):
+            raise ValueError("receipt must carry exactly one proof form")
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +353,7 @@ class TransferPackage:
 class ReceiptResponse:
     status: str
     receipt: Receipt | None
+    proof_batch: ReceiptProofBatch | None = None
 
 
 @dataclass(frozen=True, slots=True)

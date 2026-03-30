@@ -2,12 +2,32 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable
 
-from .chain import compute_bundle_hash, confirmed_ref
+from .claim_set import (
+    claim_range_set_from_json_obj,
+    claim_range_set_from_sidecar,
+    claim_range_set_json_obj,
+)
+from .chain import compute_addr_key, compute_bundle_hash, confirmed_ref
 from .serde import dumps_json, loads_json
-from .types import Checkpoint, ConfirmedBundleUnit, HeaderLite, PendingBundleContext, Receipt
+from .smt import materialize_proof
+from .types import (
+    Checkpoint,
+    ClaimRangeSet,
+    CheckpointAnchor,
+    ConfirmedBundleUnit,
+    GenesisAnchor,
+    HeaderLite,
+    PendingBundleContext,
+    PriorWitnessLink,
+    Receipt,
+    ReceiptProofBatch,
+    ReceiptProofRef,
+    WitnessV2,
+)
 from .values import LocalValueRecord
 
 
@@ -22,6 +42,112 @@ def _bundle_ref_key(bundle_ref) -> str:
         bundle_ref.bundle_hash,
         bundle_ref.seq,
     )
+
+
+def _compact_receipt_with_batch(
+    receipt: Receipt,
+    *,
+    sender_addr: str,
+    proof_batch: ReceiptProofBatch | None,
+) -> Receipt:
+    if receipt.account_state_proof is None or proof_batch is None:
+        return receipt
+    if proof_batch.state_root != receipt.header_lite.state_root:
+        return receipt
+    key = compute_addr_key(sender_addr)
+    materialized = materialize_proof(proof_batch.multi_proof, key)
+    if materialized != receipt.account_state_proof:
+        return receipt
+    return replace(
+        receipt,
+        account_state_proof=None,
+        proof_batch_ref=ReceiptProofRef(batch_id=proof_batch.batch_id, key=key),
+    )
+
+
+def _materialize_receipt_with_lookup(
+    receipt: Receipt,
+    *,
+    sender_addr: str,
+    lookup_batch,
+) -> Receipt:
+    if receipt.account_state_proof is not None or receipt.proof_batch_ref is None:
+        return receipt
+    proof_batch = lookup_batch(receipt.proof_batch_ref.batch_id)
+    if proof_batch is None:
+        return receipt
+    if proof_batch.state_root != receipt.header_lite.state_root:
+        return receipt
+    return replace(
+        receipt,
+        account_state_proof=materialize_proof(proof_batch.multi_proof, receipt.proof_batch_ref.key),
+        proof_batch_ref=None,
+    )
+
+
+def _compact_unit_with_batch(unit: ConfirmedBundleUnit, proof_batch: ReceiptProofBatch | None) -> ConfirmedBundleUnit:
+    return replace(
+        unit,
+        receipt=_compact_receipt_with_batch(
+            unit.receipt,
+            sender_addr=unit.bundle_sidecar.sender_addr,
+            proof_batch=proof_batch,
+        ),
+    )
+
+
+def _materialize_unit_with_lookup(unit: ConfirmedBundleUnit, lookup_batch) -> ConfirmedBundleUnit:
+    return replace(
+        unit,
+        receipt=_materialize_receipt_with_lookup(
+            unit.receipt,
+            sender_addr=unit.bundle_sidecar.sender_addr,
+            lookup_batch=lookup_batch,
+        ),
+    )
+
+
+def _compact_witness_with_batch(witness: WitnessV2, lookup_batch) -> WitnessV2:
+    compact_chain = tuple(
+        _compact_unit_with_batch(
+            unit,
+            lookup_batch(f"{unit.receipt.header_lite.height}:{unit.receipt.header_lite.block_hash.hex()}"),
+        )
+        for unit in witness.confirmed_bundle_chain
+    )
+    anchor = witness.anchor
+    if isinstance(anchor, PriorWitnessLink):
+        anchor = replace(
+            anchor,
+            prior_witness=_compact_witness_with_batch(anchor.prior_witness, lookup_batch),
+        )
+    elif isinstance(anchor, (GenesisAnchor, CheckpointAnchor)):
+        anchor = anchor
+    return replace(witness, confirmed_bundle_chain=compact_chain, anchor=anchor)
+
+
+def _materialize_witness_with_lookup(witness: WitnessV2, lookup_batch) -> WitnessV2:
+    materialized_chain = tuple(
+        _materialize_unit_with_lookup(unit, lookup_batch)
+        for unit in witness.confirmed_bundle_chain
+    )
+    anchor = witness.anchor
+    if isinstance(anchor, PriorWitnessLink):
+        anchor = replace(
+            anchor,
+            prior_witness=_materialize_witness_with_lookup(anchor.prior_witness, lookup_batch),
+        )
+    elif isinstance(anchor, (GenesisAnchor, CheckpointAnchor)):
+        anchor = anchor
+    return replace(witness, confirmed_bundle_chain=materialized_chain, anchor=anchor)
+
+
+def _compact_record_with_batches(record: LocalValueRecord, lookup_batch) -> LocalValueRecord:
+    return replace(record, witness_v2=_compact_witness_with_batch(record.witness_v2, lookup_batch))
+
+
+def _materialize_record_with_batches(record: LocalValueRecord, lookup_batch) -> LocalValueRecord:
+    return replace(record, witness_v2=_materialize_witness_with_lookup(record.witness_v2, lookup_batch))
 
 
 class LocalWalletDB:
@@ -108,8 +234,21 @@ class LocalWalletDB:
                     header_json TEXT NOT NULL,
                     PRIMARY KEY (owner_addr, height)
                 );
+
+                CREATE TABLE IF NOT EXISTS receipt_proof_batches (
+                    batch_id TEXT PRIMARY KEY,
+                    height INTEGER NOT NULL,
+                    batch_json TEXT NOT NULL
+                );
                 """
             )
+            self._ensure_column("bundle_sidecars", "claim_ranges_json", "TEXT")
+
+    def _ensure_column(self, table: str, column: str, column_sql: str) -> None:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        existing = {str(row["name"]) for row in rows}
+        if column not in existing:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_sql}")
 
     def replace_value_records(self, owner_addr: str, records: Iterable[LocalValueRecord]) -> None:
         records = list(records)
@@ -143,7 +282,7 @@ class LocalWalletDB:
                     record.value.end,
                     record.local_status.value,
                     record.acquisition_height,
-                    dumps_json(record),
+                    dumps_json(_compact_record_with_batches(record, self.get_receipt_proof_batch)),
                 )
                 for record in records
             ],
@@ -159,18 +298,29 @@ class LocalWalletDB:
             """,
             (owner_addr,),
         ).fetchall()
-        return [loads_json(row["record_json"]) for row in rows]
+        return [
+            _materialize_record_with_batches(loads_json(row["record_json"]), self.get_receipt_proof_batch)
+            for row in rows
+        ]
 
     def save_sidecar(self, sidecar) -> bytes:
         bundle_hash = compute_bundle_hash(sidecar)
+        claim_ranges = claim_range_set_from_sidecar(sidecar)
         with self._conn:
             self._conn.execute(
                 """
-                INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, ref_count)
-                VALUES (?, ?, COALESCE((SELECT ref_count FROM bundle_sidecars WHERE bundle_hash = ?), 0))
-                ON CONFLICT(bundle_hash) DO UPDATE SET sidecar_json = excluded.sidecar_json
+                INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, claim_ranges_json, ref_count)
+                VALUES (?, ?, ?, COALESCE((SELECT ref_count FROM bundle_sidecars WHERE bundle_hash = ?), 0))
+                ON CONFLICT(bundle_hash) DO UPDATE SET
+                    sidecar_json = excluded.sidecar_json,
+                    claim_ranges_json = excluded.claim_ranges_json
                 """,
-                (sqlite3.Binary(bundle_hash), dumps_json(sidecar), sqlite3.Binary(bundle_hash)),
+                (
+                    sqlite3.Binary(bundle_hash),
+                    dumps_json(sidecar),
+                    dumps_json(claim_range_set_json_obj(claim_ranges)),
+                    sqlite3.Binary(bundle_hash),
+                ),
             )
         return bundle_hash
 
@@ -185,12 +335,31 @@ class LocalWalletDB:
         rows = self._conn.execute("SELECT bundle_hash FROM bundle_sidecars ORDER BY bundle_hash").fetchall()
         return [bytes(row["bundle_hash"]) for row in rows]
 
+    def get_sidecar_claim_ranges(self, bundle_hash: bytes) -> ClaimRangeSet | None:
+        row = self._conn.execute(
+            "SELECT claim_ranges_json FROM bundle_sidecars WHERE bundle_hash = ?",
+            (sqlite3.Binary(bundle_hash),),
+        ).fetchone()
+        if row is None or row["claim_ranges_json"] is None:
+            sidecar = self.get_sidecar(bundle_hash)
+            if sidecar is None:
+                return None
+            claim_ranges = claim_range_set_from_sidecar(sidecar)
+            self.save_sidecar(sidecar)
+            return claim_ranges
+        return claim_range_set_from_json_obj(loads_json(row["claim_ranges_json"]))
+
     def save_receipt(self, sender_addr: str, receipt: Receipt, bundle_hash: bytes) -> None:
+        compact_receipt = _compact_receipt_with_batch(
+            receipt,
+            sender_addr=sender_addr,
+            proof_batch=self.get_receipt_proof_batch(f"{receipt.header_lite.height}:{receipt.header_lite.block_hash.hex()}"),
+        )
         bundle_ref_key = _bundle_ref_key_from_fields(
-            receipt.header_lite.height,
-            receipt.header_lite.block_hash,
+            compact_receipt.header_lite.height,
+            compact_receipt.header_lite.block_hash,
             bundle_hash,
-            receipt.seq,
+            compact_receipt.seq,
         )
         with self._conn:
             self._conn.execute(
@@ -201,7 +370,7 @@ class LocalWalletDB:
                     bundle_ref_key = excluded.bundle_ref_key,
                     receipt_json = excluded.receipt_json
                 """,
-                (sender_addr, receipt.seq, bundle_ref_key, dumps_json(receipt)),
+                (sender_addr, compact_receipt.seq, bundle_ref_key, dumps_json(compact_receipt)),
             )
 
     def get_receipt(self, sender_addr: str, seq: int) -> Receipt | None:
@@ -209,14 +378,27 @@ class LocalWalletDB:
             "SELECT receipt_json FROM receipts WHERE sender_addr = ? AND seq = ?",
             (sender_addr, seq),
         ).fetchone()
-        return loads_json(row["receipt_json"]) if row else None
+        if row is None:
+            return None
+        return _materialize_receipt_with_lookup(
+            loads_json(row["receipt_json"]),
+            sender_addr=sender_addr,
+            lookup_batch=self.get_receipt_proof_batch,
+        )
 
     def get_receipt_by_ref(self, bundle_ref) -> Receipt | None:
         row = self._conn.execute(
             "SELECT receipt_json FROM receipts WHERE bundle_ref_key = ?",
             (_bundle_ref_key(bundle_ref),),
         ).fetchone()
-        return loads_json(row["receipt_json"]) if row else None
+        if row is None:
+            return None
+        receipt = loads_json(row["receipt_json"])
+        return _materialize_receipt_with_lookup(
+            receipt,
+            sender_addr=self._sender_addr_for_bundle_ref(bundle_ref),
+            lookup_batch=self.get_receipt_proof_batch,
+        )
 
     def list_receipts(self, sender_addr: str) -> list[Receipt]:
         rows = self._conn.execute(
@@ -228,10 +410,21 @@ class LocalWalletDB:
             """,
             (sender_addr,),
         ).fetchall()
-        return [loads_json(row["receipt_json"]) for row in rows]
+        return [
+            _materialize_receipt_with_lookup(
+                loads_json(row["receipt_json"]),
+                sender_addr=sender_addr,
+                lookup_batch=self.get_receipt_proof_batch,
+            )
+            for row in rows
+        ]
 
     def save_confirmed_unit(self, unit: ConfirmedBundleUnit) -> None:
         bundle_ref = confirmed_ref(unit)
+        compact_unit = _compact_unit_with_batch(
+            unit,
+            self.get_receipt_proof_batch(f"{bundle_ref.height}:{bundle_ref.block_hash.hex()}"),
+        )
         with self._conn:
             self._conn.execute(
                 """
@@ -242,11 +435,11 @@ class LocalWalletDB:
                     bundle_hash = excluded.bundle_hash
                 """,
                 (
-                    unit.bundle_sidecar.sender_addr,
-                    unit.receipt.seq,
+                    compact_unit.bundle_sidecar.sender_addr,
+                    compact_unit.receipt.seq,
                     _bundle_ref_key(bundle_ref),
                     sqlite3.Binary(bundle_ref.bundle_hash),
-                    dumps_json(unit),
+                    dumps_json(compact_unit),
                 ),
             )
 
@@ -255,7 +448,9 @@ class LocalWalletDB:
             "SELECT unit_json FROM confirmed_units WHERE bundle_ref_key = ?",
             (_bundle_ref_key(bundle_ref),),
         ).fetchone()
-        return loads_json(row["unit_json"]) if row else None
+        if row is None:
+            return None
+        return _materialize_unit_with_lookup(loads_json(row["unit_json"]), self.get_receipt_proof_batch)
 
     def get_confirmed_unit(self, sender_addr: str, seq: int) -> ConfirmedBundleUnit | None:
         row = self._conn.execute(
@@ -266,7 +461,9 @@ class LocalWalletDB:
             """,
             (sender_addr, seq),
         ).fetchone()
-        return loads_json(row["unit_json"]) if row else None
+        if row is None:
+            return None
+        return _materialize_unit_with_lookup(loads_json(row["unit_json"]), self.get_receipt_proof_batch)
 
     def save_pending_bundle(self, context: PendingBundleContext) -> None:
         with self._conn:
@@ -357,6 +554,41 @@ class LocalWalletDB:
                 ),
             )
 
+    def save_receipt_proof_batch(self, height: int, batch: ReceiptProofBatch) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT INTO receipt_proof_batches (batch_id, height, batch_json)
+                VALUES (?, ?, ?)
+                ON CONFLICT(batch_id) DO UPDATE SET
+                    height = excluded.height,
+                    batch_json = excluded.batch_json
+                """,
+                (batch.batch_id, int(height), dumps_json(batch)),
+            )
+
+    def get_receipt_proof_batch(self, batch_id: str) -> ReceiptProofBatch | None:
+        row = self._conn.execute(
+            "SELECT batch_json FROM receipt_proof_batches WHERE batch_id = ?",
+            (str(batch_id),),
+        ).fetchone()
+        return loads_json(row["batch_json"]) if row else None
+
+    def _sender_addr_for_bundle_ref(self, bundle_ref) -> str:
+        row = self._conn.execute(
+            "SELECT sender_addr FROM confirmed_units WHERE bundle_ref_key = ?",
+            (_bundle_ref_key(bundle_ref),),
+        ).fetchone()
+        if row is not None:
+            return str(row["sender_addr"])
+        row = self._conn.execute(
+            "SELECT sender_addr FROM receipts WHERE bundle_ref_key = ?",
+            (_bundle_ref_key(bundle_ref),),
+        ).fetchone()
+        if row is not None:
+            return str(row["sender_addr"])
+        return ""
+
     def has_canonical_header(self, owner_addr: str, header: HeaderLite) -> bool:
         row = self._conn.execute(
             """
@@ -437,15 +669,21 @@ class LocalWalletDB:
             counts[context.bundle_hash] = counts.get(context.bundle_hash, 0) + 1
         self._conn.execute("UPDATE bundle_sidecars SET ref_count = 0")
         for bundle_hash, ref_count in counts.items():
+            sidecar = self.get_sidecar(bundle_hash)
+            claim_ranges = None if sidecar is None else claim_range_set_from_sidecar(sidecar)
             self._conn.execute(
                 """
-                INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, ref_count)
-                VALUES (?, ?, ?)
-                ON CONFLICT(bundle_hash) DO UPDATE SET ref_count = excluded.ref_count
+                INSERT INTO bundle_sidecars (bundle_hash, sidecar_json, claim_ranges_json, ref_count)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(bundle_hash) DO UPDATE SET
+                    sidecar_json = excluded.sidecar_json,
+                    claim_ranges_json = excluded.claim_ranges_json,
+                    ref_count = excluded.ref_count
                 """,
                 (
                     sqlite3.Binary(bundle_hash),
-                    dumps_json(self.get_sidecar(bundle_hash)),
+                    dumps_json(sidecar),
+                    None if claim_ranges is None else dumps_json(claim_range_set_json_obj(claim_ranges)),
                     ref_count,
                 ),
             )

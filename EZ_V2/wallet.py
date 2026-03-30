@@ -5,6 +5,7 @@ import uuid
 from math import inf
 from dataclasses import replace
 
+from .claim_set import claim_range_set_from_sidecar, claim_range_set_hash
 from .chain import (
     compute_addr_key,
     compute_bundle_hash,
@@ -611,6 +612,7 @@ class WalletAccountV2:
             fee=fee,
             anti_spam_nonce=anti_spam_nonce,
             bundle_hash=compute_bundle_hash(sidecar),
+            claim_set_hash=claim_range_set_hash(claim_range_set_from_sidecar(sidecar)),
         )
         envelope = sign_bundle_envelope(envelope, private_key_pem)
         submission = BundleSubmission(
@@ -697,11 +699,14 @@ class WalletAccountV2:
             if confirmed_ref(previous_unit) != receipt.prev_ref:
                 raise ValueError("receipt prev_ref mismatch")
         reconstructed = reconstructed_leaf(confirmed_unit)
+        proof = receipt.account_state_proof
+        if proof is None:
+            raise ValueError("receipt single proof is required for wallet apply")
         if not verify_proof(
             receipt.header_lite.state_root,
             compute_addr_key(self.address),
             hash_account_leaf(reconstructed),
-            receipt.account_state_proof,
+            proof,
         ):
             raise ValueError("receipt account state proof does not verify")
         updated_records = self._apply_confirmed_unit_to_records(

@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
 from EZ_V2.network_host import V2AccountHost, V2ConsensusHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import PeerInfo
+from EZ_V2.networking import PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import LocalValueStatus, ValueRange
 
@@ -144,7 +144,7 @@ def run_scenario(
 
     rng = random.Random(seed)
     consensus_peers = tuple(
-        PeerInfo(node_id=f"consensus-{index}", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}")
+        with_v2_features(PeerInfo(node_id=f"consensus-{index}", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}"))
         for index in range(consensus_count)
     )
 
@@ -159,11 +159,13 @@ def run_scenario(
             )
         )
     account_peers = tuple(
-        PeerInfo(
-            node_id=f"account-{index:02d}",
-            role="account",
-            endpoint=f"127.0.0.1:{_reserve_port()}",
-            metadata={"address": identity[2]},
+        with_v2_features(
+            PeerInfo(
+                node_id=f"account-{index:02d}",
+                role="account",
+                endpoint=f"127.0.0.1:{_reserve_port()}",
+                metadata={"address": identity[2]},
+            )
         )
         for index, identity in enumerate(account_identities)
     )

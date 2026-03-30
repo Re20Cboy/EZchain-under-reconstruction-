@@ -15,7 +15,7 @@ from .runtime_v2 import (
     TransferDeliveryResult,
     V2Runtime,
 )
-from .types import BlockV2, BundleSubmission, OffChainTx, TransferPackage
+from .types import BlockV2, BundleSubmission, OffChainTx, ReceiptProofBatch, TransferPackage
 from .values import ValueRange
 from .wallet import WalletAccountV2
 
@@ -201,6 +201,7 @@ class V2ConsensusNode:
             consensus_extra=consensus_extra,
             limit=limit,
         )
+        proof_batch = self.chain.receipt_cache.get_proof_batch(f"{block.header.height}:{block.block_hash.hex()}")
         self.store.save_applied_block(
             block,
             receipts,
@@ -208,6 +209,7 @@ class V2ConsensusNode:
             chain_id=self.chain.chain_id,
             receipt_cache_blocks=self.chain.receipt_cache.max_blocks,
             genesis_block_hash=self.genesis_block_hash,
+            proof_batch=proof_batch,
         )
         self.runtime.share_block_with_wallets(block)
         deliveries = self.runtime.deliver_receipts(receipts)
@@ -231,6 +233,7 @@ class V2ConsensusNode:
 
     def apply_block(self, block: BlockV2) -> ApplyBlockResult:
         receipts = self.chain.apply_block(block)
+        proof_batch = self.chain.receipt_cache.get_proof_batch(f"{block.header.height}:{block.block_hash.hex()}")
         self.store.save_applied_block(
             block,
             receipts,
@@ -238,6 +241,7 @@ class V2ConsensusNode:
             chain_id=self.chain.chain_id,
             receipt_cache_blocks=self.chain.receipt_cache.max_blocks,
             genesis_block_hash=self.genesis_block_hash,
+            proof_batch=proof_batch,
         )
         self.runtime.share_block_with_wallets(block)
         deliveries = self.runtime.deliver_receipts(receipts)
@@ -254,6 +258,12 @@ class V2ConsensusNode:
         if response.receipt is not None:
             return response
         return self.store.get_receipt_by_ref(bundle_ref)
+
+    def get_receipt_proof_batch(self, batch_id: str) -> ReceiptProofBatch | None:
+        proof_batch = self.chain.receipt_cache.get_proof_batch(batch_id)
+        if proof_batch is not None:
+            return proof_batch
+        return self.store.get_receipt_proof_batch(batch_id)
 
     def sync_wallet_receipts(self, sender_addr: str) -> tuple[ReceiptDeliveryResult, ...]:
         return self.runtime.sync_wallet_receipts(sender_addr)

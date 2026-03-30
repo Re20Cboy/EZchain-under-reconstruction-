@@ -1,18 +1,53 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping
 
-from .chain import ZERO_HASH32, ChainStateV2
+from .chain import ZERO_HASH32, ChainStateV2, compute_addr_key
 from .serde import dumps_json, loads_json
-from .types import BlockV2, BundleRef, Receipt, ReceiptResponse
+from .smt import materialize_proof
+from .types import BlockV2, BundleRef, Receipt, ReceiptProofBatch, ReceiptProofRef, ReceiptResponse
 from .values import ValueRange
 
 
 def _bundle_ref_key(bundle_ref: BundleRef) -> str:
     return f"{bundle_ref.height}:{bundle_ref.block_hash.hex()}:{bundle_ref.bundle_hash.hex()}:{bundle_ref.seq}"
+
+
+def _compact_receipt_with_batch(
+    receipt: Receipt,
+    *,
+    sender_addr: str,
+    proof_batch: ReceiptProofBatch | None,
+) -> Receipt:
+    if receipt.account_state_proof is None or proof_batch is None:
+        return receipt
+    if proof_batch.state_root != receipt.header_lite.state_root:
+        return receipt
+    key = compute_addr_key(sender_addr)
+    materialized = materialize_proof(proof_batch.multi_proof, key)
+    if materialized != receipt.account_state_proof:
+        return receipt
+    return replace(
+        receipt,
+        account_state_proof=None,
+        proof_batch_ref=ReceiptProofRef(batch_id=proof_batch.batch_id, key=key),
+    )
+
+
+def _materialize_receipt_with_lookup(receipt: Receipt, lookup_batch) -> Receipt:
+    if receipt.account_state_proof is not None or receipt.proof_batch_ref is None:
+        return receipt
+    proof_batch = lookup_batch(receipt.proof_batch_ref.batch_id)
+    if proof_batch is None or proof_batch.state_root != receipt.header_lite.state_root:
+        return receipt
+    return replace(
+        receipt,
+        account_state_proof=materialize_proof(proof_batch.multi_proof, receipt.proof_batch_ref.key),
+        proof_batch_ref=None,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +104,14 @@ class ConsensusStateStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_receipt_window_height
                     ON receipt_window_v2 (height);
+
+                CREATE TABLE IF NOT EXISTS receipt_proof_batches_v2 (
+                    batch_id TEXT PRIMARY KEY,
+                    height INTEGER NOT NULL,
+                    batch_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_receipt_proof_batches_height
+                    ON receipt_proof_batches_v2 (height);
 
                 CREATE TABLE IF NOT EXISTS genesis_allocations_v2 (
                     owner_addr TEXT NOT NULL,
@@ -137,6 +180,7 @@ class ConsensusStateStore:
         chain_id: int,
         receipt_cache_blocks: int,
         genesis_block_hash: bytes = ZERO_HASH32,
+        proof_batch: ReceiptProofBatch | None = None,
     ) -> None:
         entry_refs = {
             entry.new_leaf.addr: entry.new_leaf.head_ref
@@ -159,8 +203,28 @@ class ConsensusStateStore:
                         dumps_json(block),
                     ),
                 )
+                if proof_batch is not None:
+                    self._conn.execute(
+                        """
+                        INSERT INTO receipt_proof_batches_v2 (batch_id, height, batch_json)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(batch_id) DO UPDATE SET
+                            height = excluded.height,
+                            batch_json = excluded.batch_json
+                        """,
+                        (
+                            proof_batch.batch_id,
+                            block.header.height,
+                            dumps_json(proof_batch),
+                        ),
+                    )
                 for sender_addr, receipt in receipts.items():
                     bundle_ref = entry_refs[sender_addr]
+                    compact_receipt = _compact_receipt_with_batch(
+                        receipt,
+                        sender_addr=sender_addr,
+                        proof_batch=proof_batch,
+                    )
                     self._conn.execute(
                         """
                         INSERT INTO receipt_window_v2 (
@@ -173,14 +237,18 @@ class ConsensusStateStore:
                         """,
                         (
                             sender_addr,
-                            receipt.seq,
-                            receipt.header_lite.height,
+                            compact_receipt.seq,
+                            compact_receipt.header_lite.height,
                             _bundle_ref_key(bundle_ref),
-                            dumps_json(receipt),
+                            dumps_json(compact_receipt),
                         ),
                     )
                 self._conn.execute(
                     "DELETE FROM receipt_window_v2 WHERE height < ?",
+                    (min_height,),
+                )
+                self._conn.execute(
+                    "DELETE FROM receipt_proof_batches_v2 WHERE height < ?",
                     (min_height,),
                 )
                 self._conn.execute(
@@ -220,7 +288,11 @@ class ConsensusStateStore:
             """,
             (sender_addr, seq),
         ).fetchone()
-        receipt = loads_json(row["receipt_json"]) if row else None
+        receipt = (
+            _materialize_receipt_with_lookup(loads_json(row["receipt_json"]), self.get_receipt_proof_batch)
+            if row
+            else None
+        )
         return ReceiptResponse(status="ok" if receipt else "missing", receipt=receipt)
 
     def get_receipt_by_ref(self, bundle_ref: BundleRef) -> ReceiptResponse:
@@ -232,8 +304,19 @@ class ConsensusStateStore:
             """,
             (_bundle_ref_key(bundle_ref),),
         ).fetchone()
-        receipt = loads_json(row["receipt_json"]) if row else None
+        receipt = (
+            _materialize_receipt_with_lookup(loads_json(row["receipt_json"]), self.get_receipt_proof_batch)
+            if row
+            else None
+        )
         return ReceiptResponse(status="ok" if receipt else "missing", receipt=receipt)
+
+    def get_receipt_proof_batch(self, batch_id: str) -> ReceiptProofBatch | None:
+        row = self._conn.execute(
+            "SELECT batch_json FROM receipt_proof_batches_v2 WHERE batch_id = ?",
+            (str(batch_id),),
+        ).fetchone()
+        return loads_json(row["batch_json"]) if row else None
 
     def save_genesis_allocation(self, owner_addr: str, value: ValueRange) -> None:
         with self._conn:

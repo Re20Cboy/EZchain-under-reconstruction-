@@ -14,7 +14,7 @@ from EZ_V2.crypto import keccak256
 from EZ_V2.encoding import canonical_encode
 from EZ_V2.network_host import V2AccountHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import PeerInfo
+from EZ_V2.networking import PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import LocalValueStatus, ValueRange
 from EZ_V2.wallet import WalletAccountV2
@@ -847,13 +847,17 @@ class TxEngine:
         self._parse_endpoint(consensus_endpoint)
         self._parse_endpoint(recipient_endpoint)
 
-        sender_peer = PeerInfo(
-            node_id=self._peer_id_for_address(wallet["address"]),
-            role="account",
-            endpoint="127.0.0.1:0",
-            metadata={"address": wallet["address"]},
+        sender_peer = with_v2_features(
+            PeerInfo(
+                node_id=self._peer_id_for_address(wallet["address"]),
+                role="account",
+                endpoint="127.0.0.1:0",
+                metadata={"address": wallet["address"]},
+            )
         )
-        consensus_peer = PeerInfo(node_id=consensus_peer_id, role="consensus", endpoint=consensus_endpoint)
+        consensus_peer = with_v2_features(
+            PeerInfo(node_id=consensus_peer_id, role="consensus", endpoint=consensus_endpoint)
+        )
         account_peers: list[PeerInfo] = []
         seen_account_peer_ids: set[str] = {sender_peer.node_id}
         account_peer_id_by_address: dict[str, str] = {}
@@ -869,11 +873,13 @@ class TxEngine:
             if node_id in seen_account_peer_ids or address in account_peer_id_by_address:
                 continue
             account_peers.append(
-                PeerInfo(
-                    node_id=node_id,
-                    role="account",
-                    endpoint=endpoint,
-                    metadata={"address": address},
+                with_v2_features(
+                    PeerInfo(
+                        node_id=node_id,
+                        role="account",
+                        endpoint=endpoint,
+                        metadata={"address": address},
+                    )
                 )
             )
             seen_account_peer_ids.add(node_id)
@@ -881,11 +887,13 @@ class TxEngine:
         recipient_peer_id = account_peer_id_by_address.get(recipient, self._peer_id_for_address(recipient))
         if recipient not in account_peer_id_by_address:
             account_peers.append(
-                PeerInfo(
-                    node_id=recipient_peer_id,
-                    role="account",
-                    endpoint=recipient_endpoint,
-                    metadata={"address": recipient},
+                with_v2_features(
+                    PeerInfo(
+                        node_id=recipient_peer_id,
+                        role="account",
+                        endpoint=recipient_endpoint,
+                        metadata={"address": recipient},
+                    )
                 )
             )
         host, port = self._parse_endpoint(sender_peer.endpoint)

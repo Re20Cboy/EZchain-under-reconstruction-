@@ -34,6 +34,15 @@ MSG_GENESIS_ALLOCATIONS_REQ = "genesis_allocations_req"
 MSG_PEER_INFO = "peer_info"
 MSG_PEER_HEALTH = "peer_health"
 
+FEATURE_CLAIM_SET_V1 = "claim_set_hash_v1"
+FEATURE_RECEIPT_INDEX_PULL_V1 = "receipt_index_pull_v1"
+FEATURE_RECEIPT_MULTIPROOF_V1 = "receipt_multiproof_v1"
+DEFAULT_V2_FEATURES = (
+    FEATURE_CLAIM_SET_V1,
+    FEATURE_RECEIPT_INDEX_PULL_V1,
+    FEATURE_RECEIPT_MULTIPROOF_V1,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PeerInfo:
@@ -75,6 +84,40 @@ class TransferMailboxEvent:
     value_end: int
 
 
+def peer_features(peer: PeerInfo | None) -> frozenset[str]:
+    if peer is None:
+        return frozenset()
+    raw_features = peer.metadata.get("v2_features", ())
+    if not isinstance(raw_features, (list, tuple, set, frozenset)):
+        return frozenset()
+    return frozenset(str(item) for item in raw_features if str(item))
+
+
+def peer_supports(peer: PeerInfo | None, feature: str) -> bool:
+    return feature in peer_features(peer)
+
+
+def with_v2_features(peer: PeerInfo) -> PeerInfo:
+    metadata = dict(peer.metadata)
+    existing = metadata.get("v2_features", ())
+    if not isinstance(existing, (list, tuple, set, frozenset)):
+        existing = ()
+    metadata["v2_features"] = tuple(
+        dict.fromkeys(
+            (
+                *tuple(str(item) for item in existing if str(item)),
+                *DEFAULT_V2_FEATURES,
+            )
+        )
+    )
+    return PeerInfo(
+        node_id=peer.node_id,
+        role=peer.role,
+        endpoint=peer.endpoint,
+        metadata=metadata,
+    )
+
+
 class ConsensusAdapter(Protocol):
     def propose_block(self, limit: int | None = None) -> BlockV2 | None:
         ...
@@ -98,6 +141,7 @@ __all__ = [
     "ChainSyncCursor",
     "ConsensusAdapter",
     "EnvelopeHandler",
+    "DEFAULT_V2_FEATURES",
     "MSG_BLOCK_ANNOUNCE",
     "MSG_BLOCK_FETCH_REQ",
     "MSG_BLOCK_FETCH_RESP",
@@ -125,6 +169,12 @@ __all__ = [
     "NetworkEnvelope",
     "NodeRole",
     "PeerInfo",
+    "FEATURE_CLAIM_SET_V1",
+    "FEATURE_RECEIPT_INDEX_PULL_V1",
+    "FEATURE_RECEIPT_MULTIPROOF_V1",
+    "peer_features",
+    "peer_supports",
+    "with_v2_features",
     "ReceiptSyncCursor",
     "TransferMailboxEvent",
 ]

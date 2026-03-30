@@ -17,7 +17,7 @@ from EZ_V2.crypto import (
 )
 from EZ_V2.network_host import V2AccountHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import PeerInfo
+from EZ_V2.networking import PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 
 
@@ -131,8 +131,12 @@ def run_daemon(
             state_path_obj.unlink()
     wallet_db.parent.mkdir(parents=True, exist_ok=True)
 
-    local_peer = PeerInfo(node_id=f"account-{address[-8:]}", role="account", endpoint=endpoint, metadata={"address": address})
-    consensus_peer = PeerInfo(node_id=str(consensus_peer_id), role="consensus", endpoint=consensus_endpoint)
+    local_peer = with_v2_features(
+        PeerInfo(node_id=f"account-{address[-8:]}", role="account", endpoint=endpoint, metadata={"address": address})
+    )
+    consensus_peer = with_v2_features(
+        PeerInfo(node_id=str(consensus_peer_id), role="consensus", endpoint=consensus_endpoint)
+    )
     endpoint_host, port = _parse_endpoint(endpoint)
     bind_host = str(listen_host).strip() if listen_host else endpoint_host
     network = TransportPeerNetwork(

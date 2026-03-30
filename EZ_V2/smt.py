@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .crypto import keccak256
-from .types import SparseMerkleProof
+from .types import SparseMerkleMultiProof, SparseMerkleMultiProofNode, SparseMerkleProof
 
 
 EMPTY_LEAF_HASH = keccak256(b"EZCHAIN_SMT_EMPTY_LEAF_V2")
@@ -110,3 +110,60 @@ def verify_proof(root: bytes, key: bytes, value_hash: bytes, proof: SparseMerkle
         else:
             current = _node_hash(sibling, current)
     return current == root
+
+
+def _default_hashes(depth: int) -> list[bytes]:
+    defaults = [EMPTY_LEAF_HASH]
+    for _ in range(depth):
+        previous = defaults[-1]
+        defaults.append(_node_hash(previous, previous))
+    return defaults
+
+
+def _key_bits(key: bytes, depth: int) -> str:
+    return "".join("1" if (key[index // 8] >> (7 - (index % 8))) & 1 else "0" for index in range(depth))
+
+
+def _sibling_prefix_for_level(key_bits: str, level: int) -> str:
+    split_index = len(key_bits) - level - 1
+    target_bit = key_bits[split_index]
+    sibling_bit = "1" if target_bit == "0" else "0"
+    return key_bits[:split_index] + sibling_bit
+
+
+def build_multiproof(tree: SparseMerkleTree, keys: list[bytes] | tuple[bytes, ...]) -> SparseMerkleMultiProof:
+    ordered_keys = tuple(keys)
+    nodes: dict[str, bytes] = {}
+    for key in ordered_keys:
+        proof = tree.prove(key)
+        key_bits = _key_bits(key, tree.depth)
+        for level, sibling in enumerate(proof.siblings):
+            nodes.setdefault(_sibling_prefix_for_level(key_bits, level), sibling)
+    ordered_nodes = tuple(
+        SparseMerkleMultiProofNode(prefix_bits=prefix_bits, node_hash=node_hash)
+        for prefix_bits, node_hash in sorted(nodes.items(), key=lambda item: (len(item[0]), item[0]))
+    )
+    return SparseMerkleMultiProof(depth=tree.depth, keys=ordered_keys, nodes=ordered_nodes)
+
+
+def materialize_proof(multi_proof: SparseMerkleMultiProof, key: bytes) -> SparseMerkleProof:
+    if len(key) * 8 != multi_proof.depth:
+        raise ValueError("key length does not match multiproof depth")
+    node_map = {node.prefix_bits: node.node_hash for node in multi_proof.nodes}
+    defaults = _default_hashes(multi_proof.depth)
+    key_bits = _key_bits(key, multi_proof.depth)
+    siblings = []
+    for level in range(multi_proof.depth):
+        prefix_bits = _sibling_prefix_for_level(key_bits, level)
+        siblings.append(node_map.get(prefix_bits, defaults[level]))
+    return SparseMerkleProof(siblings=tuple(siblings), existence=key in multi_proof.keys)
+
+
+def verify_multiproof(root: bytes, key: bytes, value_hash: bytes, multi_proof: SparseMerkleMultiProof) -> bool:
+    return verify_proof(
+        root,
+        key,
+        value_hash,
+        materialize_proof(multi_proof, key),
+        depth=multi_proof.depth,
+    )

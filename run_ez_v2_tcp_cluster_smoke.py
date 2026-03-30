@@ -12,7 +12,7 @@ from pathlib import Path
 from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
 from EZ_V2.network_host import V2AccountHost, V2ConsensusHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import PeerInfo
+from EZ_V2.networking import PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import ValueRange
 
@@ -56,13 +56,13 @@ def run_smoke(root_dir: str, chain_id: int, seed: int, failover_round: int) -> d
     dave_addr = address_from_public_key_pem(dave_public)
 
     peers = (
-        PeerInfo(node_id="consensus-0", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}"),
-        PeerInfo(node_id="consensus-1", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}"),
-        PeerInfo(node_id="consensus-2", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}"),
-        PeerInfo(node_id="alice", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": alice_addr}),
-        PeerInfo(node_id="bob", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": bob_addr}),
-        PeerInfo(node_id="carol", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": carol_addr}),
-        PeerInfo(node_id="dave", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": dave_addr}),
+        with_v2_features(PeerInfo(node_id="consensus-0", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}")),
+        with_v2_features(PeerInfo(node_id="consensus-1", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}")),
+        with_v2_features(PeerInfo(node_id="consensus-2", role="consensus", endpoint=f"127.0.0.1:{_reserve_port()}")),
+        with_v2_features(PeerInfo(node_id="alice", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": alice_addr})),
+        with_v2_features(PeerInfo(node_id="bob", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": bob_addr})),
+        with_v2_features(PeerInfo(node_id="carol", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": carol_addr})),
+        with_v2_features(PeerInfo(node_id="dave", role="account", endpoint=f"127.0.0.1:{_reserve_port()}", metadata={"address": dave_addr})),
     )
     peer_map = {peer.node_id: peer for peer in peers}
 

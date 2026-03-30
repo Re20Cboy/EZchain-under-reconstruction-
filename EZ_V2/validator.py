@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .claim_set import claim_range_set_from_sidecar, claim_range_set_intersects, claim_range_set_hash
 from .chain import compute_addr_key, confirmed_ref, hash_account_leaf, reconstructed_leaf
 from .smt import verify_proof
 from .types import (
@@ -107,18 +108,30 @@ class V2TransferValidator:
         target_tx,
     ) -> str | None:
         for index, unit in enumerate(chain):
+            if unit.receipt.claim_set_hash is not None:
+                expected_claim_set_hash = claim_range_set_hash(claim_range_set_from_sidecar(unit.bundle_sidecar))
+                if unit.receipt.claim_set_hash != expected_claim_set_hash:
+                    return "claim_set_hash does not match bundle sidecar"
             leaf_hash = hash_account_leaf(reconstructed_leaf(unit))
             addr_key = compute_addr_key(unit.bundle_sidecar.sender_addr)
+            proof = unit.receipt.account_state_proof
+            if proof is None:
+                return "current sender receipt missing single proof"
             if not verify_proof(
                 unit.receipt.header_lite.state_root,
                 addr_key,
                 leaf_hash,
-                unit.receipt.account_state_proof,
+                proof,
             ):
                 return "account state proof does not verify"
             if index + 1 < len(chain):
                 if unit.receipt.prev_ref != confirmed_ref(chain[index + 1]):
                     return "prev_ref chain is discontinuous"
+            if index > 0:
+                claim_ranges = claim_range_set_from_sidecar(unit.bundle_sidecar)
+                if not claim_range_set_intersects(claim_ranges, target_value):
+                    continue
+                return "value conflict detected inside current sender history"
             for tx in unit.bundle_sidecar.tx_list:
                 for tx_value in tx.value_list:
                     if not tx_value.intersects(target_value):

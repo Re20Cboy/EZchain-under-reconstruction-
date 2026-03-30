@@ -11,7 +11,7 @@ from pathlib import Path
 from EZ_V2.control import read_backend_metadata, write_state_file
 from EZ_V2.network_host import V2ConsensusHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import PeerInfo
+from EZ_V2.networking import PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.values import ValueRange
 
@@ -28,12 +28,12 @@ def _parse_peer_spec(spec: str) -> PeerInfo:
     if not node_id:
         raise ValueError("peer_spec_missing_node_id")
     _parse_endpoint(endpoint)
-    return PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint)
+    return with_v2_features(PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint))
 
 
 def _build_consensus_peers(*, node_id: str, endpoint: str, peer_specs: tuple[str, ...]) -> tuple[PeerInfo, ...]:
     if not peer_specs:
-        return (PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint),)
+        return (with_v2_features(PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint)),)
     peers = tuple(_parse_peer_spec(spec) for spec in peer_specs)
     local_peer = next((peer for peer in peers if peer.node_id == node_id), None)
     if local_peer is None:

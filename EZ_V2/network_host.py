@@ -22,10 +22,13 @@ from .consensus import (
     verify_signed_proposer_claim,
 )
 from .consensus.store import SQLiteConsensusStore
+from .chain import compute_addr_key
 from .crypto import derive_secp256k1_keypair_from_mnemonic, generate_secp256k1_keypair, keccak256
 from .encoding import canonical_encode
 from .localnet import V2ConsensusNode
 from .networking import (
+    FEATURE_RECEIPT_INDEX_PULL_V1,
+    FEATURE_RECEIPT_MULTIPROOF_V1,
     MSG_BLOCK_ANNOUNCE,
     MSG_BLOCK_FETCH_REQ,
     MSG_BLOCK_FETCH_RESP,
@@ -50,11 +53,24 @@ from .networking import (
     NetworkEnvelope,
     PeerInfo,
     TransferMailboxEvent,
+    peer_supports,
+    with_v2_features,
 )
 from .runtime_v2 import V2Runtime
 from .serde import dumps_json, loads_json
+from .smt import materialize_proof
 from .transport import transfer_package_hash
-from .types import BlockV2, BundleSubmission, CheckpointAnchor, GenesisAnchor, OffChainTx, PriorWitnessLink
+from .types import (
+    BlockV2,
+    BundleSubmission,
+    CheckpointAnchor,
+    GenesisAnchor,
+    OffChainTx,
+    PriorWitnessLink,
+    Receipt,
+    ReceiptProofBatch,
+    ReceiptProofRef,
+)
 from .values import ValueRange
 from .wallet import WalletAccountV2
 
@@ -266,7 +282,13 @@ class V2ConsensusHost:
         auto_run_mvp_consensus_window_sec: float = 0.0,
     ):
         self.network = network
-        self.peer = PeerInfo(node_id=node_id, role="consensus", endpoint=endpoint)
+        self.peer = with_v2_features(
+            PeerInfo(
+                node_id=node_id,
+                role="consensus",
+                endpoint=endpoint,
+            )
+        )
         self.consensus = V2ConsensusNode(store_path=store_path, chain_id=chain_id)
         self.auto_dispatch_receipts = auto_dispatch_receipts
         self.auto_announce_blocks = auto_announce_blocks
@@ -507,7 +529,29 @@ class V2ConsensusHost:
         receipt = response.receipt
         payload: dict[str, Any] = {"status": response.status, "sender_addr": sender_addr, "seq": seq}
         if receipt is not None:
-            payload["receipt"] = receipt
+            recipient_peer = None
+            try:
+                recipient_peer = self.network.peer_info(envelope.sender_id)
+            except Exception:
+                recipient_peer = None
+            if peer_supports(recipient_peer, FEATURE_RECEIPT_MULTIPROOF_V1):
+                batch_id = f"{receipt.header_lite.height}:{receipt.header_lite.block_hash.hex()}"
+                proof_batch = self.consensus.get_receipt_proof_batch(batch_id)
+                if proof_batch is None:
+                    raise ValueError("receipt proof batch missing")
+                payload["receipt"] = Receipt(
+                    header_lite=receipt.header_lite,
+                    seq=receipt.seq,
+                    prev_ref=receipt.prev_ref,
+                    claim_set_hash=receipt.claim_set_hash,
+                    proof_batch_ref=ReceiptProofRef(
+                        batch_id=proof_batch.batch_id,
+                        key=compute_addr_key(sender_addr),
+                    ),
+                )
+                payload["proof_batch"] = proof_batch
+            else:
+                payload["receipt"] = receipt
         self.network.send(
             NetworkEnvelope(
                 msg_type=MSG_RECEIPT_RESP,
@@ -1170,6 +1214,13 @@ class V2ConsensusHost:
             sender_peer_id = sender_peer_ids.get(entry.new_leaf.addr)
             if sender_peer_id is None:
                 continue
+            sender_peer = None
+            try:
+                sender_peer = self.network.peer_info(sender_peer_id)
+            except Exception:
+                sender_peer = None
+            if not self.auto_dispatch_receipts and peer_supports(sender_peer, FEATURE_RECEIPT_INDEX_PULL_V1):
+                continue
             receipt = self.consensus.get_receipt(entry.new_leaf.addr, entry.bundle_envelope.seq).receipt
             if receipt is None:
                 continue
@@ -1418,7 +1469,14 @@ class V2AccountHost:
         self.network = network
         self.consensus_peer_ids = self._normalize_consensus_peer_ids(consensus_peer_id, consensus_peer_ids)
         self.consensus_peer_id = self.consensus_peer_ids[0]
-        self.peer = PeerInfo(node_id=node_id, role="account", endpoint=endpoint, metadata={"address": address})
+        self.peer = with_v2_features(
+            PeerInfo(
+                node_id=node_id,
+                role="account",
+                endpoint=endpoint,
+                metadata={"address": address},
+            )
+        )
         self.wallet = WalletAccountV2(address=address, genesis_block_hash=b"\x00" * 32, db_path=wallet_db_path)
         self.private_key_pem = private_key_pem
         self.public_key_pem = public_key_pem
@@ -1430,6 +1488,7 @@ class V2AccountHost:
         self.fetched_blocks: dict[int, BlockV2] = {}
         self.fetched_blocks_by_hash: dict[str, BlockV2] = {}
         self._detected_chain_reset = False
+        self._suppress_block_announce_receipt_pull = 0
         self._load_network_state()
         self.network.register(self.peer, self.handle_envelope)
 
@@ -1835,6 +1894,7 @@ class V2AccountHost:
                 self.fetched_blocks[block.header.height] = block
                 self.fetched_blocks_by_hash[block.block_hash.hex()] = block
                 self.wallet.observe_canonical_block(block)
+                self._maybe_request_receipts_from_block(block, sender_peer_id=envelope.sender_id)
             self.last_seen_chain = ChainSyncCursor(
                 height=int(envelope.payload["height"]),
                 block_hash_hex=str(envelope.payload.get("block_hash", "")),
@@ -1868,6 +1928,7 @@ class V2AccountHost:
             tx_time=tx_time,
         )
         self._refresh_best_peer_if_preferred_stale()
+        self._suppress_block_announce_receipt_pull += 1
         try:
             response = self._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
             if isinstance(response, dict) and response.get("ok") is False:
@@ -1889,6 +1950,8 @@ class V2AccountHost:
             except Exception:
                 pass
             raise
+        finally:
+            self._suppress_block_announce_receipt_pull = max(0, self._suppress_block_announce_receipt_pull - 1)
         receipt = self._latest_receipt_for_seq(submission.envelope.seq)
         return V2NetworkPayment(
             tx_hash_hex=self._tx_hash_hex(tx),
@@ -1904,11 +1967,12 @@ class V2AccountHost:
         applied = 0
         for pending in self.wallet.list_pending_bundles():
             self._refresh_best_peer_if_preferred_stale()
-            payload = {"sender_addr": self.address, "seq": pending.seq}
-            response = self._send_to_consensus(MSG_RECEIPT_REQ, payload)
-            if self._latest_receipt_for_seq(pending.seq) is not None:
+            applied_now = self._request_receipt_for_seq(pending.seq, mark_missing_on_miss=False)
+            if applied_now:
                 applied += 1
                 continue
+            payload = {"sender_addr": self.address, "seq": pending.seq}
+            response = self._send_to_consensus(MSG_RECEIPT_REQ, payload)
             if isinstance(response, dict) and response.get("status") == "missing":
                 retried_response = self._retry_on_missing_after_refresh(MSG_RECEIPT_REQ, payload)
                 if isinstance(retried_response, dict) and retried_response.get("status") in {"ok", "missing"}:
@@ -1997,11 +2061,105 @@ class V2AccountHost:
                 fetched.append(block)
         return tuple(fetched)
 
+    def _materialize_receipt_from_batch(self, receipt: Receipt, proof_batch: ReceiptProofBatch) -> Receipt:
+        proof_ref = receipt.proof_batch_ref
+        if proof_ref is None:
+            raise ValueError("missing proof batch ref")
+        if proof_ref.batch_id != proof_batch.batch_id:
+            raise ValueError("proof batch ref mismatch")
+        if proof_batch.state_root != receipt.header_lite.state_root:
+            raise ValueError("proof batch state_root mismatch")
+        self.wallet.db.save_receipt_proof_batch(receipt.header_lite.height, proof_batch)
+        return Receipt(
+            header_lite=receipt.header_lite,
+            seq=receipt.seq,
+            prev_ref=receipt.prev_ref,
+            claim_set_hash=receipt.claim_set_hash,
+            account_state_proof=materialize_proof(proof_batch.multi_proof, proof_ref.key),
+        )
+
+    def _request_receipt_for_seq(
+        self,
+        seq: int,
+        *,
+        preferred_peer_id: str | None = None,
+        mark_missing_on_miss: bool = False,
+    ) -> bool:
+        if self._latest_receipt_for_seq(seq) is not None:
+            return True
+        payload = {"sender_addr": self.address, "seq": int(seq)}
+        ordered_peer_ids: list[str] = []
+        for peer_id in (preferred_peer_id, *self.consensus_peer_ids):
+            peer_id = str(peer_id or "")
+            if not peer_id or peer_id in ordered_peer_ids:
+                continue
+            ordered_peer_ids.append(peer_id)
+        saw_missing = False
+        for peer_id in ordered_peer_ids:
+            try:
+                response = self.network.send(
+                    NetworkEnvelope(
+                        msg_type=MSG_RECEIPT_REQ,
+                        sender_id=self.peer.node_id,
+                        recipient_id=peer_id,
+                        payload=payload,
+                    )
+                )
+            except Exception:
+                continue
+            if self._is_retryable_consensus_response(response):
+                continue
+            self._promote_consensus_peer(peer_id)
+            if self._latest_receipt_for_seq(seq) is not None:
+                return True
+            if isinstance(response, dict) and response.get("status") == "missing":
+                saw_missing = True
+                continue
+        if mark_missing_on_miss and saw_missing:
+            self.wallet.mark_receipt_missing(seq)
+        return self._latest_receipt_for_seq(seq) is not None
+
+    def _maybe_request_receipts_from_block(self, block: BlockV2, *, sender_peer_id: str | None = None) -> None:
+        if self._suppress_block_announce_receipt_pull > 0:
+            return
+        sender_peer = None
+        if sender_peer_id:
+            try:
+                sender_peer = self.network.peer_info(sender_peer_id)
+            except Exception:
+                sender_peer = None
+        if not peer_supports(sender_peer, FEATURE_RECEIPT_INDEX_PULL_V1):
+            return
+        pending_by_seq = {pending.seq for pending in self.wallet.list_pending_bundles()}
+        if not pending_by_seq:
+            return
+        for entry in block.diff_package.diff_entries:
+            if entry.new_leaf.addr != self.address:
+                continue
+            if entry.bundle_envelope.seq not in pending_by_seq:
+                continue
+            try:
+                self._request_receipt_for_seq(
+                    entry.bundle_envelope.seq,
+                    preferred_peer_id=sender_peer_id,
+                    mark_missing_on_miss=False,
+                )
+            except Exception:
+                continue
+
     def _on_receipt(self, envelope: NetworkEnvelope) -> dict[str, Any]:
         self.wallet.reload_state()
         receipt = envelope.payload.get("receipt")
         if receipt is None:
             return {"ok": False, "error": "missing_receipt"}
+        proof_batch = envelope.payload.get("proof_batch")
+        if isinstance(receipt, Receipt) and receipt.account_state_proof is None:
+            if not isinstance(proof_batch, ReceiptProofBatch):
+                return {"ok": False, "error": "missing_receipt_proof_batch"}
+            try:
+                receipt = self._materialize_receipt_from_batch(receipt, proof_batch)
+            except Exception as exc:
+                return {"ok": False, "error": f"invalid_receipt_proof_batch:{exc}"}
         if not self.auto_accept_receipts:
             return {"ok": True, "status": "receipt_seen_not_applied"}
         if not self.wallet.knows_canonical_header(receipt.header_lite):

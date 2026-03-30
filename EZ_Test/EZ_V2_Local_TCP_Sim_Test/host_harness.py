@@ -11,7 +11,7 @@ from typing import Any
 from EZ_V2.crypto import address_from_public_key_pem, generate_secp256k1_keypair
 from EZ_V2.network_host import V2AccountHost, V2ConsensusHost
 from EZ_V2.network_transport import TCPNetworkTransport
-from EZ_V2.networking import MSG_BUNDLE_SUBMIT, NetworkEnvelope, PeerInfo
+from EZ_V2.networking import MSG_BUNDLE_SUBMIT, NetworkEnvelope, PeerInfo, with_v2_features
 from EZ_V2.transport_peer import TransportPeerNetwork
 from EZ_V2.types import OffChainTx
 from EZ_V2.values import LocalValueStatus, ValueRange
@@ -107,10 +107,12 @@ class LocalTCPHostCluster:
         self.transactions: list[dict[str, Any]] = []
 
         consensus_peers = tuple(
-            PeerInfo(
-                node_id=f"consensus-{index}",
-                role="consensus",
-                endpoint=f"127.0.0.1:{_reserve_port()}",
+            with_v2_features(
+                PeerInfo(
+                    node_id=f"consensus-{index}",
+                    role="consensus",
+                    endpoint=f"127.0.0.1:{_reserve_port()}",
+                )
             )
             for index in range(profile.consensus_count)
         )
@@ -125,11 +127,13 @@ class LocalTCPHostCluster:
                 )
             )
         account_peers = tuple(
-            PeerInfo(
-                node_id=f"account-{index:02d}",
-                role="account",
-                endpoint=f"127.0.0.1:{_reserve_port()}",
-                metadata={"address": identity[2]},
+            with_v2_features(
+                PeerInfo(
+                    node_id=f"account-{index:02d}",
+                    role="account",
+                    endpoint=f"127.0.0.1:{_reserve_port()}",
+                    metadata={"address": identity[2]},
+                )
             )
             for index, identity in enumerate(account_identities)
         )
@@ -357,6 +361,7 @@ class LocalTCPHostCluster:
         ]
         deadline = time.time() + float(timeout_sec or max(3.0, self.profile.network_timeout_sec))
         while time.time() < deadline:
+            self._drive_auto_mvp_ticks_once()
             heights = [host.consensus.chain.current_height for host in running]
             if heights and min(heights) >= expected_height:
                 return min(heights)
@@ -369,11 +374,26 @@ class LocalTCPHostCluster:
         assert runtime.host is not None
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
+            self._drive_auto_mvp_ticks_once()
             count = len(runtime.host.wallet.list_receipts())
             if count >= expected_count:
                 return count
             time.sleep(0.02)
         return len(runtime.host.wallet.list_receipts())
+
+    def _drive_auto_mvp_ticks_once(self) -> None:
+        if self.profile.auto_run_window_sec <= 0:
+            return
+        running_hosts = [
+            runtime.host
+            for runtime in self.consensus_nodes.values()
+            if runtime.running and runtime.host is not None
+        ]
+        for host in running_hosts:
+            try:
+                host.drive_auto_mvp_consensus_tick()
+            except Exception:
+                continue
 
     def recover_all_accounts(self) -> dict[str, Any]:
         recovered: dict[str, Any] = {}
@@ -552,22 +572,30 @@ class LocalTCPHostCluster:
 
     def _wait_for_sender_receipt(self, sender_runtime: AccountNodeRuntime, *, expected_seq: int, expected_receipt_count: int):
         assert sender_runtime.host is not None
-        self.wait_for_receipt_count(
-            sender_runtime.peer.node_id,
-            expected_receipt_count,
-            timeout_sec=max(6.0, self.profile.network_timeout_sec * 2.0),
-        )
-        receipt = next(
-            (item for item in sender_runtime.host.wallet.list_receipts() if item.seq == expected_seq),
-            None,
-        )
-        if receipt is None:
+        deadline = time.time() + max(20.0, self.profile.network_timeout_sec * 6.0)
+        receipt = None
+        while time.time() < deadline:
+            remaining = max(0.1, deadline - time.time())
+            self.wait_for_receipt_count(
+                sender_runtime.peer.node_id,
+                expected_receipt_count,
+                timeout_sec=min(1.0, remaining),
+            )
+            receipt = next(
+                (item for item in sender_runtime.host.wallet.list_receipts() if item.seq == expected_seq),
+                None,
+            )
+            if receipt is not None:
+                break
             sender_runtime.host.recover_network_state()
             self._snapshot_account_runtime(sender_runtime)
             receipt = next(
                 (item for item in sender_runtime.host.wallet.list_receipts() if item.seq == expected_seq),
                 None,
             )
+            if receipt is not None:
+                break
+            time.sleep(0.05)
         return receipt
 
     def _record_failed(self, payload: dict[str, Any]) -> int:
@@ -700,6 +728,20 @@ class LocalTCPHostCluster:
                 anti_spam_nonce=self.random.randrange(1, 1 << 31),
             )
         except Exception as exc:
+            if allow_retry and "wallet already has a pending bundle" in str(exc):
+                time.sleep(0.2)
+                try:
+                    sender_runtime.host.recover_network_state()
+                except Exception:
+                    pass
+                return self._submit_single_payment(
+                    sender_id,
+                    recipient_id,
+                    amount=amount,
+                    rotate_sender_primary=rotate_sender_primary,
+                    selected_primary=selected_primary,
+                    allow_retry=False,
+                )
             if allow_retry and "consensus_phase_failed:" in str(exc):
                 time.sleep(0.2)
                 try:
@@ -731,6 +773,13 @@ class LocalTCPHostCluster:
             expected_seq=expected_seq,
             expected_receipt_count=expected_receipt_count,
         )
+        if receipt is None and payment.receipt_height is None:
+            self.recover_all_accounts()
+            receipt = self._wait_for_sender_receipt(
+                sender_runtime,
+                expected_seq=expected_seq,
+                expected_receipt_count=expected_receipt_count,
+            )
         if receipt is None and payment.receipt_height is None:
             return self._record_failed(
                 {
@@ -854,7 +903,14 @@ class LocalTCPHostCluster:
                 created_at=start_tx_index,
             )
             sender_runtime.host._refresh_best_peer_if_preferred_stale()
-            response = sender_runtime.host._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
+            sender_runtime.host._suppress_block_announce_receipt_pull += 1
+            try:
+                response = sender_runtime.host._send_to_consensus(MSG_BUNDLE_SUBMIT, {"submission": submission})
+            finally:
+                sender_runtime.host._suppress_block_announce_receipt_pull = max(
+                    0,
+                    sender_runtime.host._suppress_block_announce_receipt_pull - 1,
+                )
             if isinstance(response, dict) and response.get("ok") is False:
                 error = str(response.get("error", "bundle_submit_failed"))
                 if error == "bundle seq is not currently executable":
@@ -871,6 +927,19 @@ class LocalTCPHostCluster:
                 sender_runtime.host.wallet.rollback_pending_bundle(expected_seq)
             except Exception:
                 pass
+            if allow_retry and "wallet already has a pending bundle" in str(exc):
+                time.sleep(0.2)
+                try:
+                    sender_runtime.host.recover_network_state()
+                except Exception:
+                    pass
+                return self._submit_custom_bundle(
+                    sender_id,
+                    tx_groups=tx_groups,
+                    rotate_sender_primary=rotate_sender_primary,
+                    selected_primary=selected_primary,
+                    allow_retry=False,
+                )
             if allow_retry and "consensus_phase_failed:" in str(exc):
                 time.sleep(0.2)
                 try:
@@ -901,6 +970,13 @@ class LocalTCPHostCluster:
             expected_seq=expected_seq,
             expected_receipt_count=expected_receipt_count,
         )
+        if receipt is None:
+            self.recover_all_accounts()
+            receipt = self._wait_for_sender_receipt(
+                sender_runtime,
+                expected_seq=expected_seq,
+                expected_receipt_count=expected_receipt_count,
+            )
         if receipt is None:
             return self._record_failed(
                 {
